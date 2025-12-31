@@ -1,0 +1,65 @@
+const fetch = require('node-fetch');
+const lruCache = require('lru-cache');
+
+// Cache models for 5 minutes
+const modelCache = new lruCache({
+  max: 100,
+  ttl: 300 * 1000, // 5 minutes in ms
+  allowStale: false
+});
+
+class OllamaService {
+  constructor() {
+    this.baseURL = 'http://127.0.0.1:11434';
+  }
+
+  async checkConnection() {
+    try {
+      const response = await fetch(this.baseURL, { method: 'HEAD', timeout: 3000 });
+      return response.ok;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async getModels() {
+    // Try to get from cache first
+    const cached = modelCache.get('models');
+    if (cached) return cached;
+
+    try {
+      const response = await fetch(`${this.baseURL}/api/tags`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const data = await response.json();
+      const models = data.models.map(model => ({
+        id: model.name.split(':')[0],
+        name: model.name,
+        size: model.size,
+        modified: new Date(model.modified_at),
+        type: model.remote_host ? 'cloud' : 'local'
+      }));
+
+      // Update cache
+      modelCache.set('models', models);
+      return models;
+    } catch (error) {
+      console.error('Ollama model fetch error:', error);
+      return []; // Return empty array instead of throwing
+    }
+  }
+
+  async listModels() {
+    try {
+      const models = await this.getModels();
+      return models.map(model => model.name);
+    } catch (error) {
+      console.error('Failed to fetch models from Ollama API:', error);
+      throw new Error(`Failed to fetch models from Ollama API: ${error.message}`);
+    }
+  }
+}
+
+const ollamaService = new OllamaService();
+
+module.exports = ollamaService;

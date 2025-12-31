@@ -1,0 +1,644 @@
+const { EventEmitter } = require('events');
+
+class MCPServer extends EventEmitter {
+  constructor(db) {
+    super();
+    this.db = db;
+    this.aiService = null;
+    this.tools = new Map();
+    this.toolStates = new Map(); // Cache for tool activation states
+    this.proxyServers = new Map();
+    this.initializeBuiltInTools();
+  }
+
+  setAIService(aiService) {
+    this.aiService = aiService;
+  }
+
+  initializeBuiltInTools() {
+    // System tools
+    this.registerTool('current_time', {
+      name: 'current_time',
+      description: 'Get current server time in ISO format',
+      userDescription: 'Returns the current date and time on the server',
+      example: 'TOOL:current_time{}',
+      exampleOutput: '"2025-10-05T15:05:30.123Z"',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      return new Date().toISOString();
+    });
+
+    this.registerTool('current_weather', {
+      name: 'current_weather',
+      description: 'Get current weather for a city using wttr.in API',
+      userDescription: 'Fetches current weather conditions (temperature, humidity, conditions) for any city worldwide',
+      example: 'TOOL:current_weather{"city":"London"}',
+      exampleOutput: '{"temp":"15","condition":"Partly cloudy","humidity":"65","city":"London"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          city: { 
+            type: 'string', 
+            description: 'City name (e.g., "London", "New York", "Tokyo", "Moscow")',
+            default: 'Moscow' 
+          }
+        }
+      }
+    }, async ({city}) => {
+      const fetch = require('node-fetch');
+      const response = await fetch(`http://wttr.in/${encodeURIComponent(city)}?format=j1`);
+      if (!response.ok) throw new Error(`Weather API error: ${response.status}`);
+      const data = await response.json();
+      return {
+        temp: data.current_condition[0].temp_C,
+        condition: data.current_condition[0].weatherDesc[0].value,
+        humidity: data.current_condition[0].humidity,
+        city: city
+      };
+    });
+
+    // Calendar tools
+    this.registerTool('create_calendar_event', {
+      name: 'create_calendar_event',
+      description: 'Create a calendar event with title, date/time, and optional description',
+      userDescription: 'Creates a new calendar event with a title, start time, duration, and optional notes',
+      example: 'TOOL:create_calendar_event{"title":"Team Meeting","start_time":"2025-10-06 14:00","duration_minutes":60,"description":"Discuss Q4 goals"}',
+      exampleOutput: '{"id":1,"title":"Team Meeting","start_time":"2025-10-06 14:00","duration_minutes":60,"description":"Discuss Q4 goals"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { 
+            type: 'string', 
+            description: 'Event title (e.g., "Team Meeting", "Doctor Appointment")' 
+          },
+          start_time: { 
+            type: 'string', 
+            description: 'Start time in format "YYYY-MM-DD HH:MM" or ISO format (e.g., "2025-10-06 14:00" or "2025-10-06T14:00:00Z")' 
+          },
+          duration_minutes: { 
+            type: 'number', 
+            description: 'Event duration in minutes (e.g., 30, 60, 90)', 
+            default: 60 
+          },
+          description: { 
+            type: 'string', 
+            description: 'Optional event notes or description', 
+            default: '' 
+          }
+        },
+        required: ['title', 'start_time']
+      }
+    }, async (params) => {
+      const event = await this.db.addCalendarEvent(params);
+      this.emit('calendar-update');
+      return event;
+    });
+
+    this.registerTool('calendar_write', {
+      name: 'calendar_write',
+      description: 'Alias for create_calendar_event - creates a new calendar event',
+      userDescription: 'Alternative name for create_calendar_event - creates a new calendar event',
+      example: 'TOOL:calendar_write{"title":"Lunch","start_time":"2025-10-06 12:00"}',
+      exampleOutput: '{"id":2,"title":"Lunch","start_time":"2025-10-06 12:00","duration_minutes":60}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { 
+            type: 'string',
+            description: 'Event title' 
+          },
+          start_time: { 
+            type: 'string',
+            description: 'Start time in format "YYYY-MM-DD HH:MM"' 
+          },
+          duration_minutes: { 
+            type: 'number', 
+            description: 'Duration in minutes',
+            default: 60 
+          },
+          description: { 
+            type: 'string', 
+            description: 'Event notes',
+            default: '' 
+          }
+        },
+        required: ['title', 'start_time']
+      }
+    }, async (params) => {
+      return await this.db.addCalendarEvent(params);
+    });
+
+    this.registerTool('list_calendar_events', {
+      name: 'list_calendar_events',
+      description: 'List calendar events with optional filters',
+      userDescription: 'Retrieves a list of upcoming calendar events, optionally limited to a specific number',
+      example: 'TOOL:list_calendar_events{"limit":5}',
+      exampleOutput: '[{"id":1,"title":"Meeting","start_time":"2025-10-06 14:00"},{"id":2,"title":"Lunch","start_time":"2025-10-06 12:00"}]',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          limit: { 
+            type: 'number', 
+            description: 'Maximum number of events to return (e.g., 5, 10, 20)', 
+            default: 10 
+          }
+        }
+      }
+    }, async (params) => {
+      const events = await this.db.getCalendarEvents();
+      return events.slice(0, params.limit || 10);
+    });
+
+    this.registerTool('calendar_read', {
+      name: 'calendar_read',
+      description: 'Alias for list_calendar_events - retrieves calendar events',
+      userDescription: 'Alternative name for list_calendar_events - retrieves calendar events',
+      example: 'TOOL:calendar_read{"limit":10}',
+      exampleOutput: '[{"id":1,"title":"Meeting","start_time":"2025-10-06 14:00"}]',
+      inputSchema: { 
+        type: 'object', 
+        properties: { 
+          limit: { 
+            type: 'number', 
+            description: 'Maximum number of events to return',
+            default: 10 
+          } 
+        } 
+      }
+    }, async (params) => {
+      const events = await this.db.getCalendarEvents();
+      return events.slice(0, params.limit || 10);
+    });
+
+    // Todo tools
+    this.registerTool('todo_create', {
+      name: 'todo_create',
+      description: 'Create a new todo item',
+      userDescription: 'Creates a new todo/task item with optional priority and due date',
+      example: 'TOOL:todo_create{"task":"Buy groceries","priority":2,"due_date":"2025-10-07"}',
+      exampleOutput: '{"id":1,"task":"Buy groceries","priority":2,"due_date":"2025-10-07","completed":false}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task: { 
+            type: 'string', 
+            description: 'Task description (e.g., "Buy groceries", "Call dentist", "Finish report")' 
+          },
+          priority: { 
+            type: 'number', 
+            description: 'Priority level from 1 (lowest) to 5 (highest)', 
+            default: 1 
+          },
+          due_date: { 
+            type: 'string', 
+            format: 'date-time', 
+            description: 'Due date in format "YYYY-MM-DD" or ISO format (optional)' 
+          }
+        },
+        required: ['task']
+      }
+    }, async (params) => {
+      return await this.db.addTodo(params);
+    });
+
+    this.registerTool('todo_list', {
+      name: 'todo_list',
+      description: 'List todo items with optional filters',
+      userDescription: 'Retrieves all todo items, optionally filtered by completion status or priority level',
+      example: 'TOOL:todo_list{"completed":false,"priority":3}',
+      exampleOutput: '[{"id":1,"task":"Buy groceries","priority":3,"completed":false}]',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          completed: { 
+            type: 'boolean', 
+            description: 'Filter by completion: true (completed only), false (incomplete only), or omit for all' 
+          },
+          priority: { 
+            type: 'number', 
+            description: 'Filter by priority level (1-5), or omit for all priorities' 
+          }
+        }
+      }
+    }, async (params) => {
+      const todos = await this.db.getTodos();
+      if (params.completed !== undefined) {
+        return todos.filter(t => t.completed === params.completed);
+      }
+      if (params.priority !== undefined) {
+        return todos.filter(t => t.priority === params.priority);
+      }
+      return todos;
+    });
+
+    this.registerTool('todo_complete', {
+      name: 'todo_complete',
+      description: 'Mark a todo item as completed',
+      userDescription: 'Marks a specific todo item as completed using its ID',
+      example: 'TOOL:todo_complete{"id":1}',
+      exampleOutput: '{"id":1,"task":"Buy groceries","completed":true}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { 
+            type: 'number', 
+            description: 'The ID number of the todo item to mark as complete' 
+          }
+        },
+        required: ['id']
+      }
+    }, async (params) => {
+      return await this.db.updateTodo(params.id, { completed: true });
+    });
+
+    // Conversation tools
+    this.registerTool('conversation_history', {
+      name: 'conversation_history',
+      description: 'Get conversation history',
+      userDescription: 'Retrieves past conversation messages, limited to a specific number',
+      example: 'TOOL:conversation_history{"limit":20}',
+      exampleOutput: '[{"role":"user","content":"Hello"},{"role":"assistant","content":"Hi there!"}]',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          limit: { 
+            type: 'number', 
+            description: 'Maximum number of messages to retrieve (e.g., 10, 20, 50)', 
+            default: 50 
+          }
+        }
+      }
+    }, async (params) => {
+      return await this.db.getConversations(params.limit);
+    });
+
+    // System tools
+    this.registerTool('get_system_prompt', {
+      name: 'get_system_prompt',
+      description: 'Get the current system prompt',
+      userDescription: 'Returns the current system prompt configuration used by the AI',
+      example: 'TOOL:get_system_prompt{}',
+      exampleOutput: '"You are a helpful AI assistant..."',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      return this.aiService.getSystemPrompt();
+    });
+
+    this.registerTool('get_current_provider', {
+      name: 'get_current_provider',
+      description: 'Get the current AI provider',
+      userDescription: 'Returns which AI provider is currently active (e.g., Ollama, LM Studio, OpenRouter)',
+      example: 'TOOL:get_current_provider{}',
+      exampleOutput: '"ollama"',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      return this.aiService.getCurrentProvider();
+    });
+
+    // Search tools
+    this.registerTool('search_conversations', {
+      name: 'search_conversations',
+      description: 'Search through conversation history',
+      userDescription: 'Searches past conversations for messages containing specific keywords or phrases',
+      example: 'TOOL:search_conversations{"query":"weather","limit":5}',
+      exampleOutput: '[{"role":"user","content":"What\'s the weather?","timestamp":"2025-10-05T10:00:00Z"}]',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { 
+            type: 'string', 
+            description: 'Search term or phrase to find in conversation history (e.g., "weather", "meeting", "todo")' 
+          },
+          limit: { 
+            type: 'number', 
+            description: 'Maximum number of results to return',
+            default: 10 
+          }
+        },
+        required: ['query']
+      }
+    }, async (params) => {
+      const convs = await this.db.getConversations(100);
+      return convs.filter(c => 
+        c.content.toLowerCase().includes(params.query.toLowerCase())
+      ).slice(0, params.limit);
+    });
+
+    // Math tools
+    this.registerTool('calculate', {
+      name: 'calculate',
+      description: 'Perform mathematical calculations',
+      userDescription: 'Evaluates mathematical expressions and returns the result',
+      example: 'TOOL:calculate{"expression":"(123 + 456) * 2"}',
+      exampleOutput: '{"expression":"(123 + 456) * 2","result":1158}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          expression: { 
+            type: 'string', 
+            description: 'Mathematical expression to evaluate (e.g., "2+2", "(10*5)/2", "Math.sqrt(16)")' 
+          }
+        },
+        required: ['expression']
+      }
+    }, async (params) => {
+      try {
+        // Safe eval for math only
+        const result = Function('"use strict"; return (' + params.expression + ')')();
+        return { expression: params.expression, result };
+      } catch (e) {
+        throw new Error('Invalid math expression');
+      }
+    });
+
+    // Rule tools
+    this.registerTool('list_active_rules', {
+      name: 'list_active_rules',
+      description: 'List currently active prompt rules',
+      userDescription: 'Returns all currently active prompt rules that modify AI behavior',
+      example: 'TOOL:list_active_rules{}',
+      exampleOutput: '[{"id":1,"name":"Be Concise","content":"Keep responses brief","active":true}]',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      return await this.db.getActivePromptRules();
+    });
+
+    this.registerTool('toggle_rule', {
+      name: 'toggle_rule',
+      description: 'Toggle a prompt rule on or off',
+      userDescription: 'Activates or deactivates a specific prompt rule by its ID',
+      example: 'TOOL:toggle_rule{"rule_id":1,"active":true}',
+      exampleOutput: '{"id":1,"name":"Be Concise","active":true}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          rule_id: { 
+            type: 'number', 
+            description: 'The ID number of the rule to toggle' 
+          },
+          active: { 
+            type: 'boolean', 
+            description: 'Set to true to activate, false to deactivate' 
+          }
+        },
+        required: ['rule_id', 'active']
+      }
+    }, async (params) => {
+      return await this.db.togglePromptRule(params.rule_id, params.active);
+    });
+
+    // Stats tools
+    this.registerTool('get_stats', {
+      name: 'get_stats',
+      description: 'Get usage statistics',
+      userDescription: 'Returns statistics about conversations, todos, calendar events, and rules',
+      example: 'TOOL:get_stats{}',
+      exampleOutput: '{"conversations":45,"todos":12,"events":8,"rules":3}',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      const convCount = (await this.db.getConversations(10000)).length;
+      const todoCount = (await this.db.getTodos()).length;
+      const eventCount = (await this.db.getCalendarEvents()).length;
+      const ruleCount = (await this.db.getPromptRules()).length;
+      return { conversations: convCount, todos: todoCount, events: eventCount, rules: ruleCount };
+    });
+  }
+
+  registerTool(name, definition, handler) {
+    this.tools.set(name, { definition, handler });
+  }
+
+  async executeTool(toolName, params = {}) {
+    const tool = this.tools.get(toolName);
+    if (!tool) {
+      this.emit('tool-executed', { toolName, success: false, error: 'Tool not found' });
+      throw new Error(`Tool not found: ${toolName}`);
+    }
+
+    // CHECK TOOL ACTIVATION STATE FIRST
+    const isActive = await this.getToolActiveState(toolName);
+    if (!isActive) {
+      // Don't execute - return permission request object
+      const permissionRequest = {
+        needsPermission: true,
+        toolName,
+        params,
+        toolDefinition: tool.definition
+      };
+      console.log(`Tool ${toolName} disabled, requesting permission`);
+      return permissionRequest;
+    }
+
+    try {
+      // Apply defaults from schema
+      if (tool.definition.inputSchema?.properties) {
+        for (const [key, prop] of Object.entries(tool.definition.inputSchema.properties)) {
+          if (params[key] === undefined && prop.default !== undefined) {
+            params[key] = prop.default;
+          }
+        }
+      }
+
+      // Validate input
+      if (tool.definition.inputSchema) {
+        this.validateInput(params, tool.definition.inputSchema);
+      }
+
+      // Execute
+      const result = await tool.handler(params);
+
+      // Emit updates
+      if (toolName.startsWith('calendar_')) this.emit('calendar-update');
+      else if (toolName.startsWith('todo_')) this.emit('todo-update');
+
+      this.emit('tool-executed', { toolName, success: true, result });
+      return result;
+    } catch (error) {
+      this.emit('tool-executed', { toolName, success: false, error: error.message });
+      throw error;
+    }
+  }
+
+  async getToolActiveState(toolName) {
+    try {
+      // Check cache first
+      if (this.toolStates.has(toolName)) {
+        return this.toolStates.get(toolName);
+      }
+
+      // Load from database
+      const key = `tool.${toolName}.active`;
+      const value = await this.db.getSetting(key);
+
+      // Default to true (active) if not set
+      const isActive = value !== 'false';
+      this.toolStates.set(toolName, isActive); // Cache it
+
+      return isActive;
+    } catch (error) {
+      console.error('Error getting tool state:', error);
+      return true; // Default to active on error
+    }
+  }
+
+  async setToolActiveState(toolName, active) {
+    try {
+      const key = `tool.${toolName}.active`;
+      const value = active ? 'true' : 'false';
+      await this.db.setSetting(key, value);
+
+      // Update cache
+      this.toolStates.set(toolName, active);
+
+      console.log(`Tool ${toolName} ${active ? 'enabled' : 'disabled'}`);
+      return { toolName, active };
+    } catch (error) {
+      console.error('Error setting tool state:', error);
+      throw error;
+    }
+  }
+
+  parseToolCall(text) {
+    // Parse tool calls from AI response
+    // Format: TOOL:tool_name{"param":"value"}
+    const toolRegex = /TOOL:(\w+)({[^}]+})?/g;
+    const calls = [];
+    let match;
+    
+    while ((match = toolRegex.exec(text)) !== null) {
+      const toolName = match[1];
+      let params = {};
+      if (match[2]) {
+        try {
+          params = JSON.parse(match[2]);
+        } catch (e) {
+          console.error('Failed to parse tool params:', e);
+        }
+      }
+      calls.push({ toolName, params });
+    }
+    
+    return calls;
+  }
+
+  async executeToolCalls(text) {
+    const calls = this.parseToolCall(text);
+    const results = [];
+    
+    for (const call of calls) {
+      try {
+        const result = await this.executeTool(call.toolName, call.params);
+        results.push({ tool: call.toolName, success: true, result });
+      } catch (error) {
+        results.push({ tool: call.toolName, success: false, error: error.message });
+      }
+    }
+    
+    return results;
+  }
+
+  validateInput(params, schema) {
+    if (schema.required) {
+      for (const requiredField of schema.required) {
+        if (params[requiredField] === undefined) {
+          throw new Error(`Missing required field: ${requiredField}`);
+        }
+      }
+    }
+
+    for (const [field, value] of Object.entries(params)) {
+      const fieldSchema = schema.properties[field];
+      if (!fieldSchema) {
+        throw new Error(`Unknown field: ${field}`);
+      }
+
+      if (fieldSchema.type && typeof value !== fieldSchema.type) {
+        throw new Error(`Field ${field} must be of type ${fieldSchema.type}`);
+      }
+
+      // Additional validation for date-time format
+      if (fieldSchema.format === 'date-time' && isNaN(Date.parse(value))) {
+        throw new Error(`Field ${field} must be a valid date-time string`);
+      }
+    }
+  }
+
+  getTools() {
+    const tools = [];
+    for (const [name, tool] of this.tools) {
+      tools.push(tool.definition);
+    }
+    return tools;
+  }
+
+  getToolsDocumentation() {
+    // Returns user-friendly documentation for UI display
+    const docs = [];
+    for (const [name, tool] of this.tools) {
+      const def = tool.definition;
+      const doc = {
+        name: def.name,
+        description: def.userDescription || def.description,
+        technicalDescription: def.description,
+        parameters: [],
+        example: def.example || '',
+        exampleOutput: def.exampleOutput || '',
+        category: this.categorizeToolName(def.name)
+      };
+
+      if (def.inputSchema?.properties) {
+        const required = def.inputSchema.required || [];
+        Object.entries(def.inputSchema.properties).forEach(([key, prop]) => {
+          doc.parameters.push({
+            name: key,
+            type: prop.type,
+            description: prop.description || 'No description',
+            required: required.includes(key),
+            default: prop.default
+          });
+        });
+      }
+
+      docs.push(doc);
+    }
+    return docs;
+  }
+
+  categorizeToolName(name) {
+    if (name.includes('calendar')) return 'Calendar';
+    if (name.includes('todo')) return 'Todo';
+    if (name.includes('weather') || name.includes('time')) return 'System';
+    if (name.includes('conversation') || name.includes('search')) return 'Search';
+    if (name.includes('calculate')) return 'Math';
+    if (name.includes('rule')) return 'Rules';
+    if (name.includes('stats') || name.includes('provider') || name.includes('prompt')) return 'System';
+    return 'Other';
+  }
+
+  async addProxyServer(name, config) {
+    // Placeholder for proxy server integration
+    // This would connect to external MCP servers
+    this.proxyServers.set(name, config);
+    return { success: true, name };
+  }
+
+  async removeProxyServer(name) {
+    this.proxyServers.delete(name);
+    return { success: true, name };
+  }
+
+  getProxyServers() {
+    return Array.from(this.proxyServers.entries()).map(([name, config]) => ({
+      name,
+      config
+    }));
+  }
+
+  async stop() {
+    // Cleanup any running proxy connections
+    this.proxyServers.clear();
+    this.removeAllListeners();
+  }
+}
+
+module.exports = MCPServer;

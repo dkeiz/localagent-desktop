@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalAgent Desktop</title>
+    <link rel="stylesheet" href="styles/layout.css">
+    <link rel="stylesheet" href="styles/theme.css">
+    <link rel="stylesheet" href="styles/buttons.css">
+    <link rel="stylesheet" href="styles/rule-manager.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Column - Navigation -->
+        <nav class="sidebar">
+            <div class="logo">LocalAgent</div>
+            <!-- Collapsible Navigation Tabs Section -->
+            <div class="collapsible-section" data-section="nav-tabs">
+                <div class="section-header">
+                    <span>Navigation</span>
+                    <span class="toggle-icon">▶</span>
+                </div>
+                <div class="section-content">
+                    <div class="nav-tabs">
+                        <button class="nav-btn active" data-tab="chat">
+                    <span class="icon">💬</span>
+                    <span class="label">Chat</span>
+                </button>
+                <button class="nav-btn" data-tab="settings">
+                    <span class="icon">⚙️</span>
+                    <span class="label">Settings</span>
+                </button>
+                <button class="nav-btn" data-tab="mcp">
+                    <span class="icon">🔧</span>
+                    <span class="label">MCP</span>
+                </button>
+                <button class="nav-btn" data-tab="llm">
+                    <span class="icon">🤖</span>
+                    <span class="label">LLM Settings</span>
+                </button>
+                <button class="nav-btn" data-tab="api">
+                    <span class="icon">🔑</span>
+                    <span class="label">API Servers</span>
+                </button>
+                <button class="nav-btn" data-tab="tools">
+                    <span class="icon">🔧</span>
+                    <span class="label">Tool Activity</span>
+                    <span id="tool-count-badge" class="badge">0</span>
+                </button>
+                    </div>
+                </div>
+            </div>
+            <!-- Collapsible Chat History Section -->
+            <div class="collapsible-section" data-section="chat-history">
+                <div class="section-header">
+                    <span>Recent Chats</span>
+                    <span class="toggle-icon">▶</span>
+                </div>
+                <div class="section-content">
+                    <div class="chat-history-sidebar">
+                        <!-- Removed duplicate header -->
+                        <div id="chat-sessions-list" class="chat-sessions-list"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="sidebar-footer">
+                <button id="show-shortcuts-btn" class="icon-btn" title="Keyboard Shortcuts">⌨️</button>
+                <button id="show-stats-btn" class="icon-btn" title="Statistics">📊</button>
+            </div>
+        </nav>
+
+        <!-- Central Column - Main Content -->
+        <main class="content-panel">
+            <section id="chat-tab" class="tab-content active">
+                <div class="chat-container">
+                    <div class="chat-header">
+                        <button id="new-chat-btn" class="secondary-btn">🆕 New Chat</button>
+                        <div id="context-usage" class="context-usage"></div>
+                    </div>
+                    <div class="messages-container" id="messages-container">
+                        <!-- Messages will be dynamically added here -->
+                    </div>
+                    <div class="input-container">
+                        <button id="attach-btn" class="icon-btn" title="Attach file">📎</button>
+                        <button id="voice-btn" class="icon-btn" title="Voice input">🎤</button>
+                        <textarea id="message-input" placeholder="Type your message..." rows="2"></textarea>
+                        <button id="send-btn" class="send-button">Send</button>
+                        <button id="speak-btn" class="icon-btn" title="Speak response">🔊</button>
+                    </div>
+                    <div id="drop-zone" class="drop-zone">
+                        <div class="drop-message">📁 Drop files here</div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="settings-tab" class="tab-content">
+                <h2>Application Settings</h2>
+                <div class="settings-group">
+                    <label>
+                        <input type="checkbox" id="auto-start"> Auto-start on login
+                    </label>
+                    <label>
+                        <input type="checkbox" id="minimize-to-tray"> Minimize to system tray
+                    </label>
+                </div>
+            </section>
+
+            <section id="mcp-tab" class="tab-content">
+                <h2>MCP Tools</h2>
+                
+                <div class="tool-tester">
+                    <h3>Test Tool</h3>
+                    <div class="tool-input-row">
+                        <select id="tool-select" class="form-control">
+                            <option value="">Select a tool...</option>
+                        </select>
+                        <textarea id="tool-params" placeholder='{"param":"value"}' rows="1"></textarea>
+                        <button id="test-tool-btn" class="primary-btn compact">Execute Tool</button>
+                    </div>
+                    <div id="tool-result" class="tool-result"></div>
+                </div>
+                
+                <div class="mcp-tools-list">
+                    <h3>Available Tools (${tools.length})</h3>
+                    <div class="tools-scroll-container">
+                        <div id="mcp-tools-container">
+                            <!-- MCP tools will be dynamically listed here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tool-activity-section">
+                    <h3>Recent Activity</h3>
+                    <div id="tool-activity" class="tool-activity-container">
+                        <!-- Tool activity indicators will be dynamically added here -->
+                    </div>
+                </div>
+            </section>
+
+            <section id="llm-tab" class="tab-content">
+                <h2>LLM Configuration</h2>
+                <div class="llm-settings">
+                    <div class="system-prompt-container">
+                        <h3>System Prompt</h3>
+                        <textarea id="system-prompt" placeholder="Enter system prompt..."></textarea>
+                        <button id="save-prompt-btn" class="primary-btn">Save System Prompt</button>
+                    </div>
+                    
+                    <hr style="margin: 2rem 0;">
+                    
+                    <div class="custom-rules-container">
+                        <h3>Custom Rules</h3>
+                        <p style="color: #666; margin-bottom: 1rem;">Add custom rules that can be toggled on/off (e.g., "Answer only in 20 words")</p>
+                        <div id="prompt-rules-list" class="prompt-rules-container scrollable">
+                            <!-- Rules will be dynamically added here -->
+                        </div>
+                        <button id="add-rule-btn" class="secondary-btn">+ Add Rule</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tools-tab" class="tab-content">
+                <h2>Tool Activity</h2>
+                <div class="tool-activity-container">
+                    <div id="tool-activity-list" class="tool-activity-list"></div>
+                </div>
+            </section>
+
+    <section id="api-tab" class="tab-content">
+        <h2>API Configuration</h2>
+        
+        <!-- Context Window Setting -->
+        <div class="setting-section">
+          <h3>Context Window Size</h3>
+          <div class="slider-control">
+            <div class="slider-labels">
+              <label for="context-slider" id="context-display-label">Context Size:</label>
+              <span id="context-display">8192 tokens</span>
+            </div>
+            <input type="range" id="context-slider" min="2048" max="32768" step="2048" value="8192" 
+                   oninput="window.mainPanel && window.mainPanel.updateContextDisplay(this.value)" 
+                   onchange="window.mainPanel && window.mainPanel.saveContextSize(this.value)">
+          </div>
+        </div>
+        
+        <div style="margin: 20px 0;">
+          <hr>
+        </div>
+        
+        <div class="llm-settings">
+            <label for="llm-provider-select">Provider</label>
+            <select id="llm-provider-select"></select>
+            
+            <label for="llm-model-select">Model</label>
+            <select id="llm-model-select"></select>
+            
+            <!-- Dynamic provider-specific settings -->
+            <div id="provider-settings-container"></div>
+            
+            <button id="llm-config-save-button">Save Configuration</button>
+            
+            <!-- Current configuration display -->
+            <div id="current-config-display" style="margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px; display: none;">
+                <strong>Current:</strong> <span id="current-config-text"></span>
+            </div>
+        </div>
+    </section>
+        </main>
+
+        <!-- Right Column - Widgets -->
+        <aside class="widget-panel">
+            <div class="calendar-widget">
+                <h3 id="calendar-header">Calendar</h3>
+                <div id="calendar-weekdays"></div>
+                <div id="calendar-days"></div>
+                <div id="calendar-events"></div>
+                <button id="add-event-btn" class="secondary-btn">Add Event</button>
+            </div>
+            
+            <div class="todo-widget">
+                <h3>Todo List</h3>
+                <div id="todo-list">
+                    <!-- Todo items will be dynamically added here -->
+                </div>
+                <div class="todo-input">
+                    <input type="text" id="new-todo-input" placeholder="Add new task...">
+                    <button id="add-todo-btn" class="secondary-btn">+</button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="components/sidebar.js"></script>
+    <script src="components/main-panel.js"></script>
+    <script src="components/calendar.js"></script>
+    <script src="components/todos.js"></script>
+    <script src="components/shortcuts.js"></script>
+    <script src="components/rule-manager.js"></script>
+    <script src="components/message-formatter.js"></script>
+    <script src="components/stats.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

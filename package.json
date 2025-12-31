@@ -1,0 +1,50 @@
+{
+  "name": "localagent-desktop",
+  "version": "1.0.0",
+  "description": "Standalone desktop AI agent with calendar integration and MCP tooling",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"npm run start\" \"npm run watch\"",
+    "build": "electron-builder",
+    "watch": "nodemon --watch src --ext js,html,css --exec \"npm start\""
+  },
+  "keywords": [
+    "electron",
+    "ai",
+    "calendar",
+    "mcp",
+    "desktop"
+  ],
+  "author": "LocalAgent",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4",
+    "electron-rebuild": "^3.2.9",
+    "nodemon": "^3.0.1"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "better-sqlite3": "^9.0.1",
+    "lru-cache": "^7.18.3",
+    "node-fetch": "^2.7.0"
+  },
+  "build": {
+    "appId": "com.localagent.desktop",
+    "productName": "LocalAgent Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "sign": false
+    },
+    "extraFiles": [],
+    "asar": true
+  }
+}

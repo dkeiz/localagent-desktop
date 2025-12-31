@@ -1,0 +1,310 @@
+/* Tools Documentation Styles */
+
+.tools-doc-header {
+  text-align: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.tools-doc-header h2 {
+  margin: 0 0 10px 0;
+  font-size: 28px;
+}
+
+.tools-doc-subtitle {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 14px;
+}
+
+.tools-search {
+  margin-bottom: 20px;
+}
+
+.tools-search input {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.tools-search input:focus {
+  border-color: #667eea;
+}
+
+.tools-category {
+  margin-bottom: 30px;
+}
+
+.tools-category-title {
+  font-size: 20px;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e0e0e0;
+  color: #333;
+}
+
+.tools-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 20px;
+}
+
+.tool-card {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  transition: box-shadow 0.3s, transform 0.2s;
+}
+
+.tool-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.tool-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.tool-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #667eea;
+  margin: 0;
+  font-family: 'Courier New', monospace;
+}
+
+.tool-test-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.tool-test-btn:hover {
+  background: #5568d3;
+}
+
+.tool-description {
+  color: #555;
+  margin: 10px 0;
+  line-height: 1.5;
+}
+
+.tool-technical {
+  color: #888;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.tool-parameters {
+  margin: 15px 0;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.tool-parameters strong {
+  color: #333;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.tool-parameters ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tool-parameters li {
+  margin-bottom: 12px;
+  padding: 8px;
+  background: white;
+  border-radius: 4px;
+  border-left: 3px solid #667eea;
+}
+
+.tool-parameters code {
+  font-weight: 600;
+  color: #667eea;
+  font-size: 14px;
+}
+
+.param-type {
+  color: #888;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.param-required {
+  background: #ff6b6b;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+.param-default {
+  color: #51cf66;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.param-desc {
+  color: #666;
+  font-size: 13px;
+  margin-top: 4px;
+  display: block;
+}
+
+.tool-example {
+  margin: 15px 0;
+}
+
+.tool-example strong {
+  color: #333;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.tool-example-code {
+  position: relative;
+  background: #2d2d2d;
+  color: #f8f8f2;
+  padding: 12px;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  overflow-x: auto;
+}
+
+.tool-example-code code {
+  color: #f8f8f2;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.3s;
+}
+
+.copy-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.tool-output {
+  margin: 15px 0;
+}
+
+.tool-output strong {
+  color: #333;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.tool-output pre {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #51cf66;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.tool-output code {
+  color: #333;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+}
+
+/* Responsive design */
+@media (max-width: 900px) {
+  .tools-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .tool-card {
+    background: #2d2d2d;
+    border-color: #444;
+  }
+
+  .tool-card:hover {
+    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
+  }
+
+  .tools-category-title {
+    color: #e0e0e0;
+    border-bottom-color: #444;
+  }
+
+  .tool-description {
+    color: #ccc;
+  }
+
+  .tool-technical {
+    color: #999;
+  }
+
+  .tool-parameters {
+    background: #1a1a1a;
+  }
+
+  .tool-parameters strong {
+    color: #e0e0e0;
+  }
+
+  .tool-parameters li {
+    background: #2d2d2d;
+    border-left-color: #667eea;
+  }
+
+  .param-desc {
+    color: #aaa;
+  }
+
+  .tool-output pre {
+    background: #1a1a1a;
+    border-left-color: #51cf66;
+  }
+
+  .tool-output code {
+    color: #e0e0e0;
+  }
+
+  .tools-search input {
+    background: #2d2d2d;
+    color: #e0e0e0;
+    border-color: #444;
+  }
+
+  .tools-search input:focus {
+    border-color: #667eea;
+  }
+}

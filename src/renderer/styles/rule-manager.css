@@ -1,0 +1,106 @@
+.prompt-rule-item .rule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.prompt-rule-item .rule-name-container {
+    flex-grow: 1;
+}
+
+.prompt-rule-item .rule-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.prompt-rule-item .rule-content-container {
+    margin-top: 0.5rem;
+    padding-left: 2rem; /* Indent content under the checkbox */
+}
+
+/* Styles for inline editing */
+.rule-name-input,
+.rule-content-input {
+    width: 100%;
+    padding: 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--accent-color);
+    background-color: var(--background-color);
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: inherit;
+}
+
+.rule-content-input {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.prompt-rule-item.editing {
+    background-color: var(--background-color-light);
+    border: 1px solid var(--accent-color-faded);
+    padding: 0.5rem;
+    margin: 0.5rem -0.5rem; /* Counteract padding to keep alignment */
+    border-radius: var(--border-radius);
+}
+
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--background-color-light);
+    color: var(--text-color);
+    padding: 2rem;
+    border-radius: 8px;
+    width: 500px;
+    max-width: 90%;
+    border: 1px solid var(--border-color);
+}
+
+.modal-content h3 {
+    margin-top: 0;
+}
+
+.modal-content form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    color: white;
+    z-index: 1001;
+    animation: slideIn 0.3s ease;
+}
+
+.notification.success { background-color: #28a745; }
+.notification.error { background-color: #dc3545; }
+.notification.info { background-color: #17a2b8; }
+
+@keyframes slideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
