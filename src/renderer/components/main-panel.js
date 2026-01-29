@@ -5,7 +5,7 @@ class MainPanel {
         this.recognition = null;
         this.synthesis = window.speechSynthesis;
         this.autoSpeak = false;
-        
+
         // Initialize immediately since we're already in DOMContentLoaded
         this.initializeEvents();
         this.initializeVoice();
@@ -33,20 +33,20 @@ class MainPanel {
         const voiceBtn = document.getElementById('voice-btn');
         const speakBtn = document.getElementById('speak-btn');
         const dropZone = document.getElementById('drop-zone');
-        
+
         sendBtn.addEventListener('click', () => this.sendMessage());
         if (newChatBtn) newChatBtn.addEventListener('click', () => this.newChat());
         attachBtn.addEventListener('click', () => this.attachFile());
         voiceBtn.addEventListener('click', () => this.toggleVoiceInput());
         speakBtn.addEventListener('click', () => this.toggleAutoSpeak());
-        
+
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.sendMessage();
             }
         });
-        
+
         // Drag and drop
         window.addEventListener('dragenter', (e) => {
             e.preventDefault();
@@ -54,15 +54,15 @@ class MainPanel {
                 dropZone.classList.add('active');
             }
         });
-        
+
         dropZone.addEventListener('dragover', (e) => e.preventDefault());
-        
+
         dropZone.addEventListener('dragleave', (e) => {
             if (e.target === dropZone) {
                 dropZone.classList.remove('active');
             }
         });
-        
+
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('active');
@@ -71,7 +71,7 @@ class MainPanel {
 
         // Settings tab events
         document.getElementById('save-prompt-btn').addEventListener('click', () => this.saveSystemPrompt());
-        
+
         // MCP tab events
         const addProxyBtn = document.getElementById('add-proxy-btn');
         if (addProxyBtn) {
@@ -80,7 +80,7 @@ class MainPanel {
 
         // Listen for updates from main process
         this.setupEventListeners();
-        
+
         // Reinitialize context slider when API tab is opened
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -98,13 +98,13 @@ class MainPanel {
             this.recognition.continuous = false;
             this.recognition.interimResults = false;
             this.recognition.lang = 'en-US';
-            
+
             this.recognition.onresult = (event) => {
                 const transcript = event.results[0][0].transcript;
                 document.getElementById('message-input').value = transcript;
                 document.getElementById('voice-btn').classList.remove('recording');
             };
-            
+
             this.recognition.onerror = (event) => {
                 console.error('Speech recognition error:', event.error);
                 document.getElementById('voice-btn').classList.remove('recording');
@@ -112,7 +112,7 @@ class MainPanel {
                     this.showNotification(`Voice error: ${event.error}`, 'error');
                 }
             };
-            
+
             this.recognition.onend = () => {
                 document.getElementById('voice-btn').classList.remove('recording');
             };
@@ -120,13 +120,13 @@ class MainPanel {
             console.warn('Speech recognition not supported in this browser');
         }
     }
-    
+
     toggleVoiceInput() {
         if (!this.recognition) {
             this.showNotification('Voice input not supported in this browser. Try Chrome/Edge.', 'error');
             return;
         }
-        
+
         const voiceBtn = document.getElementById('voice-btn');
         if (voiceBtn.classList.contains('recording')) {
             this.recognition.stop();
@@ -141,7 +141,7 @@ class MainPanel {
             }
         }
     }
-    
+
     toggleAutoSpeak() {
         this.autoSpeak = !this.autoSpeak;
         const speakBtn = document.getElementById('speak-btn');
@@ -149,13 +149,13 @@ class MainPanel {
         speakBtn.title = this.autoSpeak ? 'Auto-speak ON' : 'Auto-speak OFF';
         this.showNotification(`Auto-speak ${this.autoSpeak ? 'enabled' : 'disabled'}`);
     }
-    
+
     speakText(text) {
         this.synthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         this.synthesis.speak(utterance);
     }
-    
+
     attachFile() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -163,22 +163,22 @@ class MainPanel {
         input.onchange = (e) => this.handleFileDrop(e.target.files);
         input.click();
     }
-    
+
     async handleFileDrop(files) {
         for (const file of files) {
             const filePath = file.path || file.name;
             const ext = file.name.split('.').pop().toLowerCase();
             const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext);
             const isAudio = ['mp3', 'wav', 'ogg', 'm4a'].includes(ext);
-            
+
             // Show user message with file attachment
             this.addMessageWithAttachment('user', `Analyze this file`, {
                 name: file.name,
                 type: isImage ? 'image' : isAudio ? 'audio' : 'document'
             });
-            
+
             const loadingId = this.addMessage('assistant', '...');
-            
+
             // Process file
             try {
                 const result = await window.electronAPI.handleFileDrop(filePath);
@@ -194,7 +194,7 @@ class MainPanel {
             }
         }
     }
-    
+
     showAttachedFile(fileName) {
         const container = document.querySelector('.input-container');
         const fileDiv = document.createElement('div');
@@ -209,7 +209,7 @@ class MainPanel {
     async sendMessage() {
         const messageInput = document.getElementById('message-input');
         const message = messageInput.value.trim();
-        
+
         if (!message && this.attachedFiles.length === 0) return;
 
         // Add user message to UI immediately
@@ -241,15 +241,15 @@ class MainPanel {
         const messagesContainer = document.getElementById('messages-container');
         const messageWrapper = document.createElement('div');
         messageWrapper.className = `message-wrapper ${role}`;
-        
+
         const messageDiv = document.createElement('div');
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
         messageDiv.className = `message ${role}`;
         messageDiv.textContent = content;
-        
+
         messageWrapper.appendChild(messageDiv);
-        
+
         // Add speak button outside bubble for assistant messages
         if (role === 'assistant' && content !== '...') {
             const speakIcon = document.createElement('button');
@@ -262,19 +262,19 @@ class MainPanel {
             };
             messageWrapper.appendChild(speakIcon);
         }
-        
+
         messagesContainer.appendChild(messageWrapper);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         return messageId;
     }
-    
+
     addMessageWithAttachment(role, content, attachment) {
         const messagesContainer = document.getElementById('messages-container');
         const messageDiv = document.createElement('div');
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
         messageDiv.className = `message ${role}`;
-        
+
         // Create attachment icon
         const attachmentIcon = document.createElement('span');
         attachmentIcon.className = 'attachment-icon';
@@ -285,14 +285,14 @@ class MainPanel {
         };
         attachmentIcon.innerHTML = icons[attachment.type] || '📎';
         attachmentIcon.title = attachment.name;
-        
+
         // Create text content
         const textSpan = document.createElement('span');
         textSpan.textContent = content;
-        
+
         messageDiv.appendChild(attachmentIcon);
         messageDiv.appendChild(textSpan);
-        
+
         messagesContainer.appendChild(messageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         return messageId;
@@ -306,24 +306,24 @@ class MainPanel {
     updateContextUsage(response) {
         const contextDiv = document.getElementById('context-usage');
         if (!contextDiv) return;
-        
+
         if (!response || !response.usage) {
             contextDiv.textContent = '';
             return;
         }
-        
+
         const { prompt_tokens, total_tokens } = response.usage;
         const contextLength = response.context_length || 4096;
-        
+
         // Store for later use
         this.lastContextUsage = { prompt_tokens, total_tokens, contextLength };
-        
+
         // Format to k notation
         const formatK = (num) => (num / 1000).toFixed(1) + 'k';
-        
+
         contextDiv.textContent = `${formatK(total_tokens)}/${formatK(contextLength)}`;
         contextDiv.title = `Prompt: ${prompt_tokens} tokens, Total: ${total_tokens} tokens`;
-        
+
         // Color code based on usage
         const percentage = (total_tokens / contextLength) * 100;
         if (percentage > 80) {
@@ -342,18 +342,18 @@ class MainPanel {
                 this.updateContextUsage(null);
                 return;
             }
-            
+
             // Estimate tokens: ~1.37 tokens per word
             let totalTokens = 0;
             conversations.forEach(conv => {
                 const words = conv.content.split(/\s+/).length;
                 totalTokens += Math.ceil(words * 1.37);
             });
-            
+
             // Get context window setting
             const contextWindow = await window.electronAPI.getSetting('context_window');
             const contextLength = contextWindow ? parseInt(contextWindow) : 8192;
-            
+
             // Update display
             this.updateContextUsage({
                 usage: {
@@ -362,13 +362,13 @@ class MainPanel {
                 },
                 context_length: contextLength
             });
-            
+
             console.log(`Context loaded: ${totalTokens}/${contextLength} tokens`);
         } catch (error) {
             console.error('Error calculating context:', error);
         }
     }
-    
+
     showStoredContextUsage() {
         if (this.lastContextUsage) {
             this.updateContextUsage({ usage: this.lastContextUsage, context_length: this.lastContextUsage.contextLength });
@@ -390,17 +390,17 @@ class MainPanel {
     initContextSettings() {
         const contextSlider = document.getElementById('context-slider');
         const contextDisplay = document.getElementById('context-display');
-        
+
         if (!contextSlider || !contextDisplay) {
             console.warn('Context slider elements not found');
             return;
         }
-        
+
         console.log('✓ Context slider found, initializing...');
-        
+
         // Set initial display
         this.updateContextDisplay(contextSlider.value);
-        
+
         // Load saved setting
         window.electronAPI.getSetting('context_window')
             .then(savedValue => {
@@ -414,7 +414,7 @@ class MainPanel {
                 console.error('✗ Error loading setting:', error);
             });
     }
-    
+
     async saveContextSize(value) {
         try {
             console.log('Saving:', value);
@@ -426,12 +426,12 @@ class MainPanel {
             this.showNotification(`Save failed: ${error.message}`, 'error');
         }
     }
-    
+
     updateContextDisplay(value) {
         const numValue = parseInt(value);
         const contextDisplay = document.getElementById('context-display');
         if (!contextDisplay) return;
-        
+
         const wordEstimate = Math.round(numValue / 1.37);
         contextDisplay.textContent = `${numValue} tokens (≈${wordEstimate} words)`;
         console.log('✓ Display updated:', numValue);
@@ -440,7 +440,7 @@ class MainPanel {
     async saveSystemPrompt() {
         const promptTextarea = document.getElementById('system-prompt');
         const prompt = promptTextarea.value.trim();
-        
+
         if (!prompt) return;
 
         try {
@@ -471,21 +471,21 @@ class MainPanel {
             this.showToolPermissionDialog(request);
         });
     }
-    
+
     async initializeSession() {
         try {
             const sessions = await window.electronAPI.getChatSessions(null, 1);
-            
+
             if (sessions && sessions.length > 0) {
                 const sessionId = sessions[0].id;
                 await window.electronAPI.switchChatSession(sessionId);
-                
+
                 const conversations = await window.electronAPI.loadChatSession(sessionId);
                 const messagesContainer = document.getElementById('messages-container');
                 if (!messagesContainer) return;
-                
+
                 messagesContainer.innerHTML = '';
-                
+
                 // Match sidebar's approach - create simple message divs
                 conversations.forEach(conv => {
                     const messageDiv = document.createElement('div');
@@ -493,7 +493,7 @@ class MainPanel {
                     messageDiv.textContent = conv.content;
                     messagesContainer.appendChild(messageDiv);
                 });
-                
+
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 await this.calculateContextUsage();
             }
@@ -511,7 +511,7 @@ class MainPanel {
             conversations.forEach(conv => {
                 this.addMessage(conv.role, conv.content);
             });
-            
+
             // Calculate context after loading
             await this.calculateContextUsage();
         } catch (error) {
@@ -523,10 +523,10 @@ class MainPanel {
 
     showToolPermissionDialog(request) {
         const isCustomTool = request.toolName === 'create_tool';
-        
+
         const dialog = document.createElement('div');
         dialog.className = 'tool-permission-overlay';
-        
+
         if (isCustomTool) {
             const params = request.params;
             const codeHtml = this.escapeHtml(params.code || '');
@@ -774,8 +774,8 @@ class MainPanel {
         `;
 
         const bgColor = type === 'success' ? '#28a745' :
-                        type === 'error' ? '#dc3545' :
-                        type === 'info' ? '#17a2b8' : '#6c757d';
+            type === 'error' ? '#dc3545' :
+                type === 'info' ? '#17a2b8' : '#6c757d';
 
         notification.style.backgroundColor = bgColor;
         notification.textContent = message;
@@ -792,7 +792,7 @@ class MainPanel {
 // Initialize main panel when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
     window.mainPanel = new MainPanel();
-    
+
     // Initialize API settings
     const llmProviderSelect = document.getElementById('llm-provider-select');
     const llmModelSelect = document.getElementById('llm-model-select');
@@ -809,7 +809,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         console.log('Loading models for:', provider);
-        
+
         // Add loading spinner
         llmModelSelect.innerHTML = `
             <option disabled style="display: flex; align-items: center; gap: 8px;">
@@ -817,7 +817,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 Loading models...
             </option>
         `;
-        
+
         try {
             const models = await window.electronAPI.llm.getModels(provider);
             console.log('Models received:', models);
@@ -837,7 +837,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             llmModelSelect.innerHTML = '<option>Failed to load models</option>';
         }
     };
-    
+
     // Add CSS animation for the spinner
     const style = document.createElement('style');
     style.textContent = `
@@ -849,7 +849,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const updateProviderSettings = async (provider) => {
         providerSettingsContainer.innerHTML = '';
-        
+
         if (provider === 'openrouter') {
             providerSettingsContainer.innerHTML = `
                 <label for="openrouter-key">OpenRouter API Key</label>
@@ -875,7 +875,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div id="qwen-api-status" style="margin-top: 5px; font-size: 0.9em;"></div>
                 </div>
             `;
-            
+
             // Add event listeners for radio buttons
             setTimeout(() => {
                 const radios = document.getElementsByName('qwen-mode');
@@ -883,7 +883,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const oauthSettings = document.getElementById('qwen-oauth-settings');
                 const fetchBtn = document.getElementById('qwen-fetch-oauth');
                 const oauthStatus = document.getElementById('qwen-oauth-status');
-                
+
                 radios.forEach(radio => {
                     radio.addEventListener('change', (e) => {
                         if (e.target.value === 'oauth') {
@@ -895,7 +895,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     });
                 });
-                
+
                 if (fetchBtn) {
                     fetchBtn.addEventListener('click', async () => {
                         try {
@@ -904,7 +904,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 oauthStatus.textContent = '✓ OAuth credentials loaded';
                                 oauthStatus.style.color = '#28a745';
                                 window.mainPanel.showNotification('OAuth credentials loaded!');
-                                
+
                                 // Fetch models dynamically
                                 llmModelSelect.innerHTML = '<option>Loading models...</option>';
                                 try {
@@ -930,25 +930,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     });
                 }
-                
+
                 // Add verification handler for API key
                 const verifyBtn = document.getElementById('verify-api-key');
                 if (verifyBtn) {
                     verifyBtn.addEventListener('click', async () => {
                         const apiKey = document.getElementById('qwen-key').value;
                         const statusDiv = document.getElementById('qwen-api-status');
-                        
+
                         if (!apiKey) {
                             statusDiv.textContent = 'Please enter an API key';
                             statusDiv.style.color = '#dc3545';
                             return;
                         }
-                        
+
                         // Show loading state
                         verifyBtn.disabled = true;
                         verifyBtn.textContent = 'Verifying...';
                         statusDiv.textContent = '';
-                        
+
                         try {
                             const result = await window.electronAPI.verifyQwenKey(apiKey);
                             if (result.success) {
@@ -977,7 +977,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <input type="text" id="lmstudio-url" placeholder="http://localhost:1234">
             `;
         }
-        
+
         // Load saved settings
         try {
             const config = await window.electronAPI.llm.getConfig();
@@ -991,13 +991,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const mode = config.mode || 'cli';
                         const modeRadio = document.querySelector(`input[name="qwen-mode"][value="${mode}"]`);
                         if (modeRadio) modeRadio.checked = true;
-                        
+
                         // Show appropriate settings
                         const apiSettings = document.getElementById('qwen-api-settings');
                         const cliSettings = document.getElementById('qwen-cli-settings');
                         if (apiSettings) apiSettings.style.display = mode === 'api' ? 'block' : 'none';
                         if (cliSettings) cliSettings.style.display = mode === 'cli' ? 'block' : 'none';
-                        
+
                         // Set API key if available
                         if (config.apiKey) {
                             const input = document.getElementById('qwen-key');
@@ -1026,16 +1026,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     llmConfigSaveButton.addEventListener('click', async () => {
         const provider = llmProviderSelect.value;
         const model = llmModelSelect.value;
-        
+
         // Validate provider
         if (!provider || provider === 'Select a Provider...') {
             alert('Please select a provider');
             return;
         }
-        
+
         // Build config object
         const config = { provider };
-        
+
         // Handle provider-specific settings
         if (provider === 'ollama') {
             if (!model || model === 'Select a Model...') {
@@ -1053,27 +1053,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             config.apiKey = apiKey;
             if (model && model !== 'Select a Model...') config.model = model;
         }
-                else if (provider === 'qwen') {
-                    const mode = document.querySelector('input[name="qwen-mode"]:checked')?.value;
-                    config.mode = mode;  // Save the mode (cli or api)
-                    
-                    if (mode === 'api') {
-                        const apiKey = document.getElementById('qwen-key')?.value?.trim();
-                        if (!apiKey) {
-                            alert('Please enter Qwen API key');
-                            return;
-                        }
-                        config.apiKey = apiKey;
-                        
-                        // Model is required only for API mode
-                        if (!model || model === 'Select a Model...') {
-                            alert('Please select a model (e.g., qwen-max, qwen-plus, qwen-turbo)');
-                            return;
-                        }
-                    }
-                    // For CLI mode, model is not required
-                    config.model = model;
+        else if (provider === 'qwen') {
+            const mode = document.querySelector('input[name="qwen-mode"]:checked')?.value;
+            config.mode = mode;  // Save the mode (cli or api)
+
+            if (mode === 'api') {
+                const apiKey = document.getElementById('qwen-key')?.value?.trim();
+                if (!apiKey) {
+                    alert('Please enter Qwen API key');
+                    return;
                 }
+                config.apiKey = apiKey;
+
+                // Model is required only for API mode
+                if (!model || model === 'Select a Model...') {
+                    alert('Please select a model (e.g., qwen-max, qwen-plus, qwen-turbo)');
+                    return;
+                }
+            }
+            // For CLI mode, model is not required
+            config.model = model;
+        }
         else if (provider === 'lmstudio') {
             if (!model || model === 'Select a Model...') {
                 alert('Please select a model');
@@ -1083,11 +1083,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const url = document.getElementById('lmstudio-url')?.value?.trim();
             if (url) config.url = url;
         }
-        
+
         // Save configuration
         try {
             await window.electronAPI.llm.saveConfig(config);
-            
+
             // Display current config
             const display = document.getElementById('current-config-display');
             const text = document.getElementById('current-config-text');
@@ -1100,7 +1100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     text.textContent = `Provider: ${providerName} (OAuth)`;
                 }
             }
-            
+
             window.mainPanel.showNotification('Configuration saved!');
         } catch (error) {
             console.error('Save error:', error);
@@ -1116,7 +1116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             option.textContent = provider.charAt(0).toUpperCase() + provider.slice(1);
             llmProviderSelect.appendChild(option);
         });
-        
+
         // Load saved configuration
         const config = await window.electronAPI.llm.getConfig();
         if (config && config.provider) {
@@ -1126,7 +1126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (config.model && Array.from(llmModelSelect.options).some(o => o.value === config.model)) {
                 llmModelSelect.value = config.model;
             }
-            
+
             // Display current config
             const configDisplay = document.getElementById('current-config-display');
             const configText = document.getElementById('current-config-text');
@@ -1136,10 +1136,88 @@ document.addEventListener('DOMContentLoaded', async () => {
                 configText.textContent = `Provider: ${providerName}, Model: "${config.model}"`;
             }
         }
+
+        // Initialize chat provider/model selects (compact version in chat input)
+        const chatProviderSelect = document.getElementById('chat-provider-select');
+        const chatModelSelect = document.getElementById('chat-model-select');
+
+        if (chatProviderSelect && chatModelSelect) {
+            // Populate chat provider select
+            chatProviderSelect.innerHTML = '';
+            providers.forEach(provider => {
+                const option = document.createElement('option');
+                option.value = provider;
+                option.textContent = provider.charAt(0).toUpperCase() + provider.slice(1);
+                chatProviderSelect.appendChild(option);
+            });
+
+            // Sync with saved config
+            if (config && config.provider) {
+                chatProviderSelect.value = config.provider;
+            }
+
+            // Function to sync model options to chat select
+            const syncModelsToChat = () => {
+                chatModelSelect.innerHTML = '';
+                Array.from(llmModelSelect.options).forEach(opt => {
+                    const newOpt = document.createElement('option');
+                    newOpt.value = opt.value;
+                    newOpt.textContent = opt.textContent;
+                    newOpt.disabled = opt.disabled;
+                    newOpt.selected = opt.selected;
+                    chatModelSelect.appendChild(newOpt);
+                });
+            };
+
+            // Initial sync
+            syncModelsToChat();
+
+            // Function to save config when changed
+            const saveCurrentConfig = async () => {
+                const provider = chatProviderSelect.value;
+                const model = chatModelSelect.value;
+                if (provider && model && model !== 'Select a Model...' && model !== 'Select a provider first') {
+                    await window.electronAPI.llm.saveConfig({ provider, model });
+                    window.mainPanel.showNotification(`Switched to ${model}`, 'info');
+                }
+            };
+
+            // Chat provider change -> sync to API tab and load models
+            chatProviderSelect.addEventListener('change', async (e) => {
+                const provider = e.target.value;
+                llmProviderSelect.value = provider;
+                await updateProviderSettings(provider);
+                await loadModelsForProvider(provider);
+                syncModelsToChat();
+            });
+
+            // Chat model change -> sync to API tab and save
+            chatModelSelect.addEventListener('change', async (e) => {
+                llmModelSelect.value = e.target.value;
+                await saveCurrentConfig();
+            });
+
+            // API tab provider change -> sync to chat
+            llmProviderSelect.addEventListener('change', () => {
+                chatProviderSelect.value = llmProviderSelect.value;
+                // Models will be loaded by existing handler, then synced via MutationObserver
+            });
+
+            // Watch for model list changes in API tab and sync to chat
+            const modelObserver = new MutationObserver(() => {
+                syncModelsToChat();
+            });
+            modelObserver.observe(llmModelSelect, { childList: true });
+
+            // API tab model change -> sync to chat
+            llmModelSelect.addEventListener('change', () => {
+                chatModelSelect.value = llmModelSelect.value;
+            });
+        }
     } catch (error) {
         console.error('Failed to initialize API settings:', error);
     }
-    
+
     // Load previous chat after all initialization is complete
     await window.mainPanel.initializeSession();
 });

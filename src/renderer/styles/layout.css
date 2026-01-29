@@ -14,7 +14,8 @@
     padding: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;  /* Reduced vertical spacing */
+    gap: 0.5rem;
+    /* Reduced vertical spacing */
 }
 
 /* Collapsible sections */
@@ -61,14 +62,17 @@
 .nav-tabs {
     display: flex;
     flex-direction: column;
-    gap: 0.12rem;  /* Reduced gap between buttons */
+    gap: 0.12rem;
+    /* Reduced gap between buttons */
 }
 
 .nav-btn {
     display: flex;
     align-items: center;
-    gap: 0.1rem;  /* Reduced icon-text gap */
-    padding: 0.1rem 0.1rem;  /* More compact padding */
+    gap: 0.1rem;
+    /* Reduced icon-text gap */
+    padding: 0.1rem 0.1rem;
+    /* More compact padding */
     border: none;
     background: transparent;
     color: var(--text-secondary);
@@ -76,8 +80,10 @@
     border-radius: var(--border-radius);
     transition: all 0.2s ease;
     text-align: left;
-    font-size: 0.85rem;  /* Smaller font */
-    min-height: 16px;  /* Fixed height for consistent compact look */
+    font-size: 0.85rem;
+    /* Smaller font */
+    min-height: 16px;
+    /* Fixed height for consistent compact look */
 }
 
 .nav-btn:hover {
@@ -147,6 +153,74 @@
     font-size: 0.9rem;
 }
 
+/* Chat input row with model selects */
+.chat-input-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+    width: 100%;
+}
+
+/* Vertical column for provider/model controls */
+.chat-controls-column {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+/* Provider row with buttons */
+.chat-provider-row {
+    display: flex;
+    gap: 0.2rem;
+    align-items: center;
+}
+
+/* Compact select dropdowns for chat */
+.compact-select {
+    padding: 0.25rem 0.35rem;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--card-bg);
+    cursor: pointer;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.compact-select.model-select {
+    max-width: 160px;
+    width: 100%;
+}
+
+.compact-select:hover {
+    border-color: var(--primary-color);
+}
+
+.compact-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
+}
+
+/* Small icon buttons for chat input */
+.icon-btn-sm {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0.15rem;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+}
+
+.icon-btn-sm:hover {
+    opacity: 1;
+}
+
 /* Settings and configuration styles */
 .settings-group {
     display: flex;
@@ -154,11 +228,14 @@
     gap: 1rem;
 }
 
-.mcp-tools-list, .llm-settings, .api-providers {
+.mcp-tools-list,
+.llm-settings,
+.api-providers {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    height: 100%; /* Make it fill the tab */
+    height: 100%;
+    /* Make it fill the tab */
 }
 
 /* New styles for LLM Settings tab */
@@ -172,13 +249,16 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    flex-grow: 1; /* Allow this to grow */
-    min-height: 0; /* Needed for flex-grow in a flex column */
+    flex-grow: 1;
+    /* Allow this to grow */
+    min-height: 0;
+    /* Needed for flex-grow in a flex column */
 }
 
 #system-prompt {
     width: 100%;
-    flex-grow: 1; /* Make textarea fill available space */
+    flex-grow: 1;
+    /* Make textarea fill available space */
     resize: vertical;
     min-height: 100px;
     padding: 0.75rem;
@@ -188,8 +268,10 @@
 }
 
 #save-prompt-btn {
-    align-self: flex-end; /* Move button to the right */
-    padding: 0.5rem 1rem; /* Make button more compact */
+    align-self: flex-end;
+    /* Move button to the right */
+    padding: 0.5rem 1rem;
+    /* Make button more compact */
 }
 
 .custom-rules-container {
@@ -259,12 +341,14 @@
 }
 
 
-.calendar-widget h3, .todo-widget h3 {
+.calendar-widget h3,
+.todo-widget h3 {
     margin: 0 0 1rem 0;
     color: var(--text-primary);
 }
 
-#calendar-events, #todo-list {
+#calendar-events,
+#todo-list {
     flex: 1;
     overflow-y: auto;
     margin-bottom: 1rem;
@@ -484,18 +568,35 @@
 
 /* Animations */
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @keyframes slideIn {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
+    from {
+        transform: translateX(100%);
+    }
+
+    to {
+        transform: translateX(0);
+    }
 }
 
 @keyframes slideOut {
-    from { transform: translateX(0); }
-    to { transform: translateX(100%); }
+    from {
+        transform: translateX(0);
+    }
+
+    to {
+        transform: translateX(100%);
+    }
 }
 
 .message {
@@ -562,7 +663,7 @@
     padding: 4px 8px;
     font-family: monospace;
     font-size: 0.85rem;
-    box-shadow: 0 2px 0 rgba(0,0,0,0.1);
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.1);
 }
 
 .shortcut-item span {
@@ -607,7 +708,8 @@
 .tool-input-row {
     display: flex;
     gap: 0.5rem;
-    align-items: flex-end; /* Align to bottom for better vertical alignment */
+    align-items: flex-end;
+    /* Align to bottom for better vertical alignment */
     margin-bottom: 0.125rem;
 }
 
@@ -620,8 +722,10 @@
 
 .tool-input-row textarea {
     flex: 1;
-    min-height: 2rem; /* Smaller default height */
-    margin: 0; /* Remove margin */
+    min-height: 2rem;
+    /* Smaller default height */
+    margin: 0;
+    /* Remove margin */
     font-size: 0.85rem;
 }
 
@@ -645,7 +749,8 @@
     margin-top: 0.125rem;
     padding: 0.25rem;
     border-radius: 4px;
-    min-height: 20px; /* Much smaller default height */
+    min-height: 20px;
+    /* Much smaller default height */
     font-size: 0.85rem;
 }
 
@@ -667,7 +772,7 @@
 .tool-result pre {
     margin: 0.5rem 0 0 0;
     padding: 0.5rem;
-    background: rgba(0,0,0,0.05);
+    background: rgba(0, 0, 0, 0.05);
     border-radius: 4px;
     overflow-x: auto;
 }
@@ -678,7 +783,8 @@
     border-radius: var(--border-radius);
     padding: 0.5rem;
     margin-top: 0.5rem;
-    max-height: calc(100vh - 300px); /* Flexible but still reasonable max */
+    max-height: calc(100vh - 300px);
+    /* Flexible but still reasonable max */
     overflow-y: auto;
 }
 
@@ -696,7 +802,8 @@
     padding: 0.75rem;
     transition: all 0.2s ease;
     cursor: default;
-    min-height: 120px; /* More compact card height */
+    min-height: 120px;
+    /* More compact card height */
     display: flex;
     flex-direction: column;
 }
@@ -704,7 +811,7 @@
 .mcp-tool-card:hover {
     border-color: var(--accent-color);
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .tool-card-header {
@@ -729,20 +836,23 @@
     color: var(--text-secondary);
     line-height: 1.4;
     display: -webkit-box;
-    -webkit-line-clamp: 3; /* Show more lines */
+    -webkit-line-clamp: 3;
+    /* Show more lines */
     -webkit-box-orient: vertical;
     overflow: hidden;
-    flex-grow: 1; /* Take available space */
+    flex-grow: 1;
+    /* Take available space */
 }
 
 .tool-card-params {
     font-size: 0.85rem;
     color: var(--text-secondary);
     font-family: monospace;
-    background: rgba(0,0,0,0.05);
+    background: rgba(0, 0, 0, 0.05);
     padding: 0.25rem 0.5rem;
     border-radius: 3px;
-    margin-top: auto; /* Push to bottom */
+    margin-top: auto;
+    /* Push to bottom */
     flex-shrink: 0;
 }
 
@@ -770,7 +880,8 @@
     bottom: 0;
     background-color: #ccc;
     transition: 0.3s;
-    border-radius: 12px; /* Adjusted for 18px height */
+    border-radius: 12px;
+    /* Adjusted for 18px height */
 }
 
 .toggle-slider:before {
@@ -785,16 +896,16 @@
     border-radius: 50%;
 }
 
-.tool-toggle input:checked + .toggle-slider {
+.tool-toggle input:checked+.toggle-slider {
     background-color: var(--primary-color);
 }
 
-.tool-toggle input:checked + .toggle-slider:before {
+.tool-toggle input:checked+.toggle-slider:before {
     transform: translateX(20px);
 }
 
-.tool-toggle input:hover + .toggle-slider {
-    box-shadow: 0 0 4px rgba(0,0,0,0.2);
+.tool-toggle input:hover+.toggle-slider {
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
 }
 
 /* Custom Tool Card Tooltips */
@@ -874,15 +985,19 @@
 .chat-session-compact {
     display: flex;
     align-items: center;
-    gap: 0.2rem;  /* Reduced gap */
-    padding: 0.2rem 0.3rem;  /* More compact padding */
+    gap: 0.2rem;
+    /* Reduced gap */
+    padding: 0.2rem 0.3rem;
+    /* More compact padding */
     background: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 3px;
     cursor: pointer;
     transition: all 0.2s;
-    font-size: 0.7rem;  /* Smaller font */
-    line-height: 1.2;  /* Tighter line height */
+    font-size: 0.7rem;
+    /* Smaller font */
+    line-height: 1.2;
+    /* Tighter line height */
 }
 
 .chat-session-compact:hover {
@@ -1050,8 +1165,15 @@
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
 }
 
 /* Attached file preview */
@@ -1104,8 +1226,10 @@
     transition: opacity 0.2s;
     padding: 0.25rem;
     margin: 0;
-    margin-left: 8px; /* Space between bubble and button */
-    flex-shrink: 0; /* Prevent button from shrinking */
+    margin-left: 8px;
+    /* Space between bubble and button */
+    flex-shrink: 0;
+    /* Prevent button from shrinking */
 }
 
 .message-wrapper.assistant:hover .message-speak-btn {
@@ -1177,11 +1301,11 @@
 #context-slider::-webkit-slider-track {
     width: 100%;
     height: 8px;
-    background: linear-gradient(90deg, 
-        #28a745 0%, 
-        #28a745 33%, 
-        #ffc107 66%, 
-        #dc3545 100%);
+    background: linear-gradient(90deg,
+            #28a745 0%,
+            #28a745 33%,
+            #ffc107 66%,
+            #dc3545 100%);
     border-radius: 4px;
 }
 
@@ -1194,22 +1318,22 @@
     background: var(--primary-color);
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 #context-slider::-webkit-slider-thumb:hover {
     transform: scale(1.15);
-    box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
 }
 
 #context-slider::-moz-range-track {
     width: 100%;
     height: 8px;
-    background: linear-gradient(90deg, 
-        #28a745 0%, 
-        #28a745 33%, 
-        #ffc107 66%, 
-        #dc3545 100%);
+    background: linear-gradient(90deg,
+            #28a745 0%,
+            #28a745 33%,
+            #ffc107 66%,
+            #dc3545 100%);
     border-radius: 4px;
 }
 
@@ -1221,12 +1345,12 @@
     cursor: pointer;
     transition: all 0.2s ease;
     border: none;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 #context-slider::-moz-range-thumb:hover {
     transform: scale(1.15);
-    box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
 }
 
 
@@ -1244,4 +1368,97 @@
 .delete-tool-btn:hover {
     opacity: 1;
     color: #dc3545;
+}
+
+/* ===========================================
+   Collapsible Panel System
+   =========================================== */
+
+/* Update grid for collapsible panels */
+.app-container {
+    display: grid;
+    grid-template-columns: var(--sidebar-width, 15%) 1fr var(--widget-width, 25%);
+    grid-template-rows: 1fr;
+    height: 100vh;
+    overflow: hidden;
+    transition: grid-template-columns 0.3s ease;
+}
+
+.app-container.left-collapsed {
+    --sidebar-width: 48px;
+}
+
+.app-container.right-collapsed {
+    --widget-width: 48px;
+}
+
+/* Panel Toggle Buttons */
+.panel-toggle-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-bottom: 0.5rem;
+}
+
+.panel-toggle-btn:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+    border-color: var(--primary-color);
+}
+
+.panel-toggle-btn:active {
+    transform: scale(0.95);
+}
+
+/* Left sidebar toggle positioning */
+.left-toggle {
+    align-self: flex-start;
+}
+
+/* Right panel toggle positioning */
+.right-toggle {
+    align-self: flex-start;
+}
+
+/* Collapsed sidebar state */
+.sidebar.collapsed {
+    padding: 0.5rem;
+    overflow: hidden;
+}
+
+.sidebar.collapsed .logo,
+.sidebar.collapsed .collapsible-section,
+.sidebar.collapsed .sidebar-footer {
+    display: none;
+}
+
+.sidebar.collapsed .panel-toggle-btn {
+    margin: 0 auto;
+}
+
+/* Collapsed widget panel state */
+.widget-panel.collapsed {
+    padding: 0.5rem;
+    overflow: hidden;
+}
+
+.widget-panel.collapsed .calendar-widget,
+.widget-panel.collapsed .todo-widget {
+    display: none;
+}
+
+.widget-panel.collapsed .panel-toggle-btn {
+    margin: 0 auto;
 }
