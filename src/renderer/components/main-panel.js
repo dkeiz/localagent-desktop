@@ -411,7 +411,8 @@ class MainPanel {
 
     async newChat() {
         try {
-            await window.electronAPI.clearConversations();
+            // Create a completely new session (not just clear current)
+            await window.electronAPI.invoke('create-chat-session');
             document.getElementById('messages-container').innerHTML = '';
             if (window.sidebar) window.sidebar.loadChatSessions();
             this.showNotification('New chat started');

@@ -293,13 +293,15 @@ class AIService {
     const modelType = await this.db.getSetting('llm.modelType') || 'local';
     let contextLength = null;
 
-    // Only apply context window setting for local models
+    // Apply context window setting based on model type
     if (modelType === 'local') {
       const userContextWindow = await this.db.getSetting('context_window');
       contextLength = userContextWindow ? parseInt(userContextWindow) : 8192;
       console.log('Using context window for local model:', contextLength);
     } else {
-      console.log('Using default context window for cloud model');
+      // Cloud models get 32k context by default (can be expensive but capable)
+      contextLength = 32768;
+      console.log('Using context window for cloud model:', contextLength);
     }
 
     const requestBody = {
