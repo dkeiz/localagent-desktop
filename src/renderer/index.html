@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LocalAgent Desktop</title>
-    <link rel="stylesheet" href="styles/layout.css">
-    <link rel="stylesheet" href="styles/theme.css">
-    <link rel="stylesheet" href="styles/buttons.css">
-    <link rel="stylesheet" href="styles/rule-manager.css">
+    <link rel="stylesheet" href="styles/layout.css?v=3">
+    <link rel="stylesheet" href="styles/theme.css?v=3">
+    <link rel="stylesheet" href="styles/buttons.css?v=3">
+    <link rel="stylesheet" href="styles/rule-manager.css?v=3">
 </head>
 <body>
     <div class="app-container">
@@ -137,24 +137,22 @@
                 </div>
             </section>
 
-            <section id="llm-tab" class="tab-content">
-                <h2>LLM Configuration</h2>
-                <div class="llm-settings">
-                    <div class="system-prompt-container">
-                        <h3>System Prompt</h3>
-                        <textarea id="system-prompt" placeholder="Enter system prompt..."></textarea>
-                        <button id="save-prompt-btn" class="primary-btn">Save System Prompt</button>
+            <section id="llm-tab" class="tab-content" style="padding: 0.25rem;">
+                <h2 style="margin: 0 0 0.25rem 0; font-size: 1.2rem;">LLM Configuration</h2>
+                <div class="llm-settings" style="display: flex; flex-direction: column; gap: 0.25rem;">
+                    <div class="system-prompt-container" style="margin: 0;">
+                        <h3 style="margin: 0 0 0.1rem 0; font-size: 1rem;">System Prompt</h3>
+                        <textarea id="system-prompt" placeholder="Enter system prompt..." style="margin: 0 0 0.1rem 0; width: 100%; min-height: 80px;"></textarea>
+                        <button id="save-prompt-btn" class="primary-btn" style="margin: 0;">Save System Prompt</button>
                     </div>
                     
-                    <hr style="margin: 2rem 0;">
-                    
-                    <div class="custom-rules-container">
-                        <h3>Custom Rules</h3>
-                        <p style="color: #666; margin-bottom: 1rem;">Add custom rules that can be toggled on/off (e.g., "Answer only in 20 words")</p>
-                        <div id="prompt-rules-list" class="prompt-rules-container scrollable">
+                    <div class="custom-rules-container" style="margin: 0;">
+                        <h3 style="margin: 0 0 0.25rem 0; font-size: 1rem;">Custom Rules</h3>
+                        <p style="color: #666; margin: 0; font-size: 0.85rem; line-height: 1.2;">Add custom rules that can be toggled on/off</p>
+                        <div id="prompt-rules-list" class="prompt-rules-container scrollable" style="margin: 0 0 0.25rem 0;">
                             <!-- Rules will be dynamically added here -->
                         </div>
-                        <button id="add-rule-btn" class="secondary-btn">+ Add Rule</button>
+                        <button id="add-rule-btn" class="secondary-btn" style="margin: 0;">+ Add Rule</button>
                     </div>
                 </div>
             </section>
@@ -230,14 +228,15 @@
         </aside>
     </div>
 
-    <script src="components/sidebar.js"></script>
-    <script src="components/main-panel.js"></script>
-    <script src="components/calendar.js"></script>
-    <script src="components/todos.js"></script>
-    <script src="components/shortcuts.js"></script>
-    <script src="components/rule-manager.js"></script>
-    <script src="components/message-formatter.js"></script>
-    <script src="components/stats.js"></script>
-    <script src="app.js"></script>
+    <script src="electron-api.js?v=3"></script>
+    <script src="components/sidebar.js?v=3"></script>
+    <script src="components/main-panel.js?v=3"></script>
+    <script src="components/calendar.js?v=3"></script>
+    <script src="components/todos.js?v=3"></script>
+    <script src="components/shortcuts.js?v=3"></script>
+    <script src="components/rule-manager.js?v=3"></script>
+    <script src="components/message-formatter.js?v=3"></script>
+    <script src="components/stats.js?v=3"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>

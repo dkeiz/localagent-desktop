@@ -6,7 +6,7 @@ class MCPServer extends EventEmitter {
     this.db = db;
     this.aiService = null;
     this.tools = new Map();
-    this.toolStates = new Map(); // Cache for tool activation states
+    this.toolStates = new Map();
     this.proxyServers = new Map();
     this.initializeBuiltInTools();
   }
@@ -402,6 +402,26 @@ class MCPServer extends EventEmitter {
       const ruleCount = (await this.db.getPromptRules()).length;
       return { conversations: convCount, todos: todoCount, events: eventCount, rules: ruleCount };
     });
+
+    this.registerTool('create_tool', {
+      name: 'create_tool',
+      description: 'Create a new custom MCP tool',
+      userDescription: 'Create a new custom MCP tool',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          description: { type: 'string' },
+          code: { type: 'string' },
+          input_schema: { type: 'object' }
+        },
+        required: ['name', 'description', 'code']
+      }
+    }, async (params) => {
+      await this.db.addCustomTool(params);
+      this.registerCustomTool(params);
+      return { created: true, name: params.name };
+    });
   }
 
   registerTool(name, definition, handler) {
@@ -635,9 +655,38 @@ class MCPServer extends EventEmitter {
   }
 
   async stop() {
-    // Cleanup any running proxy connections
     this.proxyServers.clear();
     this.removeAllListeners();
+  }
+
+  registerCustomTool(tool) {
+    const handler = new Function('params', tool.code);
+    this.registerTool(tool.name, {
+      name: tool.name,
+      description: tool.description,
+      userDescription: tool.description,
+      inputSchema: tool.input_schema || { type: 'object' }
+    }, async (params) => handler(params));
+  }
+
+  async loadCustomTools() {
+    try {
+      const tools = await this.db.getCustomTools();
+      for (const tool of tools) {
+        try {
+          this.registerCustomTool({
+            name: tool.name,
+            description: tool.description,
+            code: tool.code,
+            input_schema: JSON.parse(tool.input_schema || '{}')
+          });
+        } catch (e) {
+          console.error(`Failed to load custom tool ${tool.name}:`, e);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load custom tools:', e);
+    }
   }
 }
 

@@ -15,9 +15,8 @@ function createWindow() {
     width: 1400,
     height: 900,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-    preload: path.join(__dirname, '../../preload.js')
+      nodeIntegration: true,
+      contextIsolation: false
     },
     titleBarStyle: 'default',
     show: false
@@ -43,9 +42,8 @@ app.whenReady().then(async () => {
     // Create MCP server first, then pass it to AI service
     mcpServer = new MCPServer(db);
     aiService = new AIService(db, mcpServer);
-    
-    // Initialize MCP server with AI service reference
     mcpServer.setAIService(aiService);
+    await mcpServer.loadCustomTools();
     
     createWindow();
     

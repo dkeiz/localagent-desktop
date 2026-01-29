@@ -99,6 +99,16 @@ class DatabaseWrapper {
                 title TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_message_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+            
+            `CREATE TABLE IF NOT EXISTS custom_tools (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL,
+                code TEXT NOT NULL,
+                input_schema TEXT,
+                active BOOLEAN DEFAULT FALSE,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`
         ];
 
@@ -189,7 +199,12 @@ class DatabaseWrapper {
         if (sessionId) {
             return this.all('SELECT * FROM conversations WHERE session_id = ? ORDER BY timestamp', [sessionId]);
         }
+        // Get current session first
         const session = await this.getCurrentSession();
+        if (!session) {
+            console.log('No current session found');
+            return [];
+        }
         return this.all('SELECT * FROM conversations WHERE session_id = ? ORDER BY timestamp', [session.id]);
     }
 
@@ -304,14 +319,29 @@ class DatabaseWrapper {
         const currentId = await this.getSetting('current_session_id');
         if (currentId) {
             const session = this.get('SELECT * FROM chat_sessions WHERE id = ?', [parseInt(currentId)]);
-            if (session) return session;
+            if (session) {
+                console.log('Found current session:', session.id);
+                return session;
+            }
         }
         
-        // Otherwise get most recent
-        const session = this.get('SELECT * FROM chat_sessions ORDER BY last_message_at DESC LIMIT 1');
+        // Otherwise get most recent with messages
+        const session = this.get(`
+            SELECT cs.* FROM chat_sessions cs
+            INNER JOIN conversations c ON cs.id = c.session_id
+            GROUP BY cs.id
+            ORDER BY cs.last_message_at DESC
+            LIMIT 1
+        `);
+        
         if (!session) {
+            console.log('No sessions found, creating new one');
             return await this.createChatSession();
         }
+        
+        console.log('Using most recent session:', session.id);
+        // Set it as current
+        await this.setSetting('current_session_id', session.id.toString());
         return session;
     }
 
@@ -408,6 +438,24 @@ class DatabaseWrapper {
         const value = active ? 'true' : 'false';
         await this.setSetting(key, value);
         return { toolName, active };
+    }
+
+    async getCustomTools() {
+        return this.all('SELECT * FROM custom_tools ORDER BY created_at DESC');
+    }
+
+    async addCustomTool(tool) {
+        const { name, description, code, input_schema } = tool;
+        const result = this.run(
+            'INSERT INTO custom_tools (name, description, code, input_schema) VALUES (?, ?, ?, ?)',
+            [name, description, code, JSON.stringify(input_schema || {})]
+        );
+        return { id: result.id, ...tool };
+    }
+
+    async deleteCustomTool(name) {
+        this.run('DELETE FROM custom_tools WHERE name = ?', [name]);
+        return { name };
     }
 }
 

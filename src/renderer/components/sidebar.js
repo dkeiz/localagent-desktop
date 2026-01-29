@@ -105,6 +105,7 @@ class Sidebar {
     async loadMCPTools() {
         try {
             const tools = await window.electronAPI.getMCPTools();
+            const customTools = await window.electronAPI.getCustomTools?.() || [];
             const container = document.getElementById('mcp-tools-container');
             const toolSelect = document.getElementById('tool-select');
             const activityContainer = document.getElementById('tool-activity');
@@ -130,20 +131,26 @@ class Sidebar {
                 console.warn('Could not load tool states, using defaults:', error);
             }
 
+            const customToolNames = new Set(customTools.map(t => t.name));
+
             tools.forEach(tool => {
                 const toolElement = document.createElement('div');
-                const isActive = toolStates[tool.name]?.active !== false; // Default true
+                const isActive = toolStates[tool.name]?.active !== false;
+                const isCustom = customToolNames.has(tool.name);
                 toolElement.className = 'mcp-tool-card';
-                toolElement.setAttribute('data-full-description', tool.description); // For custom tooltip
+                toolElement.setAttribute('data-full-description', tool.description);
                 toolElement.innerHTML = `
                     <div class="tool-card-header">
-                        <h4 class="tool-card-name">${tool.name}</h4>
-                        <label class="tool-toggle">
-                            <input type="checkbox" class="tool-active-checkbox"
-                                   data-tool="${tool.name}"
-                                   ${isActive ? 'checked' : ''}>
-                            <span class="toggle-slider"></span>
-                        </label>
+                        <h4 class="tool-card-name">${isCustom ? '🔧 ' : ''}${tool.name}</h4>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            ${isCustom ? '<button class="delete-tool-btn" data-tool="' + tool.name + '" title="Delete custom tool">🗑️</button>' : ''}
+                            <label class="tool-toggle">
+                                <input type="checkbox" class="tool-active-checkbox"
+                                       data-tool="${tool.name}"
+                                       ${isActive ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
                     </div>
                     <div class="tool-card-description">${tool.description}</div>
                     ${tool.inputSchema?.properties ? `<div class="tool-card-params">Params: ${Object.keys(tool.inputSchema.properties).join(', ')}</div>` : ''}
@@ -159,9 +166,32 @@ class Sidebar {
                         console.log(`${toolName} ${active ? 'enabled' : 'disabled'}`);
                     } catch (error) {
                         console.error('Failed to update tool state:', error);
-                        e.target.checked = !active; // Revert on error
+                        e.target.checked = !active;
                     }
                 });
+
+                // Delete handler for custom tools
+                const deleteBtn = toolElement.querySelector('.delete-tool-btn');
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const toolName = e.target.dataset.tool;
+                        if (confirm(`Delete custom tool "${toolName}"?`)) {
+                            try {
+                                await window.electronAPI.deleteCustomTool(toolName);
+                                await this.loadMCPTools();
+                                if (window.mainPanel) {
+                                    window.mainPanel.showNotification(`Tool "${toolName}" deleted`);
+                                }
+                            } catch (error) {
+                                console.error('Failed to delete tool:', error);
+                                if (window.mainPanel) {
+                                    window.mainPanel.showNotification('Failed to delete tool', 'error');
+                                }
+                            }
+                        }
+                    });
+                }
 
                 container.appendChild(toolElement);
             });
@@ -405,9 +435,9 @@ class Sidebar {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
             
-            // Show stored context usage
-            if (window.mainPanel) {
-                window.mainPanel.showStoredContextUsage();
+            // Calculate and show context usage
+            if (window.mainPanel && window.mainPanel.calculateContextUsage) {
+                await window.mainPanel.calculateContextUsage();
             }
             
             // Switch to chat tab

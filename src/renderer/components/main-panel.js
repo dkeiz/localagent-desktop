@@ -6,12 +6,10 @@ class MainPanel {
         this.synthesis = window.speechSynthesis;
         this.autoSpeak = false;
         
-        // Wait for DOM to be ready before initializing
-        window.addEventListener('DOMContentLoaded', () => {
-            this.initializeEvents();
-            this.initializeVoice();
-            this.initContextSettings();
-        });
+        // Initialize immediately since we're already in DOMContentLoaded
+        this.initializeEvents();
+        this.initializeVoice();
+        this.initContextSettings();
     }
 
     async loadSystemPrompt() {
@@ -75,7 +73,10 @@ class MainPanel {
         document.getElementById('save-prompt-btn').addEventListener('click', () => this.saveSystemPrompt());
         
         // MCP tab events
-        document.getElementById('add-proxy-btn').addEventListener('click', () => this.addProxyServer());
+        const addProxyBtn = document.getElementById('add-proxy-btn');
+        if (addProxyBtn) {
+            addProxyBtn.addEventListener('click', () => this.addProxyServer());
+        }
 
         // Listen for updates from main process
         this.setupEventListeners();
@@ -334,6 +335,40 @@ class MainPanel {
         }
     }
 
+    async calculateContextUsage() {
+        try {
+            const conversations = await window.electronAPI.getConversations();
+            if (!conversations || conversations.length === 0) {
+                this.updateContextUsage(null);
+                return;
+            }
+            
+            // Estimate tokens: ~1.37 tokens per word
+            let totalTokens = 0;
+            conversations.forEach(conv => {
+                const words = conv.content.split(/\s+/).length;
+                totalTokens += Math.ceil(words * 1.37);
+            });
+            
+            // Get context window setting
+            const contextWindow = await window.electronAPI.getSetting('context_window');
+            const contextLength = contextWindow ? parseInt(contextWindow) : 8192;
+            
+            // Update display
+            this.updateContextUsage({
+                usage: {
+                    prompt_tokens: totalTokens,
+                    total_tokens: totalTokens
+                },
+                context_length: contextLength
+            });
+            
+            console.log(`Context loaded: ${totalTokens}/${contextLength} tokens`);
+        } catch (error) {
+            console.error('Error calculating context:', error);
+        }
+    }
+    
     showStoredContextUsage() {
         if (this.lastContextUsage) {
             this.updateContextUsage({ usage: this.lastContextUsage, context_length: this.lastContextUsage.contextLength });
@@ -428,32 +463,39 @@ class MainPanel {
     setupEventListeners() {
         // Listen for conversation updates
         window.electronAPI.onConversationUpdate((event, data) => {
-            this.loadConversations();
+            // Don't reload on every update
         });
 
-        // Listen for tool permission requests from main process
+        // Listen for tool permission requests
         window.electronAPI.onToolPermissionRequest((event, request) => {
             this.showToolPermissionDialog(request);
         });
-
-        // Load initial conversations and ensure session exists
-        this.initializeSession();
     }
     
     async initializeSession() {
         try {
-            // Get most recent session with messages
             const sessions = await window.electronAPI.getChatSessions(null, 1);
-            console.log('Found sessions:', sessions);
             
             if (sessions && sessions.length > 0) {
-                // Set as current session before loading
-                await window.electronAPI.switchChatSession(sessions[0].id);
-                console.log('Switched to session:', sessions[0].id);
-                // Load conversations for this session
-                await this.loadConversations();
-            } else {
-                console.log('No previous sessions, starting fresh');
+                const sessionId = sessions[0].id;
+                await window.electronAPI.switchChatSession(sessionId);
+                
+                const conversations = await window.electronAPI.loadChatSession(sessionId);
+                const messagesContainer = document.getElementById('messages-container');
+                if (!messagesContainer) return;
+                
+                messagesContainer.innerHTML = '';
+                
+                // Match sidebar's approach - create simple message divs
+                conversations.forEach(conv => {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `message ${conv.role}`;
+                    messageDiv.textContent = conv.content;
+                    messagesContainer.appendChild(messageDiv);
+                });
+                
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                await this.calculateContextUsage();
             }
         } catch (error) {
             console.error('Error initializing session:', error);
@@ -466,11 +508,12 @@ class MainPanel {
             const messagesContainer = document.getElementById('messages-container');
             messagesContainer.innerHTML = '';
 
-            conversations.reverse().forEach(conv => {
+            conversations.forEach(conv => {
                 this.addMessage(conv.role, conv.content);
             });
             
-            this.showStoredContextUsage();
+            // Calculate context after loading
+            await this.calculateContextUsage();
         } catch (error) {
             console.error('Error loading conversations:', error);
         }
@@ -479,31 +522,63 @@ class MainPanel {
     // All rule-related methods have been moved to rule-manager.js
 
     showToolPermissionDialog(request) {
+        const isCustomTool = request.toolName === 'create_tool';
+        
         const dialog = document.createElement('div');
         dialog.className = 'tool-permission-overlay';
-        dialog.innerHTML = `
-            <div class="tool-permission-dialog">
-                <div class="permission-header">
-                    <h3>🔐 Tool Permission Required</h3>
-                    <button class="close-btn" onclick="this.closest('.tool-permission-overlay').remove()">✕</button>
+        
+        if (isCustomTool) {
+            const params = request.params;
+            const codeHtml = this.escapeHtml(params.code || '');
+            dialog.innerHTML = `
+                <div class="tool-permission-dialog tool-creation-dialog">
+                    <div class="permission-header">
+                        <h3>🔧 Create New Tool</h3>
+                        <button class="close-btn" onclick="this.closest('.tool-permission-overlay').remove()">✕</button>
+                    </div>
+                    <div class="permission-content">
+                        <p><strong>Tool Name:</strong> ${params.name || 'Unknown'}</strong>
+                        <p><strong>Description:</strong> ${params.description || 'No description'}</p>
+                        <details style="margin-top: 1rem;">
+                            <summary style="cursor: pointer; font-weight: 600;">View Code</summary>
+                            <pre style="background: #f5f5f5; padding: 0.75rem; border-radius: 4px; overflow-x: auto; margin-top: 0.5rem;"><code>${codeHtml}</code></pre>
+                        </details>
+                    </div>
+                    <div class="permission-actions">
+                        <button class="btn-secondary permission-btn" onclick="mainPanel.denyToolCreation()">
+                            Deny
+                        </button>
+                        <button class="btn-success permission-btn" onclick="mainPanel.approveToolCreation()">
+                            Approve & Create
+                        </button>
+                    </div>
                 </div>
-                <div class="permission-content">
-                    <p>The AI wants to use <strong>${request.toolName}</strong></p>
-                    <p class="tool-description">${request.toolDefinition.userDescription}</p>
+            `;
+        } else {
+            dialog.innerHTML = `
+                <div class="tool-permission-dialog">
+                    <div class="permission-header">
+                        <h3>🔐 Tool Permission Required</h3>
+                        <button class="close-btn" onclick="this.closest('.tool-permission-overlay').remove()">✕</button>
+                    </div>
+                    <div class="permission-content">
+                        <p>The AI wants to use <strong>${request.toolName}</strong></p>
+                        <p class="tool-description">${request.toolDefinition.userDescription}</p>
+                    </div>
+                    <div class="permission-actions">
+                        <button class="btn-secondary permission-btn" onclick="mainPanel.denyToolPermission()">
+                            Deny
+                        </button>
+                        <button class="btn-primary permission-btn" onclick="mainPanel.allowToolOnce('${request.toolName}')">
+                            Allow Once
+                        </button>
+                        <button class="btn-success permission-btn" onclick="mainPanel.enableTool('${request.toolName}')">
+                            Enable Permanently
+                        </button>
+                    </div>
                 </div>
-                <div class="permission-actions">
-                    <button class="btn-secondary permission-btn" onclick="mainPanel.denyToolPermission()">
-                        Deny
-                    </button>
-                    <button class="btn-primary permission-btn" onclick="mainPanel.allowToolOnce('${request.toolName}')">
-                        Allow Once
-                    </button>
-                    <button class="btn-success permission-btn" onclick="mainPanel.enableTool('${request.toolName}')">
-                        Enable Permanently
-                    </button>
-                </div>
-            </div>
-        `;
+            `;
+        }
 
         // Store current request for use in button handlers
         this.currentPermissionRequest = request;
@@ -584,9 +659,50 @@ class MainPanel {
                 .permission-btn {
                     padding: 0.5rem 1rem;
                 }
+                
+                .tool-creation-dialog {
+                    min-width: 500px;
+                }
+                
+                .tool-creation-dialog pre {
+                    max-height: 300px;
+                    overflow-y: auto;
+                }
             `;
             document.head.appendChild(style);
         }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    async approveToolCreation() {
+        try {
+            const result = await window.electronAPI.createCustomTool(this.currentPermissionRequest.params);
+            if (result.success) {
+                this.addMessage('assistant', `✅ Tool "${this.currentPermissionRequest.params.name}" created successfully! It's now available in the MCP tools list (disabled by default).`);
+                if (window.sidebar && window.sidebar.loadMCPTools) {
+                    await window.sidebar.loadMCPTools();
+                }
+                this.showNotification(`Tool "${this.currentPermissionRequest.params.name}" created`);
+            } else {
+                this.addMessage('assistant', `❌ Failed to create tool: ${result.error}`);
+                this.showNotification('Tool creation failed', 'error');
+            }
+            this.closePermissionDialog();
+        } catch (error) {
+            console.error('Error creating tool:', error);
+            this.addMessage('assistant', `❌ Error creating tool: ${error.message}`);
+            this.closePermissionDialog();
+        }
+    }
+
+    denyToolCreation() {
+        this.addMessage('assistant', 'Tool creation was denied.');
+        this.closePermissionDialog();
     }
 
     async allowToolOnce(toolName) {
@@ -1023,4 +1139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         console.error('Failed to initialize API settings:', error);
     }
+    
+    // Load previous chat after all initialization is complete
+    await window.mainPanel.initializeSession();
 });

@@ -1,25 +1,93 @@
+.prompt-rules-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.25rem;
+    background: var(--background-color);
+}
+
+.scrollable {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.prompt-rule-item {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: var(--border-radius, 4px);
+    padding: 0.25rem 0.5rem;
+    margin-bottom: 0.25rem;
+    transition: all 0.2s;
+}
+
+.prompt-rule-item:hover {
+    border-color: var(--accent-color, #007bff);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
 .prompt-rule-item .rule-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
+}
+
+.prompt-rule-item .rule-toggle {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    flex-shrink: 0;
 }
 
 .prompt-rule-item .rule-name-container {
-    flex-grow: 1;
+    flex: 1;
+    min-width: 0;
+}
+
+.prompt-rule-item .rule-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-color, #333);
 }
 
 .prompt-rule-item .rule-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.prompt-rule-item .icon-btn {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    font-size: 1rem;
+    border-radius: 4px;
+}
+
+.prompt-rule-item .icon-btn:hover {
+    background: #e0e0e0;
 }
 
 .prompt-rule-item .rule-content-container {
     margin-top: 0.5rem;
-    padding-left: 2rem; /* Indent content under the checkbox */
+    padding-left: 2rem;
 }
 
-/* Styles for inline editing */
+.prompt-rule-item .rule-content {
+    color: var(--text-secondary, #666);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.no-rules {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary, #666);
+    font-style: italic;
+}
+
+/* Editing mode */
 .rule-name-input,
 .rule-content-input {
     width: 100%;
@@ -39,12 +107,20 @@
 
 .prompt-rule-item.editing {
     background-color: var(--background-color-light);
-    border: 1px solid var(--accent-color-faded);
-    padding: 0.5rem;
-    margin: 0.5rem -0.5rem; /* Counteract padding to keep alignment */
-    border-radius: var(--border-radius);
+    border: 2px solid var(--accent-color);
 }
 
+.prompt-rule-item.editing .rule-actions {
+    gap: 0.5rem;
+}
+
+.prompt-rule-item.editing .primary-btn,
+.prompt-rule-item.editing .secondary-btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+}
+
+/* Modal */
 .modal {
     position: fixed;
     top: 0;

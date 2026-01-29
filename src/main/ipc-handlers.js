@@ -486,6 +486,33 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     }
   });
 
+  ipcMain.handle('create-custom-tool', async (event, toolData) => {
+    try {
+      await mcpServer.executeTool('create_tool', toolData);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('get-custom-tools', async () => {
+    try {
+      return await db.getCustomTools();
+    } catch (error) {
+      return [];
+    }
+  });
+
+  ipcMain.handle('delete-custom-tool', async (event, toolName) => {
+    try {
+      await db.deleteCustomTool(toolName);
+      mcpServer.tools.delete(toolName);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // Settings operations
   ipcMain.handle('get-settings', async () => {
     const settings = await db.getAllSettings();
