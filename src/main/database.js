@@ -285,6 +285,9 @@ class DatabaseWrapper {
             'INSERT INTO chat_sessions (title) VALUES (?)',
             [title || `Chat ${new Date().toLocaleString()}`]
         );
+        // Set as current session so new messages go here
+        await this.setSetting('current_session_id', result.id.toString());
+        console.log('Created and switched to new session:', result.id);
         return { id: result.id, title };
     }
 

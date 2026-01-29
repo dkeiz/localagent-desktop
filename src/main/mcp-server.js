@@ -819,8 +819,9 @@ class MCPServer extends EventEmitter {
         this.validateInput(params, tool.definition.inputSchema);
       }
 
-      // Execute
-      const result = await tool.handler(params);
+      // Execute with timeout protection (5s default for fast failure)
+      const timeoutMs = parseInt(await this.db.getSetting('tool_timeout_ms') || '5000');
+      const result = await this.executeWithTimeout(tool.handler(params), timeoutMs, toolName);
 
       // Emit updates
       if (toolName.startsWith('calendar_')) this.emit('calendar-update');
@@ -830,6 +831,25 @@ class MCPServer extends EventEmitter {
       return result;
     } catch (error) {
       this.emit('tool-executed', { toolName, success: false, error: error.message });
+      throw error;
+    }
+  }
+
+  // Helper to wrap promise with timeout
+  async executeWithTimeout(promise, timeoutMs, toolName) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`Tool '${toolName}' timed out after ${timeoutMs / 1000}s`));
+      }, timeoutMs);
+    });
+
+    try {
+      const result = await Promise.race([promise, timeoutPromise]);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
       throw error;
     }
   }
