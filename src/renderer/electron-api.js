@@ -20,6 +20,11 @@ window.electronAPI = Object.assign(ipcRenderer, {
   createCustomTool: (toolData) => ipcRenderer.invoke('create-custom-tool', toolData),
   getCustomTools: () => ipcRenderer.invoke('get-custom-tools'),
   deleteCustomTool: (toolName) => ipcRenderer.invoke('delete-custom-tool', toolName),
+  // Tool Groups
+  getToolGroups: () => ipcRenderer.invoke('get-tool-groups'),
+  activateToolGroup: (groupId) => ipcRenderer.invoke('activate-tool-group', groupId),
+  deactivateToolGroup: (groupId) => ipcRenderer.invoke('deactivate-tool-group', groupId),
+  getActiveTools: () => ipcRenderer.invoke('get-active-tools'),
   getChatSessions: (date, limit) => ipcRenderer.invoke('get-chat-sessions', date, limit),
   loadChatSession: (sessionId) => ipcRenderer.invoke('load-chat-session', sessionId),
   switchChatSession: (sessionId) => ipcRenderer.invoke('switch-chat-session', sessionId),
@@ -37,6 +42,15 @@ window.electronAPI = Object.assign(ipcRenderer, {
     getConfig: () => ipcRenderer.invoke('llm:get-config'),
     fetchQwenOAuth: () => ipcRenderer.invoke('llm:fetch-qwen-oauth')
   },
+  // Workflow API
+  getWorkflows: () => ipcRenderer.invoke('get-workflows'),
+  executeWorkflow: (workflowId, paramOverrides) => ipcRenderer.invoke('execute-workflow', workflowId, paramOverrides),
+  captureWorkflow: (trigger, toolChain, name) => ipcRenderer.invoke('capture-workflow', trigger, toolChain, name),
+  searchWorkflows: (query, topK) => ipcRenderer.invoke('search-workflows', query, topK),
+  deleteWorkflow: (workflowId) => ipcRenderer.invoke('delete-workflow', workflowId),
+  // Generation control
+  stopGeneration: () => ipcRenderer.invoke('stop-generation'),
+  isGenerating: () => ipcRenderer.invoke('is-generating'),
   onConversationUpdate: (callback) => ipcRenderer.on('conversation-update', callback),
   onToolUpdate: (callback) => ipcRenderer.on('tool-update', callback),
   onToolPermissionRequest: (callback) => ipcRenderer.on('tool-permission-request', callback)

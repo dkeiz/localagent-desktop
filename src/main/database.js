@@ -52,7 +52,7 @@ class DatabaseWrapper {
                 description TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
-            
+
             `CREATE TABLE IF NOT EXISTS todos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task TEXT NOT NULL,
@@ -61,7 +61,7 @@ class DatabaseWrapper {
                 due_date DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
-            
+
             `CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER,
@@ -70,20 +70,20 @@ class DatabaseWrapper {
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
             )`,
-            
+
             `CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
-            
+
             `CREATE TABLE IF NOT EXISTS api_keys (
                 provider TEXT PRIMARY KEY,
                 key TEXT NOT NULL,
                 encrypted BOOLEAN DEFAULT FALSE,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
-            
+
             `CREATE TABLE IF NOT EXISTS prompt_rules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -93,14 +93,14 @@ class DatabaseWrapper {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
-            
+
             `CREATE TABLE IF NOT EXISTS chat_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_message_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
-            
+
             `CREATE TABLE IF NOT EXISTS custom_tools (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
@@ -108,6 +108,19 @@ class DatabaseWrapper {
                 code TEXT NOT NULL,
                 input_schema TEXT,
                 active BOOLEAN DEFAULT FALSE,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+
+            `CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                trigger_pattern TEXT,
+                tool_chain TEXT NOT NULL,
+                embedding TEXT,
+                success_count INTEGER DEFAULT 0,
+                failure_count INTEGER DEFAULT 0,
+                last_used DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`
         ];
@@ -324,7 +337,7 @@ class DatabaseWrapper {
                 return session;
             }
         }
-        
+
         // Otherwise get most recent with messages
         const session = this.get(`
             SELECT cs.* FROM chat_sessions cs
@@ -333,12 +346,12 @@ class DatabaseWrapper {
             ORDER BY cs.last_message_at DESC
             LIMIT 1
         `);
-        
+
         if (!session) {
             console.log('No sessions found, creating new one');
             return await this.createChatSession();
         }
-        
+
         console.log('Using most recent session:', session.id);
         // Set it as current
         await this.setSetting('current_session_id', session.id.toString());
@@ -389,7 +402,7 @@ class DatabaseWrapper {
         const provider = await this.getSetting('llm.provider');
         const model = await this.getSetting('llm.model');
         const config = { provider, model };
-        
+
         if (provider) {
             const apiKey = await this.getSetting(`llm.${provider}.apiKey`);
             const url = await this.getSetting(`llm.${provider}.url`);
@@ -398,7 +411,7 @@ class DatabaseWrapper {
             if (url) config.url = url;
             if (useOAuth === 'true') config.useOAuth = true;
         }
-        
+
         return config;
     }
 
@@ -415,7 +428,7 @@ class DatabaseWrapper {
         );
         return { provider };
     }
-    
+
     async setActiveModel(provider, model) {
         // Save to settings table
         await this.setSetting(`active_model_${provider}`, model);
@@ -456,6 +469,46 @@ class DatabaseWrapper {
     async deleteCustomTool(name) {
         this.run('DELETE FROM custom_tools WHERE name = ?', [name]);
         return { name };
+    }
+
+    // Workflow methods
+    async getWorkflows() {
+        return this.all('SELECT * FROM workflows ORDER BY success_count DESC, last_used DESC');
+    }
+
+    async addWorkflow(workflow) {
+        const { name, description, trigger_pattern, tool_chain, embedding } = workflow;
+        const result = this.run(
+            'INSERT INTO workflows (name, description, trigger_pattern, tool_chain, embedding) VALUES (?, ?, ?, ?, ?)',
+            [name, description, trigger_pattern, JSON.stringify(tool_chain), embedding ? JSON.stringify(embedding) : null]
+        );
+        return { id: result.id, ...workflow };
+    }
+
+    async updateWorkflowStats(id, success) {
+        if (success) {
+            this.run('UPDATE workflows SET success_count = success_count + 1, last_used = CURRENT_TIMESTAMP WHERE id = ?', [id]);
+        } else {
+            this.run('UPDATE workflows SET failure_count = failure_count + 1, last_used = CURRENT_TIMESTAMP WHERE id = ?', [id]);
+        }
+    }
+
+    async findWorkflowByTrigger(pattern) {
+        return this.get('SELECT * FROM workflows WHERE trigger_pattern LIKE ?', [`%${pattern}%`]);
+    }
+
+    async getWorkflowById(id) {
+        return this.get('SELECT * FROM workflows WHERE id = ?', [id]);
+    }
+
+    async deleteWorkflow(id) {
+        this.run('DELETE FROM workflows WHERE id = ?', [id]);
+        return { id };
+    }
+
+    async updateWorkflowEmbedding(id, embedding) {
+        this.run('UPDATE workflows SET embedding = ? WHERE id = ?', [JSON.stringify(embedding), id]);
+        return { id, embedding };
     }
 }
 

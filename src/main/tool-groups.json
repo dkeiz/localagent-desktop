@@ -1,0 +1,92 @@
+{
+    "groups": {
+        "storage": {
+            "name": "Storage",
+            "description": "File read/write, directory operations",
+            "icon": "📁",
+            "tools": [
+                "read_file",
+                "write_file",
+                "list_directory",
+                "file_exists",
+                "delete_file"
+            ],
+            "defaultActive": false
+        },
+        "web": {
+            "name": "Web",
+            "description": "Web browsing, API calls, weather",
+            "icon": "🌐",
+            "tools": [
+                "current_weather",
+                "search_web",
+                "fetch_url",
+                "download_file",
+                "get_public_ip"
+            ],
+            "defaultActive": true
+        },
+        "agent": {
+            "name": "Agent",
+            "description": "AI notes, rules, calendar, todos, conversations",
+            "icon": "🤖",
+            "tools": [
+                "conversation_history",
+                "search_conversations",
+                "list_active_rules",
+                "toggle_rule",
+                "get_system_prompt",
+                "create_calendar_event",
+                "calendar_write",
+                "list_calendar_events",
+                "calendar_read",
+                "todo_create",
+                "todo_list",
+                "todo_complete"
+            ],
+            "defaultActive": true
+        },
+        "call": {
+            "name": "Call",
+            "description": "External applications and commands",
+            "icon": "📞",
+            "tools": [
+                "run_command",
+                "open_url",
+                "run_python_script",
+                "clipboard_read",
+                "clipboard_write"
+            ],
+            "defaultActive": false
+        },
+        "system": {
+            "name": "System",
+            "description": "System info, stats, utilities",
+            "icon": "⚙️",
+            "tools": [
+                "current_time",
+                "get_current_provider",
+                "get_stats",
+                "calculate",
+                "create_tool",
+                "end_answer",
+                "get_memory_usage",
+                "get_disk_space"
+            ],
+            "defaultActive": true
+        },
+        "media": {
+            "name": "Media",
+            "description": "Image, video, audio processing",
+            "icon": "🎬",
+            "tools": [
+                "resize_image",
+                "convert_image_format",
+                "get_image_info",
+                "screenshot",
+                "text_to_speech"
+            ],
+            "defaultActive": false
+        }
+    }
+}

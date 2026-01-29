@@ -1,154 +1,154 @@
 // Remove this line - we'll get ollamaService from main.js
 
-module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService) {
-    // Ollama model selection handlers
-    ipcMain.handle('getProviderModels', async (event, provider) => {
-        if (provider === 'ollama') {
-            try {
-                const models = await ollamaService.getModels();
-                return { status: 'success', models };
-            } catch (error) {
-                return { status: 'error', message: error.message };
-            }
-        }
-        return { status: 'error', message: 'Provider not implemented' };
-    });
-    
-    ipcMain.handle('checkProviderStatus', async (event, provider) => {
-        if (provider === 'ollama') {
-            const status = await ollamaService.checkConnection();
-            return { connected: status };
-        }
-        return { connected: false };
-    });
-    
-    ipcMain.handle('setActiveModel', async (event, provider, model) => {
-        await db.setActiveModel(provider, model);
-        return { success: true };
-    });
+module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore) {
+  // Ollama model selection handlers
+  ipcMain.handle('getProviderModels', async (event, provider) => {
+    if (provider === 'ollama') {
+      try {
+        const models = await ollamaService.getModels();
+        return { status: 'success', models };
+      } catch (error) {
+        return { status: 'error', message: error.message };
+      }
+    }
+    return { status: 'error', message: 'Provider not implemented' };
+  });
 
-    ipcMain.handle('llm:get-models', async (event, provider) => {
-      console.log('llm:get-models called with provider:', provider);
-      if (provider === 'ollama' || provider === 'Ollama') {
-        try {
-          const models = await ollamaService.listModels();
-          console.log('Models from ollama:', models);
-          return models;
-        } catch (error) {
-          console.error('Failed to fetch models from service:', error);
-          return [];
-        }
-      } else if (provider === 'qwen') {
-        try {
-          const models = await aiService.getModels('qwen');
-          console.log('Models from qwen:', models);
-          return models;
-        } catch (error) {
-          console.error('Failed to fetch qwen models:', error);
-          // Return detailed error information to UI
-          return { 
-            status: 'error', 
-            message: error.message,
-            details: error.response?.data || null
-          };
-        }
-      } else if (provider === 'openrouter') {
-        return [];
-      } else if (provider === 'lmstudio') {
+  ipcMain.handle('checkProviderStatus', async (event, provider) => {
+    if (provider === 'ollama') {
+      const status = await ollamaService.checkConnection();
+      return { connected: status };
+    }
+    return { connected: false };
+  });
+
+  ipcMain.handle('setActiveModel', async (event, provider, model) => {
+    await db.setActiveModel(provider, model);
+    return { success: true };
+  });
+
+  ipcMain.handle('llm:get-models', async (event, provider) => {
+    console.log('llm:get-models called with provider:', provider);
+    if (provider === 'ollama' || provider === 'Ollama') {
+      try {
+        const models = await ollamaService.listModels();
+        console.log('Models from ollama:', models);
+        return models;
+      } catch (error) {
+        console.error('Failed to fetch models from service:', error);
         return [];
       }
+    } else if (provider === 'qwen') {
+      try {
+        const models = await aiService.getModels('qwen');
+        console.log('Models from qwen:', models);
+        return models;
+      } catch (error) {
+        console.error('Failed to fetch qwen models:', error);
+        // Return detailed error information to UI
+        return {
+          status: 'error',
+          message: error.message,
+          details: error.response?.data || null
+        };
+      }
+    } else if (provider === 'openrouter') {
       return [];
-    });
-    ipcMain.handle('llm:save-config', async (event, config) => {
-        try {
-            console.log('Saving config:', config);
-            await db.saveSetting('llm.provider', config.provider);
-            
-            // Always save model if provided (required for Qwen OAuth)
-            if (config.model) {
-                await db.saveSetting('llm.model', config.model);
-                
-                // Save model type (local or cloud) for Ollama provider
-                if (config.provider === 'ollama') {
-                    const isCloudModel = config.model.includes('-cloud');
-                    await db.saveSetting('llm.modelType', isCloudModel ? 'cloud' : 'local');
-                }
-            }
-            
-            if (config.apiKey) {
-                await db.saveSetting(`llm.${config.provider}.apiKey`, config.apiKey);
-            }
-            if (config.url) {
-                await db.saveSetting(`llm.${config.provider}.url`, config.url);
-            }
-            if (config.useOAuth) {
-                await db.saveSetting(`llm.${config.provider}.useOAuth`, 'true');
-            }
-            
-            // Update AI service provider
-            await aiService.setProvider(config.provider);
-            
-            // Refresh Qwen models when saving Qwen configuration
-            if (config.provider === 'qwen') {
-                aiService.getQwenModels(true)
-                    .then(models => {
-                        console.log(`Refreshed ${models.length} Qwen models`);
-                    })
-                    .catch(err => {
-                        console.error('Background Qwen model refresh failed:', err);
-                    });
-            }
-            
-            console.log('Config saved successfully');
-            return { success: true };
-        } catch (error) {
-            console.error('Failed to save LLM config:', error);
-            throw error;
-        }
-    });
+    } else if (provider === 'lmstudio') {
+      return [];
+    }
+    return [];
+  });
+  ipcMain.handle('llm:save-config', async (event, config) => {
+    try {
+      console.log('Saving config:', config);
+      await db.saveSetting('llm.provider', config.provider);
 
-    ipcMain.handle('llm:fetch-qwen-oauth', async () => {
-        try {
-            const os = require('os');
-            const fs = require('fs');
-            const path = require('path');
-            
-            const oauthPath = path.join(os.homedir(), '.qwen', 'oauth_creds.json');
-            if (fs.existsSync(oauthPath)) {
-                const oauthData = fs.readFileSync(oauthPath, 'utf-8');
-                const creds = JSON.parse(oauthData);
-                console.log('Qwen OAuth file structure:', Object.keys(creds));
-                await db.saveSetting('llm.qwen.oauthCreds', JSON.stringify(creds));
-                return creds;
-            }
-            throw new Error('Qwen OAuth credentials not found at ~/.qwen/oauth_creds.json');
-        } catch (error) {
-            console.error('Failed to fetch Qwen OAuth:', error);
-            throw error;
-        }
-    });
+      // Always save model if provided (required for Qwen OAuth)
+      if (config.model) {
+        await db.saveSetting('llm.model', config.model);
 
-    ipcMain.handle('llm:get-config', async () => {
-        try {
-            const provider = await db.getSetting('llm.provider');
-            const model = await db.getSetting('llm.model');
-            const config = { provider, model };
-            
-            if (provider) {
-                const apiKey = await db.getSetting(`llm.${provider}.apiKey`);
-                const url = await db.getSetting(`llm.${provider}.url`);
-                if (apiKey) config.apiKey = apiKey;
-                if (url) config.url = url;
-            }
-            
-            return config;
-        } catch (error) {
-            console.error('Failed to get LLM config:', error);
-            return {};
+        // Save model type (local or cloud) for Ollama provider
+        if (config.provider === 'ollama') {
+          const isCloudModel = config.model.includes('-cloud');
+          await db.saveSetting('llm.modelType', isCloudModel ? 'cloud' : 'local');
         }
-    });
+      }
 
-  
+      if (config.apiKey) {
+        await db.saveSetting(`llm.${config.provider}.apiKey`, config.apiKey);
+      }
+      if (config.url) {
+        await db.saveSetting(`llm.${config.provider}.url`, config.url);
+      }
+      if (config.useOAuth) {
+        await db.saveSetting(`llm.${config.provider}.useOAuth`, 'true');
+      }
+
+      // Update AI service provider
+      await aiService.setProvider(config.provider);
+
+      // Refresh Qwen models when saving Qwen configuration
+      if (config.provider === 'qwen') {
+        aiService.getQwenModels(true)
+          .then(models => {
+            console.log(`Refreshed ${models.length} Qwen models`);
+          })
+          .catch(err => {
+            console.error('Background Qwen model refresh failed:', err);
+          });
+      }
+
+      console.log('Config saved successfully');
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to save LLM config:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('llm:fetch-qwen-oauth', async () => {
+    try {
+      const os = require('os');
+      const fs = require('fs');
+      const path = require('path');
+
+      const oauthPath = path.join(os.homedir(), '.qwen', 'oauth_creds.json');
+      if (fs.existsSync(oauthPath)) {
+        const oauthData = fs.readFileSync(oauthPath, 'utf-8');
+        const creds = JSON.parse(oauthData);
+        console.log('Qwen OAuth file structure:', Object.keys(creds));
+        await db.saveSetting('llm.qwen.oauthCreds', JSON.stringify(creds));
+        return creds;
+      }
+      throw new Error('Qwen OAuth credentials not found at ~/.qwen/oauth_creds.json');
+    } catch (error) {
+      console.error('Failed to fetch Qwen OAuth:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('llm:get-config', async () => {
+    try {
+      const provider = await db.getSetting('llm.provider');
+      const model = await db.getSetting('llm.model');
+      const config = { provider, model };
+
+      if (provider) {
+        const apiKey = await db.getSetting(`llm.${provider}.apiKey`);
+        const url = await db.getSetting(`llm.${provider}.url`);
+        if (apiKey) config.apiKey = apiKey;
+        if (url) config.url = url;
+      }
+
+      return config;
+    } catch (error) {
+      console.error('Failed to get LLM config:', error);
+      return {};
+    }
+  });
+
+
   // Database operations
   ipcMain.handle('get-calendar-events', async () => {
     return await db.getCalendarEvents();
@@ -277,10 +277,9 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     }
   });
 
-  // AI operations
-  ipcMain.handle('send-message', async (event, message) => {
+  // AI operations - with tool chaining support
+  ipcMain.handle('send-message', async (event, message, useChaining = true) => {
     try {
-      // Get only recent conversations (not all history)
       const conversations = await db.getConversations(20);
       const conversationHistory = conversations.map(c => ({
         role: c.role,
@@ -289,33 +288,39 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
       await db.addConversation({ role: 'user', content: message });
 
-      const response = await aiService.sendMessage(message, conversationHistory);
-      
-      // Check for tool calls in response
-      const toolCalls = mcpServer.parseToolCall(response.content);
-      
-      if (toolCalls.length > 0) {
-        // Execute tools
-        const toolResults = await mcpServer.executeToolCalls(response.content);
-        
-        // Build tool results context
-        const toolContext = toolResults.map(r => 
-          `Tool ${r.tool} result: ${r.success ? JSON.stringify(r.result) : 'Error: ' + r.error}`
-        ).join('\n');
-        
-        // Ask AI to interpret results
-        const interpretPrompt = `Based on the tool results below, provide a natural response to the user:\n\n${toolContext}`;
-        const interpretedResponse = await aiService.sendMessage(interpretPrompt, conversationHistory);
-        
-        await db.addConversation({ role: 'assistant', content: interpretedResponse.content });
-        mainWindow.webContents.send('conversation-update');
-        
-        return interpretedResponse;
+      let response;
+
+      // Use chain controller if available and enabled
+      if (chainController && useChaining) {
+        console.log('[IPC] Using tool chain controller');
+        response = await chainController.executeWithChaining(message, conversationHistory);
+
+        if (response && response.needsPermission) {
+          mainWindow.webContents.send('tool-permission-request', response.permissionRequest);
+          return { needsPermission: true, ...response.permissionRequest };
+        }
+      } else {
+        // Fallback to legacy single-step
+        response = await aiService.sendMessage(message, conversationHistory);
+        const toolCalls = mcpServer.parseToolCall(response.content);
+
+        if (toolCalls.length > 0) {
+          const toolResults = await mcpServer.executeToolCalls(response.content);
+          const toolContext = toolResults.map(r =>
+            `Tool ${r.tool} result: ${r.success ? JSON.stringify(r.result) : 'Error: ' + r.error}`
+          ).join('\n');
+
+          const interpretPrompt = `Based on the tool results below, provide a natural response to the user:\n\n${toolContext}`;
+          const interpretedResponse = await aiService.sendMessage(interpretPrompt, conversationHistory);
+
+          await db.addConversation({ role: 'assistant', content: interpretedResponse.content });
+          mainWindow.webContents.send('conversation-update');
+          return interpretedResponse;
+        }
       }
-      
+
       await db.addConversation({ role: 'assistant', content: response.content });
       mainWindow.webContents.send('conversation-update');
-      
       return response;
     } catch (error) {
       console.error('Error sending message:', error);
@@ -333,67 +338,82 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     }
   });
 
+  // Stop generation
+  ipcMain.handle('stop-generation', async () => {
+    const stopped = aiService.stopGeneration();
+    // Also stop chain controller if running
+    if (chainController && chainController.stopChain) {
+      chainController.stopChain();
+    }
+    return { stopped };
+  });
+
+  // Check if generating
+  ipcMain.handle('is-generating', async () => {
+    return { generating: aiService.isGenerating };
+  });
+
   ipcMain.handle('get-ai-providers', async () => {
     return aiService.getProviders();
   });
-  
-    ipcMain.handle('get-providers', async () => {
-        return aiService.getProviders();
-    });
 
-    ipcMain.handle('get-models', async (event, provider) => {
-        return await aiService.getModels(provider);
-    });
-    
-    // Add Qwen model refresh handler
-    ipcMain.handle('qwen:refresh-models', async () => {
-        try {
-            const models = await aiService.getQwenModels(true); // Force refresh
-            return { success: true, models };
-        } catch (error) {
-            return { success: false, error: error.message };
+  ipcMain.handle('get-providers', async () => {
+    return aiService.getProviders();
+  });
+
+  ipcMain.handle('get-models', async (event, provider) => {
+    return await aiService.getModels(provider);
+  });
+
+  // Add Qwen model refresh handler
+  ipcMain.handle('qwen:refresh-models', async () => {
+    try {
+      const models = await aiService.getQwenModels(true); // Force refresh
+      return { success: true, models };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Qwen API key verification handler
+  ipcMain.handle('verify-qwen-key', async (event, apiKey) => {
+    if (!apiKey || apiKey.trim() === '') {
+      return { success: false, error: 'API key cannot be empty' };
+    }
+
+    try {
+      const response = await axios.get('https://dashscope.aliyuncs.com/api/v1/models', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000 // 10 seconds timeout
+      });
+
+      // Validate response structure
+      if (response.data && response.data.data && Array.isArray(response.data.data)) {
+        return { success: true, modelCount: response.data.data.length };
+      }
+      return { success: false, error: 'Invalid API response format' };
+    } catch (error) {
+      let errorMessage = 'API key verification failed';
+      if (error.response) {
+        // Handle API error responses
+        if (error.response.status === 401) {
+          errorMessage = 'Invalid API key: Unauthorized';
+        } else if (error.response.data && error.response.data.error) {
+          errorMessage = `API error: ${error.response.data.error.message || error.response.data.error}`;
+        } else {
+          errorMessage = `API returned status ${error.response.status}`;
         }
-    });
-    
-    // Qwen API key verification handler
-    ipcMain.handle('verify-qwen-key', async (event, apiKey) => {
-        if (!apiKey || apiKey.trim() === '') {
-            return { success: false, error: 'API key cannot be empty' };
-        }
-        
-        try {
-            const response = await axios.get('https://dashscope.aliyuncs.com/api/v1/models', {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 10000 // 10 seconds timeout
-            });
-            
-            // Validate response structure
-            if (response.data && response.data.data && Array.isArray(response.data.data)) {
-                return { success: true, modelCount: response.data.data.length };
-            }
-            return { success: false, error: 'Invalid API response format' };
-        } catch (error) {
-            let errorMessage = 'API key verification failed';
-            if (error.response) {
-                // Handle API error responses
-                if (error.response.status === 401) {
-                    errorMessage = 'Invalid API key: Unauthorized';
-                } else if (error.response.data && error.response.data.error) {
-                    errorMessage = `API error: ${error.response.data.error.message || error.response.data.error}`;
-                } else {
-                    errorMessage = `API returned status ${error.response.status}`;
-                }
-            } else if (error.request) {
-                errorMessage = 'No response from Qwen API server';
-            } else {
-                errorMessage = `Request setup error: ${error.message}`;
-            }
-            return { success: false, error: errorMessage };
-        }
-    });
+      } else if (error.request) {
+        errorMessage = 'No response from Qwen API server';
+      } else {
+        errorMessage = `Request setup error: ${error.message}`;
+      }
+      return { success: false, error: errorMessage };
+    }
+  });
 
   ipcMain.handle('set-ai-provider', async (event, provider) => {
     await aiService.setProvider(provider);
@@ -427,6 +447,33 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   ipcMain.handle('get-mcp-tools-documentation', async () => {
     return mcpServer.getToolsDocumentation();
+  });
+
+  // Tool Group management
+  ipcMain.handle('get-tool-groups', async () => {
+    return mcpServer.getToolGroups();
+  });
+
+  ipcMain.handle('activate-tool-group', async (event, groupId) => {
+    try {
+      const result = await mcpServer.activateGroup(groupId);
+      return { success: true, ...result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('deactivate-tool-group', async (event, groupId) => {
+    try {
+      const result = await mcpServer.deactivateGroup(groupId);
+      return { success: true, ...result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('get-active-tools', async () => {
+    return mcpServer.getActiveTools();
   });
 
   ipcMain.handle('execute-mcp-tool', async (event, toolName, params) => {
@@ -552,38 +599,38 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   ipcMain.handle('handle-file-drop', async (event, filePath) => {
     const fs = require('fs');
     const path = require('path');
-    
+
     try {
       const fileName = path.basename(filePath);
       const ext = path.extname(filePath).toLowerCase();
-      
+
       // Image files - encode as base64
       if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(ext)) {
         const buffer = fs.readFileSync(filePath);
         const base64 = buffer.toString('base64');
         const message = `User dropped image "${fileName}". [Image data: ${base64.substring(0, 100)}... (base64 encoded)]`;
-        
+
         await db.addConversation({ role: 'user', content: message });
         const conversations = await db.getConversations(20);
         const conversationHistory = conversations.map(c => ({ role: c.role, content: c.content })).reverse();
         const response = await aiService.sendMessage(message, conversationHistory);
         await db.addConversation({ role: 'assistant', content: response.content });
         mainWindow.webContents.send('conversation-update');
-        
+
         return { success: true, response };
       }
-      
+
       // Text files
       const content = fs.readFileSync(filePath, 'utf-8');
       const message = `User dropped file "${fileName}". Content:\n\n---\n\n${content}`;
-      
+
       await db.addConversation({ role: 'user', content: message });
       const conversations = await db.getConversations(20);
       const conversationHistory = conversations.map(c => ({ role: c.role, content: c.content })).reverse();
       const response = await aiService.sendMessage(message, conversationHistory);
       await db.addConversation({ role: 'assistant', content: response.content });
       mainWindow.webContents.send('conversation-update');
-      
+
       return { success: true, response };
     } catch (error) {
       console.error('Error handling file drop:', error);
@@ -592,7 +639,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       throw error;
     }
   });
-  
+
   ipcMain.handle('read-file', async (event, filePath) => {
     const fs = require('fs');
     try {
@@ -610,7 +657,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       return '8192';
     }
   });
-  
+
   ipcMain.handle('set-context-setting', async (_, value) => {
     try {
       const numValue = parseInt(value);
@@ -624,6 +671,60 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     } catch (error) {
       console.error('Context save error:', error.message);
       throw error;
+    }
+  });
+
+  // Workflow operations
+  ipcMain.handle('get-workflows', async () => {
+    try {
+      return await workflowManager.getWorkflows();
+    } catch (error) {
+      console.error('Failed to get workflows:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('execute-workflow', async (event, workflowId, paramOverrides = {}) => {
+    try {
+      const result = await workflowManager.executeWorkflow(workflowId, paramOverrides);
+      return { success: true, ...result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('capture-workflow', async (event, trigger, toolChain, name = null) => {
+    try {
+      const workflow = await workflowManager.captureWorkflow(trigger, toolChain, name);
+      // Index for vector search
+      if (vectorStore) {
+        const text = [workflow.name, workflow.description, trigger].join(' ');
+        await vectorStore.indexWorkflow(workflow, text);
+      }
+      return { success: true, workflow };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('search-workflows', async (event, query, topK = 5) => {
+    try {
+      if (vectorStore) {
+        return await vectorStore.search(query, topK);
+      }
+      return await workflowManager.findMatchingWorkflows(query);
+    } catch (error) {
+      console.error('Workflow search failed:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('delete-workflow', async (event, workflowId) => {
+    try {
+      await workflowManager.deleteWorkflow(workflowId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   });
 

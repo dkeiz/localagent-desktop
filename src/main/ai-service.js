@@ -8,6 +8,8 @@ class AIService {
     this.currentProvider = 'ollama'; // Default provider
     this.systemPrompt = 'You are a helpful AI assistant with access to calendar and todo functions.';
     this.modelCache = {}; // Cache for fetched models
+    this.abortController = null; // For stopping generation
+    this.isGenerating = false;
     this.providers = {
       ollama: {
         baseURL: 'http://127.0.0.1:11434',
@@ -32,7 +34,7 @@ class AIService {
         headers: {}
       }
     };
-    
+
     // Enhanced model cache with TTL and last success tracking
     this.modelCache = {
       qwen: {
@@ -43,15 +45,29 @@ class AIService {
     };
   }
 
+  /**
+   * Stop current generation
+   */
+  stopGeneration() {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+      this.isGenerating = false;
+      console.log('[AIService] Generation stopped by user');
+      return true;
+    }
+    return false;
+  }
+
   async initialize() {
     // Load provider from llm.provider setting (new) or ai_provider (old) or default to ollama
     const provider = await this.db.getSetting('llm.provider') || await this.db.getSetting('ai_provider') || 'ollama';
     this.currentProvider = provider;
     console.log('AI Service initialized with provider:', this.currentProvider);
-    
+
     const savedPrompt = await this.db.getSetting('system_prompt');
     if (savedPrompt) this.systemPrompt = savedPrompt;
-    
+
     // Load API keys
     for (const providerName of Object.keys(this.providers)) {
       const apiKey = await this.db.getSetting(`llm.${providerName}.apiKey`) || await this.db.getAPIKey(providerName);
@@ -64,24 +80,24 @@ class AIService {
   async getModels(provider = null) {
     const targetProvider = provider || this.currentProvider;
     const config = this.providers[targetProvider];
-    
+
     try {
       switch (targetProvider) {
         case 'ollama':
           const response = await axios.get(`${config.baseURL}/api/tags`);
           return response.data.models.map(m => m.name);
-        
+
         case 'lmstudio':
           const lmResponse = await axios.get(`${config.baseURL}/v1/models`);
           return lmResponse.data.data.map(m => m.id);
-        
+
         case 'openrouter':
           const orResponse = await axios.get(`${config.baseURL}/models`);
           return orResponse.data.data.map(m => m.id);
-        
+
         case 'qwen':
           return this.getQwenModels();
-        
+
         default:
           return [];
       }
@@ -90,18 +106,18 @@ class AIService {
       return [];
     }
   }
-  
+
   // New method to handle Qwen model retrieval with enhanced caching
   async getQwenModels(forceRefresh = false) {
     const cache = this.modelCache.qwen;
     const oneWeek = 7 * 24 * 60 * 60 * 1000; // 1 week in ms
-    
+
     // Return cache if valid and not forced
     if (!forceRefresh && cache.models.length > 0 && Date.now() - cache.lastSuccess < oneWeek) {
       console.log('Using valid Qwen cache');
       return cache.models;
     }
-    
+
     try {
       const models = await this.fetchQwenModels();
       cache.models = models;
@@ -111,54 +127,54 @@ class AIService {
       return models;
     } catch (error) {
       console.error('Qwen model fetch failed:', error);
-      
+
       // Use last successful cache if available
       if (cache.models.length > 0) {
         console.log('Using cached models due to API error');
         return cache.models;
       }
-      
+
       throw new Error('Failed to fetch Qwen models and no cache available');
     }
   }
-  
+
   // New method to fetch Qwen models from API
   async fetchQwenModels() {
     const useOAuth = await this.db.getSetting('llm.qwen.useOAuth');
-    
+
     if (useOAuth !== 'true') {
       throw new Error('Qwen OAuth is required but not enabled');
     }
 
     const oauthCredsStr = await this.db.getSetting('llm.qwen.oauthCreds');
     if (!oauthCredsStr) throw new Error('OAuth enabled but no credentials found');
-    
+
     const oauthCreds = JSON.parse(oauthCredsStr);
     const token = oauthCreds.access_token;
-    
+
     if (!token) throw new Error('No access token available');
-    
+
     try {
       // First get API key using OAuth token
       const apiKeyResponse = await axios.get('https://portal.qwen.ai/api/v1/auth/api_key', {
         headers: { 'Authorization': `Bearer ${token}` },
         timeout: 120000
       });
-      
+
       const apiKey = apiKeyResponse.data.api_key;
       if (!apiKey) throw new Error('Failed to retrieve API key from OAuth token');
-      
+
       // Use DashScope API for model listing with the API key
       const response = await axios.get('https://dashscope.aliyuncs.com/api/v1/models', {
         headers: { 'Authorization': `Bearer ${apiKey}` },
         timeout: 120000
       });
-      
+
       // Validate response
       if (!response.data?.data?.length) {
         throw new Error('API returned empty model list');
       }
-      
+
       return response.data.data.map(m => m.id);
     } catch (error) {
       console.error('Qwen model fetch error:', error.response?.data || error.message);
@@ -178,10 +194,13 @@ class AIService {
     // Build MCP tool context (separate from system prompt)
     let mcpContext = '';
     if (this.mcpServer) {
-      const tools = this.mcpServer.getTools();
+      // Use getActiveTools() to only include tools from active groups
+      const tools = this.mcpServer.getActiveTools && this.mcpServer.getActiveTools().length > 0
+        ? this.mcpServer.getActiveTools()
+        : this.mcpServer.getTools(); // Fallback to all tools if groups not loaded
       const docs = this.mcpServer.getToolsDocumentation();
 
-      mcpContext = `\n\n<mcp_tools>\nAvailable Tools (you can suggest ANY tool - system handles permissions):\n\n`;
+      mcpContext = `\n\n<mcp_tools>\nAvailable Tools (from active groups):\n\n`;
 
       // Create a map of tool docs for easy lookup
       const docsMap = new Map(docs.map(doc => [doc.name, doc]));
@@ -228,7 +247,7 @@ class AIService {
       mcpContext += `</mcp_tools>`;
       fullSystemPrompt += mcpContext;
     }
-    
+
     const messages = [
       { role: 'system', content: fullSystemPrompt },
       ...conversationHistory,
@@ -245,13 +264,13 @@ class AIService {
       switch (this.currentProvider) {
         case 'ollama':
           return await this._callOllama(messages, newOptions);
-        
+
         case 'lmstudio':
           return await this._callLMStudio(messages, options);
-        
+
         case 'openrouter':
           return await this._callOpenRouter(messages, options);
-        
+
         case 'qwen':
           const mode = await this.db.getSetting('llm.qwen.mode') || 'cli';
           if (mode === 'cli') {
@@ -259,7 +278,7 @@ class AIService {
           } else {
             return await this._callQwenAPI(messages, options);
           }
-        
+
         default:
           throw new Error(`Unsupported provider: ${this.currentProvider}`);
       }
@@ -273,7 +292,7 @@ class AIService {
     // Get model type (local or cloud) from settings
     const modelType = await this.db.getSetting('llm.modelType') || 'local';
     let contextLength = null;
-    
+
     // Only apply context window setting for local models
     if (modelType === 'local') {
       const userContextWindow = await this.db.getSetting('context_window');
@@ -298,18 +317,37 @@ class AIService {
       requestBody.options.num_ctx = contextLength;
     }
 
-    const response = await axios.post(`${this.providers.ollama.baseURL}/api/chat`, requestBody);
+    // Create abort controller for this request
+    this.abortController = new AbortController();
+    this.isGenerating = true;
 
-    return {
-      content: response.data.message.content,
-      model: response.data.model,
-      usage: {
-        prompt_tokens: response.data.prompt_eval_count || 0,
-        completion_tokens: response.data.eval_count || 0,
-        total_tokens: (response.data.prompt_eval_count || 0) + (response.data.eval_count || 0)
-      },
-      context_length: contextLength
-    };
+    try {
+      const response = await axios.post(`${this.providers.ollama.baseURL}/api/chat`, requestBody, {
+        signal: this.abortController.signal
+      });
+
+      this.isGenerating = false;
+      this.abortController = null;
+
+      return {
+        content: response.data.message.content,
+        model: response.data.model,
+        usage: {
+          prompt_tokens: response.data.prompt_eval_count || 0,
+          completion_tokens: response.data.eval_count || 0,
+          total_tokens: (response.data.prompt_eval_count || 0) + (response.data.eval_count || 0)
+        },
+        context_length: contextLength
+      };
+    } catch (error) {
+      this.isGenerating = false;
+      this.abortController = null;
+
+      if (axios.isCancel(error) || error.name === 'AbortError' || error.code === 'ERR_CANCELED') {
+        return { content: '[Generation stopped by user]', stopped: true };
+      }
+      throw error;
+    }
   }
 
   async _callLMStudio(messages, options) {
@@ -351,24 +389,24 @@ class AIService {
   async _callQwenAPI(messages, options) {
     const apiKey = await this.db.getSetting('llm.qwen.apiKey');
     if (!apiKey) throw new Error('Qwen API key not found');
-    
+
     try {
-      const headers = { 
+      const headers = {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       };
-      
+
       const requestBody = {
         model: options.model || 'qwen-turbo',
         messages: messages
       };
-      
+
       const response = await axios.post(
         this.providers.qwen.baseURL,
         requestBody,
         { headers, timeout: 120000 }
       );
-      
+
       return {
         content: response.data.choices[0].message.content,
         model: response.data.model,
@@ -383,7 +421,7 @@ class AIService {
   async _callQwenCLI(messages, options) {
     const { exec } = require('child_process');
     const lastMessage = messages[messages.length - 1].content;
-    
+
     return new Promise((resolve, reject) => {
       exec(`qwen "${lastMessage}"`, { timeout: 30000 }, (error, stdout, stderr) => {
         if (error) {
@@ -417,9 +455,9 @@ class AIService {
     if (!this.providers[provider]) {
       throw new Error(`Unknown provider: ${provider}`);
     }
-    
+
     await this.db.setAPIKey(provider, key);
-    
+
     // Update in-memory configuration
     if (this.providers[provider].headers.Authorization) {
       const baseAuth = this.providers[provider].headers.Authorization.split(' ')[0];
@@ -438,7 +476,7 @@ class AIService {
   getProviders() {
     return Object.keys(this.providers);
   }
-  
+
   clearModelCache(provider = null) {
     if (provider) {
       delete this.modelCache[provider];

@@ -3,12 +3,20 @@ const path = require('path');
 const Database = require('./database');
 const AIService = require('./ai-service');
 const MCPServer = require('./mcp-server');
+const ToolChainController = require('./tool-chain-controller');
+const WorkflowManager = require('./workflow-manager');
+const EmbeddingService = require('./embedding-service');
+const VectorStore = require('./vector-store');
 const ollamaService = require('./ollama-service');
 
 let mainWindow;
 let db;
 let aiService;
 let mcpServer;
+let chainController;
+let workflowManager;
+let embeddingService;
+let vectorStore;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -38,17 +46,27 @@ app.whenReady().then(async () => {
     // Initialize services
     db = new Database();
     await db.init();
-    
+
     // Create MCP server first, then pass it to AI service
     mcpServer = new MCPServer(db);
     aiService = new AIService(db, mcpServer);
     mcpServer.setAIService(aiService);
     await mcpServer.loadCustomTools();
-    
+
+    // Create chain controller for multi-tool execution
+    chainController = new ToolChainController(aiService, mcpServer, db);
+
+    // Create workflow manager for learning tool chains
+    workflowManager = new WorkflowManager(db, mcpServer);
+
+    // Create embedding service and vector store for semantic search
+    embeddingService = new EmbeddingService();
+    vectorStore = new VectorStore(db, embeddingService);
+
     createWindow();
-    
-    // Setup IPC handlers
-    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService);
+
+    // Setup IPC handlers (pass all services)
+    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

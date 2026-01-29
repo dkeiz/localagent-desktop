@@ -93,6 +93,41 @@
   box-shadow: none;
 }
 
+/* Send button group with stop */
+.send-btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-self: flex-end;
+}
+
+.stop-button {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
+  min-width: 80px;
+  font-size: 1rem;
+}
+
+.stop-button:hover {
+  background: linear-gradient(135deg, #c82333, #a71d2a);
+  box-shadow: var(--shadow-md);
+}
+
+.stop-button:active {
+  transform: scale(0.98);
+}
+
+.hidden {
+  display: none !important;
+}
+
 /* Icon buttons */
 .icon-btn {
   background: transparent;
@@ -201,7 +236,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Ripple effect */

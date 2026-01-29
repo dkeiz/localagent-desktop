@@ -1462,3 +1462,113 @@
 .widget-panel.collapsed .panel-toggle-btn {
     margin: 0 auto;
 }
+
+/* =====================================
+   Tool Groups in Sidebar
+   ===================================== */
+
+.tool-groups-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.2rem;
+    padding: 0.15rem;
+}
+
+.tool-group-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem 0.15rem;
+    border-radius: 4px;
+    background: var(--card-bg);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1.5px solid transparent;
+    min-height: 36px;
+}
+
+.tool-group-item:hover {
+    background: var(--hover-bg);
+}
+
+.tool-group-item.active {
+    border-color: var(--primary-color);
+    background: rgba(99, 102, 241, 0.12);
+}
+
+.tool-group-item.active .tool-group-icon {
+    transform: scale(1.05);
+}
+
+.tool-group-icon {
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: transform 0.15s ease;
+}
+
+.tool-group-label {
+    font-size: 0.55rem;
+    color: var(--text-secondary);
+    margin-top: 0.1rem;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.tool-group-item.active .tool-group-label {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* Settings button on tool group */
+.tool-group-settings {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 12px;
+    height: 12px;
+    font-size: 0.5rem;
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    padding: 0;
+}
+
+.tool-group-item:hover .tool-group-settings {
+    opacity: 1;
+}
+
+.tool-group-settings:hover {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+/* Tool count badge on group */
+.tool-group-count {
+    position: absolute;
+    bottom: 1px;
+    right: 1px;
+    font-size: 0.5rem;
+    background: var(--text-muted);
+    color: white;
+    padding: 0 3px;
+    border-radius: 6px;
+    min-width: 10px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.tool-group-item.active .tool-group-count {
+    background: var(--primary-color);
+}

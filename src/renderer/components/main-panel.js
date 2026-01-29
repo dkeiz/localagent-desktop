@@ -27,6 +27,7 @@ class MainPanel {
     initializeEvents() {
         // Chat send functionality
         const sendBtn = document.getElementById('send-btn');
+        const stopBtn = document.getElementById('stop-btn');
         const messageInput = document.getElementById('message-input');
         const newChatBtn = document.getElementById('new-chat-btn');
         const attachBtn = document.getElementById('attach-btn');
@@ -35,6 +36,23 @@ class MainPanel {
         const dropZone = document.getElementById('drop-zone');
 
         sendBtn.addEventListener('click', () => this.sendMessage());
+
+        // Stop generation button
+        if (stopBtn) {
+            stopBtn.addEventListener('click', async () => {
+                console.log('[UI] Stop button clicked');
+                try {
+                    await window.electronAPI.stopGeneration();
+                    stopBtn.classList.add('hidden');
+                    sendBtn.classList.remove('hidden');
+                    this.isSending = false;
+                    this.addMessage('system', '[Generation stopped]');
+                } catch (error) {
+                    console.error('Failed to stop generation:', error);
+                }
+            });
+        }
+
         if (newChatBtn) newChatBtn.addEventListener('click', () => this.newChat());
         attachBtn.addEventListener('click', () => this.attachFile());
         voiceBtn.addEventListener('click', () => this.toggleVoiceInput());
@@ -208,6 +226,8 @@ class MainPanel {
 
     async sendMessage() {
         const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const stopBtn = document.getElementById('stop-btn');
         const message = messageInput.value.trim();
 
         if (!message && this.attachedFiles.length === 0) return;
@@ -219,6 +239,11 @@ class MainPanel {
         document.querySelectorAll('.attached-file').forEach(el => el.remove());
         messageInput.focus();
 
+        // Show stop button, hide send button
+        if (sendBtn) sendBtn.classList.add('hidden');
+        if (stopBtn) stopBtn.classList.remove('hidden');
+        this.isSending = true;
+
         // Add loading indicator
         const loadingId = this.addMessage('assistant', '...');
 
@@ -226,14 +251,23 @@ class MainPanel {
         window.electronAPI.sendMessage(message)
             .then(response => {
                 this.removeMessage(loadingId);
-                this.addMessage('assistant', response.content);
-                this.updateContextUsage(response);
-                if (this.autoSpeak) this.speakText(response.content);
+                // Don't add message if generation was stopped
+                if (!response.stopped) {
+                    this.addMessage('assistant', response.content);
+                    this.updateContextUsage(response);
+                    if (this.autoSpeak) this.speakText(response.content);
+                }
             })
             .catch(error => {
                 console.error('Error sending message:', error);
                 this.removeMessage(loadingId);
                 this.addMessage('system', `Error: ${error.message}`);
+            })
+            .finally(() => {
+                // Restore buttons
+                if (sendBtn) sendBtn.classList.remove('hidden');
+                if (stopBtn) stopBtn.classList.add('hidden');
+                this.isSending = false;
             });
     }
 

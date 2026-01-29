@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LocalAgent Desktop</title>
-    <link rel="stylesheet" href="styles/layout.css?v=6">
-    <link rel="stylesheet" href="styles/theme.css?v=6">
-    <link rel="stylesheet" href="styles/buttons.css?v=6">
-    <link rel="stylesheet" href="styles/rule-manager.css?v=6">
+    <link rel="stylesheet" href="styles/layout.css?v=7">
+    <link rel="stylesheet" href="styles/theme.css?v=7">
+    <link rel="stylesheet" href="styles/buttons.css?v=7">
+    <link rel="stylesheet" href="styles/rule-manager.css?v=7">
 </head>
 
 <body>
@@ -50,6 +50,18 @@
                             <span class="label">Tool Activity</span>
                             <span id="tool-count-badge" class="badge">0</span>
                         </button>
+                    </div>
+                </div>
+            </div>
+            <!-- Tool Groups Section -->
+            <div class="collapsible-section expanded" data-section="tool-groups">
+                <div class="section-header">
+                    <span>Tool Groups</span>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="section-content">
+                    <div class="tool-groups-grid" id="tool-groups-container">
+                        <!-- Tool groups will be dynamically populated -->
                     </div>
                 </div>
             </div>
@@ -96,7 +108,10 @@
                                     title="Model"></select>
                             </div>
                             <textarea id="message-input" placeholder="Type your message..." rows="2"></textarea>
-                            <button id="send-btn" class="send-button">Send</button>
+                            <div class="send-btn-group">
+                                <button id="send-btn" class="send-button">Send</button>
+                                <button id="stop-btn" class="stop-button hidden" title="Stop generation">⏹</button>
+                            </div>
                         </div>
                     </div>
                     <div id="drop-zone" class="drop-zone">
