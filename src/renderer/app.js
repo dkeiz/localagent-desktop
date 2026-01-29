@@ -112,10 +112,42 @@ class App {
             container.appendChild(item);
         });
     }
+
+    initializeTheme() {
+        // Load saved theme or default to light
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        this.setTheme(savedTheme);
+
+        // Theme picker handlers
+        const themePicker = document.getElementById('theme-picker');
+        if (themePicker) {
+            themePicker.querySelectorAll('.theme-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const theme = btn.dataset.theme;
+                    this.setTheme(theme);
+                });
+            });
+        }
+    }
+
+    setTheme(theme) {
+        // Apply theme to document
+        document.documentElement.setAttribute('data-theme', theme);
+
+        // Update button states
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.theme === theme);
+        });
+
+        // Save preference
+        localStorage.setItem('theme', theme);
+    }
 }
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
+    window.app.initializeTheme();
 });
+
 

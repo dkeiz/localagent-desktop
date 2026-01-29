@@ -1,7 +1,7 @@
 /* Three-column layout system */
 .app-container {
     display: grid;
-    grid-template-columns: 15% 60% 25%;
+    grid-template-columns: 14% 61% 25%;
     grid-template-rows: 1fr;
     height: 100vh;
     overflow: hidden;
@@ -11,32 +11,34 @@
 .sidebar {
     background-color: var(--sidebar-bg);
     border-right: 1px solid var(--border-color);
-    padding: 1rem;
+    padding: 0.4rem;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    /* Reduced vertical spacing */
+    gap: 0.2rem;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 /* Collapsible sections */
 .collapsible-section {
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.2rem;
 }
 
 .section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.4rem 0.3rem;
+    padding: 0.2rem 0.25rem;
     cursor: pointer;
     font-weight: 600;
+    font-size: 0.7rem;
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
 }
 
 .toggle-icon {
-    font-size: 0.8rem;
-    transition: transform 0.2s ease;
+    font-size: 0.6rem;
+    transition: transform 0.15s ease;
 }
 
 .collapsed .toggle-icon {
@@ -48,15 +50,17 @@
 }
 
 .section-content {
-    padding: 0.2rem 0;
+    padding: 0.15rem 0;
 }
 
 .logo {
-    font-size: 1.5rem;
+    font-size: 1rem;
     font-weight: bold;
     color: var(--text-primary);
     text-align: center;
-    margin-bottom: 2rem;
+    padding: 0.3rem 0;
+    margin-bottom: 0.3rem;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .nav-tabs {
