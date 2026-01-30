@@ -168,40 +168,59 @@
                 </div>
             </section>
 
-            <section id="workflows-tab" class="tab-content">
-                <h2>Workflows</h2>
 
-                <!-- Create New Workflow Form -->
-                <div class="workflow-creator">
-                    <h3>Create New Workflow</h3>
-                    <div class="workflow-form">
-                        <input type="text" id="workflow-name" placeholder="Workflow name..." class="form-control">
-                        <textarea id="workflow-description" placeholder="Description - what this workflow does..."
-                            rows="2" class="form-control"></textarea>
-                        <div class="workflow-tools-select">
-                            <label>Select Tools (in execution order):</label>
-                            <select id="workflow-tool-select" class="form-control" multiple size="5">
-                                <!-- Tools will be populated here -->
-                            </select>
-                            <div class="selected-tools" id="selected-workflow-tools">
-                                <!-- Selected tools will appear here -->
+            <section id="workflows-tab" class="tab-content workflow-editor-container">
+                <!-- Workflow Editor Toolbar -->
+                <div class="workflow-toolbar">
+                    <div class="workflow-toolbar-left">
+                        <input type="text" id="workflow-name-input" placeholder="Workflow name..."
+                            class="workflow-name-input">
+                        <button id="new-workflow-btn" class="secondary-btn compact" title="New Workflow">🆕 New</button>
+                    </div>
+                    <div class="workflow-toolbar-center">
+                        <div class="add-node-dropdown">
+                            <button id="add-node-btn" class="primary-btn compact">➕ Add Node</button>
+                            <div class="node-palette" id="node-palette">
+                                <!-- Node categories will be populated here -->
                             </div>
                         </div>
-                        <div class="workflow-form-actions">
-                            <button id="save-workflow-btn" class="primary-btn compact">💾 Save Workflow</button>
-                            <button id="clear-workflow-form-btn" class="secondary-btn compact">Clear</button>
+                    </div>
+                    <div class="workflow-toolbar-right">
+                        <button id="save-workflow-btn" class="secondary-btn compact" title="Save Workflow">💾
+                            Save</button>
+                        <button id="run-workflow-btn" class="primary-btn compact" title="Run Workflow">▶️ Run</button>
+                        <div class="zoom-controls">
+                            <button id="zoom-out-btn" class="icon-btn" title="Zoom Out">➖</button>
+                            <span id="zoom-level">100%</span>
+                            <button id="zoom-in-btn" class="icon-btn" title="Zoom In">➕</button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Saved Workflows List -->
-                <div class="workflows-list-section">
-                    <h3>Saved Workflows</h3>
-                    <div id="workflows-container" class="workflows-grid">
-                        <!-- Workflows will be dynamically listed here -->
+                <!-- Workflow Canvas -->
+                <div class="workflow-canvas-container" id="workflow-canvas-container">
+                    <svg class="workflow-connections" id="workflow-connections">
+                        <!-- Connection lines will be drawn here -->
+                    </svg>
+                    <div class="workflow-canvas" id="workflow-canvas">
+                        <!-- Nodes will be placed here -->
+                    </div>
+                </div>
+
+                <!-- Saved Workflows Panel (collapsible) -->
+                <div class="saved-workflows-panel collapsed" id="saved-workflows-panel">
+                    <div class="panel-header" id="toggle-saved-workflows">
+                        <span>📁 Saved Workflows</span>
+                        <span class="toggle-arrow">◀</span>
+                    </div>
+                    <div class="panel-content">
+                        <div id="workflows-list" class="workflows-list">
+                            <!-- Saved workflows will be listed here -->
+                        </div>
                     </div>
                 </div>
             </section>
+
 
             <section id="llm-tab" class="tab-content" style="padding: 0.25rem;">
                 <h2 style="margin: 0 0 0.25rem 0; font-size: 1.2rem;">LLM Configuration</h2>
@@ -325,6 +344,7 @@
     <script src="components/rule-manager.js?v=7"></script>
     <script src="components/message-formatter.js?v=7"></script>
     <script src="components/stats.js?v=7"></script>
+    <script src="components/workflow-editor.js?v=1"></script>
     <script src="app.js?v=7"></script>
 </body>
 

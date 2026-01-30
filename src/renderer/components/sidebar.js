@@ -100,7 +100,9 @@ class Sidebar {
                 this.updateToolActivityTab();
                 break;
             case 'workflows':
-                await this.loadWorkflows();
+                if (!this.workflowEditor) {
+                    this.workflowEditor = new window.WorkflowEditor();
+                }
                 break;
         }
     }
