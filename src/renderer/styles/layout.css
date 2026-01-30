@@ -986,6 +986,170 @@
     display: none;
 }
 
+/* Workflows Page Styles */
+.workflow-creator {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.workflow-creator h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
+}
+
+.workflow-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.workflow-form input,
+.workflow-form textarea {
+    width: 100%;
+}
+
+.workflow-tools-select {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.workflow-tools-select label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.workflow-tools-select select {
+    max-height: 120px;
+}
+
+.selected-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0.25rem;
+    background: var(--bg-color);
+    border-radius: 4px;
+}
+
+.selected-tool-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--accent-color);
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.selected-tool-chip .remove-tool-btn {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0;
+    line-height: 1;
+}
+
+.workflow-form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.workflows-list-section h3 {
+    margin: 0 0 0.75rem 0;
+}
+
+.workflows-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.75rem;
+}
+
+.workflow-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.workflow-card:hover {
+    border-color: var(--accent-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.workflow-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.workflow-name {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.workflow-actions {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.workflow-actions .icon-btn {
+    font-size: 0.9rem;
+    padding: 0.2rem 0.4rem;
+}
+
+.workflow-description {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    line-height: 1.3;
+}
+
+.workflow-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.tools-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.workflow-tool-badge {
+    background: var(--accent-color);
+    color: white;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+}
+
+.workflow-stats {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.no-workflows {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+
 /* Custom Tool Card Tooltips */
 .mcp-tool-card {
     position: relative;

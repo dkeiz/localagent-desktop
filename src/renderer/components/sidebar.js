@@ -99,6 +99,9 @@ class Sidebar {
             case 'tools':
                 this.updateToolActivityTab();
                 break;
+            case 'workflows':
+                await this.loadWorkflows();
+                break;
         }
     }
 
@@ -240,6 +243,167 @@ class Sidebar {
         } catch (error) {
             console.error('Error loading MCP tools:', error);
         }
+    }
+
+    async loadWorkflows() {
+        try {
+            const workflows = await window.electronAPI.getWorkflows?.() || [];
+            const tools = await window.electronAPI.getMCPTools?.() || [];
+            const container = document.getElementById('workflows-container');
+            const toolSelect = document.getElementById('workflow-tool-select');
+            const selectedToolsDiv = document.getElementById('selected-workflow-tools');
+
+            if (!container) return;
+
+            // Populate tool select dropdown
+            if (toolSelect) {
+                toolSelect.innerHTML = '';
+                tools.forEach(tool => {
+                    const option = document.createElement('option');
+                    option.value = tool.name;
+                    option.textContent = `${tool.name}`;
+                    toolSelect.appendChild(option);
+                });
+
+                // Track selected tools in order
+                this.selectedWorkflowTools = [];
+
+                toolSelect.addEventListener('dblclick', (e) => {
+                    const toolName = e.target.value;
+                    if (toolName && !this.selectedWorkflowTools.includes(toolName)) {
+                        this.selectedWorkflowTools.push(toolName);
+                        this.updateSelectedToolsDisplay(selectedToolsDiv);
+                    }
+                });
+            }
+
+            // Setup save button
+            document.getElementById('save-workflow-btn')?.addEventListener('click', () => this.saveWorkflow());
+            document.getElementById('clear-workflow-form-btn')?.addEventListener('click', () => this.clearWorkflowForm());
+
+            // Render saved workflows
+            container.innerHTML = '';
+            if (workflows.length === 0) {
+                container.innerHTML = '<div class="no-workflows">No workflows saved yet. Create one above!</div>';
+                return;
+            }
+
+            workflows.forEach(workflow => {
+                const workflowCard = document.createElement('div');
+                workflowCard.className = 'workflow-card';
+                const toolChain = Array.isArray(workflow.tool_chain)
+                    ? workflow.tool_chain
+                    : JSON.parse(workflow.tool_chain || '[]');
+
+                workflowCard.innerHTML = `
+                    <div class="workflow-card-header">
+                        <h4 class="workflow-name">🔄 ${workflow.name}</h4>
+                        <div class="workflow-actions">
+                            <button class="run-workflow-btn icon-btn" data-id="${workflow.id}" title="Run Workflow">▶️</button>
+                            <button class="delete-workflow-btn icon-btn" data-id="${workflow.id}" title="Delete">🗑️</button>
+                        </div>
+                    </div>
+                    <div class="workflow-description">${workflow.description || 'No description'}</div>
+                    <div class="workflow-tools">
+                        <span class="tools-label">Tools:</span>
+                        ${toolChain.map(t => `<span class="workflow-tool-badge">${t.tool || t}</span>`).join(' → ')}
+                    </div>
+                    <div class="workflow-stats">
+                        <span>Runs: ${workflow.execution_count || 0}</span>
+                        <span>Success: ${workflow.success_count || 0}</span>
+                    </div>
+                `;
+
+                // Run workflow handler
+                workflowCard.querySelector('.run-workflow-btn').addEventListener('click', async () => {
+                    try {
+                        const result = await window.electronAPI.runWorkflow?.(workflow.id);
+                        if (window.mainPanel) {
+                            window.mainPanel.showNotification(result.success ? 'Workflow executed!' : 'Workflow failed');
+                        }
+                        await this.loadWorkflows(); // Refresh to update stats
+                    } catch (error) {
+                        console.error('Failed to run workflow:', error);
+                    }
+                });
+
+                // Delete workflow handler
+                workflowCard.querySelector('.delete-workflow-btn').addEventListener('click', async () => {
+                    if (confirm(`Delete workflow "${workflow.name}"?`)) {
+                        try {
+                            await window.electronAPI.deleteWorkflow?.(workflow.id);
+                            await this.loadWorkflows();
+                            if (window.mainPanel) {
+                                window.mainPanel.showNotification('Workflow deleted');
+                            }
+                        } catch (error) {
+                            console.error('Failed to delete workflow:', error);
+                        }
+                    }
+                });
+
+                container.appendChild(workflowCard);
+            });
+        } catch (error) {
+            console.error('Error loading workflows:', error);
+        }
+    }
+
+    updateSelectedToolsDisplay(container) {
+        if (!container) return;
+        container.innerHTML = this.selectedWorkflowTools.map((tool, idx) => `
+            <span class="selected-tool-chip" data-index="${idx}">
+                ${idx + 1}. ${tool}
+                <button class="remove-tool-btn" data-index="${idx}">×</button>
+            </span>
+        `).join(' → ');
+
+        container.querySelectorAll('.remove-tool-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                this.selectedWorkflowTools.splice(idx, 1);
+                this.updateSelectedToolsDisplay(container);
+            });
+        });
+    }
+
+    async saveWorkflow() {
+        const name = document.getElementById('workflow-name')?.value.trim();
+        const description = document.getElementById('workflow-description')?.value.trim();
+
+        if (!name) {
+            if (window.mainPanel) window.mainPanel.showNotification('Please enter a workflow name', 'error');
+            return;
+        }
+
+        if (!this.selectedWorkflowTools || this.selectedWorkflowTools.length === 0) {
+            if (window.mainPanel) window.mainPanel.showNotification('Please select at least one tool', 'error');
+            return;
+        }
+
+        try {
+            const workflow = {
+                name,
+                description,
+                tool_chain: this.selectedWorkflowTools.map(t => ({ tool: t, params: {} }))
+            };
+
+            await window.electronAPI.saveWorkflow?.(workflow);
+            if (window.mainPanel) window.mainPanel.showNotification('Workflow saved!');
+            this.clearWorkflowForm();
+            await this.loadWorkflows();
+        } catch (error) {
+            console.error('Failed to save workflow:', error);
+            if (window.mainPanel) window.mainPanel.showNotification('Failed to save workflow', 'error');
+        }
+    }
+
+    clearWorkflowForm() {
+        document.getElementById('workflow-name').value = '';
+        document.getElementById('workflow-description').value = '';
+        this.selectedWorkflowTools = [];
+        const container = document.getElementById('selected-workflow-tools');
+        if (container) container.innerHTML = '';
     }
 
     selectTool(toolName) {

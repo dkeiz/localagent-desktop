@@ -37,6 +37,10 @@
                             <span class="icon">🔧</span>
                             <span class="label">MCP</span>
                         </button>
+                        <button class="nav-btn" data-tab="workflows">
+                            <span class="icon">🔄</span>
+                            <span class="label">Workflows</span>
+                        </button>
                         <button class="nav-btn" data-tab="llm">
                             <span class="icon">🤖</span>
                             <span class="label">LLM Settings</span>
@@ -160,6 +164,41 @@
                     <h3>Recent Activity</h3>
                     <div id="tool-activity" class="tool-activity-container">
                         <!-- Tool activity indicators will be dynamically added here -->
+                    </div>
+                </div>
+            </section>
+
+            <section id="workflows-tab" class="tab-content">
+                <h2>Workflows</h2>
+
+                <!-- Create New Workflow Form -->
+                <div class="workflow-creator">
+                    <h3>Create New Workflow</h3>
+                    <div class="workflow-form">
+                        <input type="text" id="workflow-name" placeholder="Workflow name..." class="form-control">
+                        <textarea id="workflow-description" placeholder="Description - what this workflow does..."
+                            rows="2" class="form-control"></textarea>
+                        <div class="workflow-tools-select">
+                            <label>Select Tools (in execution order):</label>
+                            <select id="workflow-tool-select" class="form-control" multiple size="5">
+                                <!-- Tools will be populated here -->
+                            </select>
+                            <div class="selected-tools" id="selected-workflow-tools">
+                                <!-- Selected tools will appear here -->
+                            </div>
+                        </div>
+                        <div class="workflow-form-actions">
+                            <button id="save-workflow-btn" class="primary-btn compact">💾 Save Workflow</button>
+                            <button id="clear-workflow-form-btn" class="secondary-btn compact">Clear</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Saved Workflows List -->
+                <div class="workflows-list-section">
+                    <h3>Saved Workflows</h3>
+                    <div id="workflows-container" class="workflows-grid">
+                        <!-- Workflows will be dynamically listed here -->
                     </div>
                 </div>
             </section>

@@ -25,6 +25,11 @@ window.electronAPI = Object.assign(ipcRenderer, {
   activateToolGroup: (groupId) => ipcRenderer.invoke('activate-tool-group', groupId),
   deactivateToolGroup: (groupId) => ipcRenderer.invoke('deactivate-tool-group', groupId),
   getActiveTools: () => ipcRenderer.invoke('get-active-tools'),
+  // Workflows
+  getWorkflows: () => ipcRenderer.invoke('get-workflows'),
+  saveWorkflow: (workflow) => ipcRenderer.invoke('save-workflow', workflow),
+  runWorkflow: (workflowId) => ipcRenderer.invoke('run-workflow', workflowId),
+  deleteWorkflow: (workflowId) => ipcRenderer.invoke('delete-workflow', workflowId),
   getChatSessions: (date, limit) => ipcRenderer.invoke('get-chat-sessions', date, limit),
   loadChatSession: (sessionId) => ipcRenderer.invoke('load-chat-session', sessionId),
   switchChatSession: (sessionId) => ipcRenderer.invoke('switch-chat-session', sessionId),

@@ -722,6 +722,31 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     }
   });
 
+  ipcMain.handle('save-workflow', async (event, workflow) => {
+    try {
+      const result = await db.addWorkflow({
+        name: workflow.name,
+        description: workflow.description || '',
+        trigger_pattern: workflow.name.toLowerCase(),
+        tool_chain: workflow.tool_chain
+      });
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('Failed to save workflow:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('run-workflow', async (event, workflowId) => {
+    try {
+      const result = await workflowManager.executeWorkflow(workflowId);
+      return result;
+    } catch (error) {
+      console.error('Failed to run workflow:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('delete-workflow', async (event, workflowId) => {
     try {
       await workflowManager.deleteWorkflow(workflowId);
