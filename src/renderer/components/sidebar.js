@@ -21,16 +21,16 @@ class Sidebar {
             const header = section.querySelector('.section-header');
             const content = section.querySelector('.section-content');
             const toggleIcon = header.querySelector('.toggle-icon');
-            
+
             header.addEventListener('click', () => {
                 section.classList.toggle('collapsed');
                 toggleIcon.textContent = section.classList.contains('collapsed') ? '◀' : '▶';
-                
+
                 // Save state to localStorage
                 const sectionId = section.getAttribute('data-section');
                 localStorage.setItem(`section-${sectionId}-collapsed`, section.classList.contains('collapsed'));
             });
-            
+
             // Restore saved state
             const sectionId = section.getAttribute('data-section');
             const isCollapsed = localStorage.getItem(`section-${sectionId}-collapsed`) === 'true';
@@ -60,7 +60,7 @@ class Sidebar {
                 button.classList.add('active');
             }
         });
-        
+
         // Reset unseen tool count when switching to tools tab
         if (tabName === 'tools') {
             this.resetUnseenToolCount();
@@ -76,7 +76,7 @@ class Sidebar {
         });
 
         this.currentTab = tabName;
-        
+
         // Load tab-specific data if needed
         this.loadTabData(tabName);
 
@@ -106,6 +106,7 @@ class Sidebar {
         try {
             const tools = await window.electronAPI.getMCPTools();
             const customTools = await window.electronAPI.getCustomTools?.() || [];
+            const toolGroups = await window.electronAPI.getToolGroups() || [];
             const container = document.getElementById('mcp-tools-container');
             const toolSelect = document.getElementById('tool-select');
             const activityContainer = document.getElementById('tool-activity');
@@ -133,15 +134,45 @@ class Sidebar {
 
             const customToolNames = new Set(customTools.map(t => t.name));
 
+            // Create a map of tool name -> group info with colors
+            const groupColors = {
+                storage: '#8b5cf6',  // purple
+                web: '#3b82f6',      // blue
+                agent: '#10b981',    // green
+                call: '#f59e0b',     // amber
+                system: '#6b7280',   // gray
+                media: '#ec4899'     // pink
+            };
+
+            const toolToGroup = new Map();
+            toolGroups.forEach(group => {
+                group.tools.forEach(toolName => {
+                    toolToGroup.set(toolName, {
+                        id: group.id,
+                        name: group.name,
+                        icon: group.icon,
+                        active: group.active,
+                        color: groupColors[group.id] || '#6b7280'
+                    });
+                });
+            });
+
+            // Render all tools in flat grid
             tools.forEach(tool => {
                 const toolElement = document.createElement('div');
                 const isActive = toolStates[tool.name]?.active !== false;
                 const isCustom = customToolNames.has(tool.name);
+                const groupInfo = toolToGroup.get(tool.name);
+                const groupColor = groupInfo?.color || '#6b7280';
+                const groupIcon = groupInfo?.icon || '🔧';
+
                 toolElement.className = 'mcp-tool-card';
+                toolElement.style.borderLeft = `3px solid ${groupColor}`;
                 toolElement.setAttribute('data-full-description', tool.description);
+                toolElement.setAttribute('data-group', groupInfo?.id || 'custom');
                 toolElement.innerHTML = `
                     <div class="tool-card-header">
-                        <h4 class="tool-card-name">${isCustom ? '🔧 ' : ''}${tool.name}</h4>
+                        <h4 class="tool-card-name"><span class="tool-group-badge" title="${groupInfo?.name || 'Custom'}">${groupIcon}</span> ${isCustom ? '🔧 ' : ''}${tool.name}</h4>
                         <div style="display: flex; gap: 0.5rem; align-items: center;">
                             ${isCustom ? '<button class="delete-tool-btn" data-tool="' + tool.name + '" title="Delete custom tool">🗑️</button>' : ''}
                             <label class="tool-toggle">
@@ -221,18 +252,18 @@ class Sidebar {
         const toolName = document.getElementById('tool-select')?.value;
         const paramsText = document.getElementById('tool-params')?.value || '{}';
         const resultDiv = document.getElementById('tool-result');
-        
+
         if (!toolName) {
             resultDiv.innerHTML = '<div class="error">Please select a tool</div>';
             return;
         }
-        
+
         try {
             const params = JSON.parse(paramsText);
             resultDiv.innerHTML = '<div class="loading">Executing...</div>';
-            
+
             const result = await window.electronAPI.executeMCPTool(toolName, params);
-            
+
             if (result.success) {
                 resultDiv.innerHTML = `<div class="success"><strong>Success:</strong><pre>${JSON.stringify(result.result, null, 2)}</pre></div>`;
             } else {
@@ -250,7 +281,7 @@ class Sidebar {
             if (promptTextarea) {
                 promptTextarea.value = prompt || '';
             }
-            
+
             // Also load prompt rules
             if (window.mainPanel && window.mainPanel.loadPromptRules) {
                 await window.mainPanel.loadPromptRules();
@@ -283,12 +314,15 @@ class Sidebar {
             this.toolActivity.unshift({
                 tool: data.toolName,
                 time: new Date().toLocaleTimeString(),
-                success: data.success
+                success: data.success,
+                params: data.params || {},
+                result: data.result,
+                error: data.error
             });
-            
+
             // Keep only last 10 activities
             this.toolActivity = this.toolActivity.slice(0, 10);
-            
+
             // Increment unseen tool count
             this.unseenToolCount++;
             this.updateToolIndicators();
@@ -326,27 +360,67 @@ class Sidebar {
     updateToolActivityTab() {
         const list = document.getElementById('tool-activity-list');
         if (!list) return;
-        
+
         if (this.toolActivity.length === 0) {
             list.innerHTML = '<div class="no-activity">No tool activity yet</div>';
         } else {
-            list.innerHTML = this.toolActivity.map(item => `
-                <div class="tool-activity-item ${item.success ? 'success' : 'error'}">
-                    <div class="tool-header">
+            list.innerHTML = this.toolActivity.map((item, index) => {
+                const paramsJson = JSON.stringify(item.params, null, 2);
+                const resultJson = item.success
+                    ? JSON.stringify(item.result, null, 2)
+                    : item.error || 'Unknown error';
+
+                return `
+                <div class="tool-activity-item ${item.success ? 'success' : 'error'}" data-index="${index}">
+                    <div class="tool-header" onclick="window.sidebar.toggleToolDetails(${index})">
+                        <span class="tool-expand">▶</span>
                         <strong>${item.tool}</strong>
                         <span class="tool-time">${item.time}</span>
+                        <span class="tool-status-badge">${item.success ? '✓' : '✗'}</span>
                     </div>
-                    <div class="tool-status">${item.success ? '✓ Success' : '✗ Failed'}</div>
+                    <div class="tool-details" style="display: none;">
+                        <div class="tool-section">
+                            <div class="tool-section-label">Parameters:</div>
+                            <pre class="tool-json">${this.escapeHtml(paramsJson)}</pre>
+                        </div>
+                        <div class="tool-section">
+                            <div class="tool-section-label">${item.success ? 'Result:' : 'Error:'}</div>
+                            <pre class="tool-json ${item.success ? '' : 'error-text'}">${this.escapeHtml(resultJson)}</pre>
+                        </div>
+                    </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
+    }
+
+    toggleToolDetails(index) {
+        const items = document.querySelectorAll('.tool-activity-item');
+        const item = items[index];
+        if (!item) return;
+
+        const details = item.querySelector('.tool-details');
+        const expand = item.querySelector('.tool-expand');
+
+        if (details.style.display === 'none') {
+            details.style.display = 'block';
+            expand.textContent = '▼';
+        } else {
+            details.style.display = 'none';
+            expand.textContent = '▶';
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     async loadChatSessions(date = null) {
         try {
             // Always get last 6, unless date is specified and has more than 6
             let sessions = await window.electronAPI.getChatSessions(null, 6);
-            
+
             if (date) {
                 const dateSessions = await window.electronAPI.getChatSessions(date, 100);
                 if (dateSessions.length > 0) {
@@ -354,20 +428,20 @@ class Sidebar {
                 }
             }
             const container = document.getElementById('chat-sessions-list');
-            
+
             if (!container) return;
-            
+
             if (sessions.length === 0) {
                 container.innerHTML = '<div class="no-sessions">No chats</div>';
                 return;
             }
-            
+
             container.innerHTML = sessions.map(session => {
-                const preview = session.first_message ? 
-                    (session.first_message.length > 15 ? session.first_message.substring(0, 15) + '...' : session.first_message) : 
+                const preview = session.first_message ?
+                    (session.first_message.length > 15 ? session.first_message.substring(0, 15) + '...' : session.first_message) :
                     'Empty';
                 const time = new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                
+
                 return `
                     <div class="chat-session-compact" data-session-id="${session.id}" title="${session.first_message || 'Empty chat'}">
                         <span class="session-time">${time}</span>
@@ -376,11 +450,11 @@ class Sidebar {
                     </div>
                 `;
             }).join('');
-            
+
             // Add click handlers
             container.querySelectorAll('.chat-session-compact').forEach(item => {
                 const sessionId = parseInt(item.dataset.sessionId);
-                
+
                 // Click on item (not delete button)
                 item.addEventListener('click', (e) => {
                     if (e.target.classList.contains('delete-session-btn')) {
@@ -388,7 +462,7 @@ class Sidebar {
                     }
                     this.loadSession(sessionId);
                 });
-                
+
                 // Delete button
                 const deleteBtn = item.querySelector('.delete-session-btn');
                 if (deleteBtn) {
@@ -407,17 +481,17 @@ class Sidebar {
         try {
             // Switch to this session in the database
             await window.electronAPI.switchChatSession(sessionId);
-            
+
             // Load conversations for this session
             const conversations = await window.electronAPI.loadChatSession(sessionId);
             this.currentSessionId = sessionId;
-            
+
             // Clear and load messages
             const messagesContainer = document.getElementById('messages-container');
             if (!messagesContainer) return;
-            
+
             messagesContainer.innerHTML = '';
-            
+
             if (!conversations || conversations.length === 0) {
                 const emptyDiv = document.createElement('div');
                 emptyDiv.className = 'no-messages';
@@ -428,18 +502,18 @@ class Sidebar {
                 // Add all messages from this session
                 conversations.forEach(conv => {
                     const messageDiv = document.createElement('div');
-                    messageDiv.className = `message ${conv.role}`;
+                    messageDiv.className = `message ${conv.role} `;
                     messageDiv.textContent = conv.content;
                     messagesContainer.appendChild(messageDiv);
                 });
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-            
+
             // Calculate and show context usage
             if (window.mainPanel && window.mainPanel.calculateContextUsage) {
                 await window.mainPanel.calculateContextUsage();
             }
-            
+
             // Switch to chat tab
             this.switchTab('chat');
         } catch (error) {

@@ -455,10 +455,13 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   });
 
   ipcMain.handle('activate-tool-group', async (event, groupId) => {
+    console.log('[IPC] activate-tool-group called with:', groupId);
     try {
       const result = await mcpServer.activateGroup(groupId);
+      console.log('[IPC] Group activated successfully:', result);
       return { success: true, ...result };
     } catch (error) {
+      console.log('[IPC] Group activation failed:', error.message);
       return { success: false, error: error.message };
     }
   });

@@ -912,6 +912,80 @@
     box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
 }
 
+/* Tool Group Sections */
+.tool-group-section {
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.tool-group-section.inactive {
+    opacity: 0.7;
+}
+
+.tool-group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.tool-group-header:hover {
+    background: var(--hover-bg);
+}
+
+.tool-group-header-icon {
+    font-size: 1.1rem;
+}
+
+.tool-group-header-name {
+    font-weight: 600;
+    flex: 1;
+}
+
+.tool-group-header-count {
+    background: var(--accent-color);
+    color: white;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+}
+
+.tool-group-header-status {
+    font-size: 0.85rem;
+}
+
+.tool-group-header-arrow {
+    transition: transform 0.2s ease;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.tool-group-section.collapsed .tool-group-header-arrow {
+    transform: rotate(-90deg);
+}
+
+.tool-group-section.collapsed .tool-group-header {
+    border-bottom: none;
+}
+
+.tool-group-tools {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    padding: 0.5rem;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+}
+
+.tool-group-section.collapsed .tool-group-tools {
+    display: none;
+}
+
 /* Custom Tool Card Tooltips */
 .mcp-tool-card {
     position: relative;
@@ -1072,51 +1146,116 @@
 
 /* Tool Activity Tab */
 .tool-activity-container {
-    height: 100%;
-    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 .tool-activity-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.25rem;
 }
 
 .tool-activity-item {
-    padding: 1rem;
+    padding: 0.3rem;
     border-radius: var(--border-radius);
     border: 1px solid var(--border-color);
+    margin-bottom: 0.3rem;
 }
 
 .tool-activity-item.success {
-    background: #d4edda;
-    border-color: #c3e6cb;
+    background: var(--bg-secondary);
+    border-left: 3px solid var(--success);
 }
 
 .tool-activity-item.error {
-    background: #f8d7da;
-    border-color: #f5c6cb;
+    background: var(--bg-secondary);
+    border-left: 3px solid var(--danger);
 }
 
 .tool-activity-item .tool-header {
     display: flex;
-    justify-content: space-between;
-    margin-bottom: 0.5rem;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.2rem;
 }
 
-.tool-activity-item .tool-status {
-    font-size: 0.85rem;
+.tool-activity-item .tool-header:hover {
+    background: var(--hover-bg);
+    border-radius: var(--border-radius);
+}
+
+.tool-activity-item .tool-expand {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    width: 10px;
+}
+
+.tool-activity-item .tool-time {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    margin-left: auto;
+}
+
+.tool-activity-item .tool-status-badge {
+    font-size: 0.7rem;
+    font-weight: bold;
+}
+
+.tool-activity-item.success .tool-status-badge {
+    color: var(--success);
+}
+
+.tool-activity-item.error .tool-status-badge {
+    color: var(--danger);
+}
+
+.tool-details {
+    padding: 0.3rem;
+    margin-top: 0.2rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.tool-section {
+    margin-bottom: 0.25rem;
+}
+
+.tool-section-label {
+    font-size: 0.65rem;
+    font-weight: 600;
     color: var(--text-secondary);
+    margin-bottom: 0.1rem;
+}
+
+.tool-json {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.25rem;
+    font-size: 0.6rem;
+    font-family: monospace;
+    max-height: 100px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+}
+
+.tool-json.error-text {
+    color: var(--danger);
 }
 
 #tools-tab .tool-activity-list {
-    padding: 1rem;
+    padding: 0.4rem;
 }
 
 .no-activity {
     text-align: center;
     color: var(--text-secondary);
-    padding: 2rem;
+    padding: 1rem;
+    font-size: 0.75rem;
 }
 
 /* Drop Zone */

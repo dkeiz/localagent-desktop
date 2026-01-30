@@ -57,6 +57,31 @@ class MCPServer extends EventEmitter {
       };
     });
 
+    this.registerTool('search_web', {
+      name: 'search_web',
+      description: 'Search the web using DuckDuckGo instant answer API',
+      userDescription: 'Searches the web and returns summarized results',
+      example: 'TOOL:search_web{"query":"latest news about AI"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' }
+        },
+        required: ['query']
+      }
+    }, async ({ query }) => {
+      const fetch = require('node-fetch');
+      const response = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`);
+      if (!response.ok) throw new Error(`Search API error: ${response.status}`);
+      const data = await response.json();
+      return {
+        query,
+        abstract: data.Abstract || 'No direct answer found',
+        abstractSource: data.AbstractSource || '',
+        relatedTopics: (data.RelatedTopics || []).slice(0, 5).map(t => t.Text || t.Name).filter(Boolean)
+      };
+    });
+
     // Calendar tools
     this.registerTool('create_calendar_event', {
       name: 'create_calendar_event',
@@ -751,6 +776,94 @@ class MCPServer extends EventEmitter {
       return { path: params.path, size: stat.size, modified: stat.mtime };
     });
 
+    // Media tools - use OS default applications
+    this.registerTool('open_media', {
+      name: 'open_media',
+      description: 'Open any media file with the default OS application',
+      userDescription: 'Opens a media file (image, video, audio, document) using the default system application',
+      example: 'TOOL:open_media{"path":"C:/Users/Music/song.mp3"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Full path to the media file to open' }
+        },
+        required: ['path']
+      }
+    }, async (params) => {
+      const { shell } = require('electron');
+      const fs = require('fs');
+      const path = require('path');
+
+      // Verify file exists
+      if (!fs.existsSync(params.path)) {
+        return { success: false, error: `File not found: ${params.path}` };
+      }
+
+      // Open with default application
+      const result = await shell.openPath(params.path);
+      if (result) {
+        return { success: false, error: result };
+      }
+
+      const ext = path.extname(params.path).toLowerCase();
+      const mediaType = {
+        '.mp3': 'audio', '.wav': 'audio', '.ogg': 'audio', '.flac': 'audio', '.m4a': 'audio',
+        '.mp4': 'video', '.avi': 'video', '.mkv': 'video', '.mov': 'video', '.webm': 'video',
+        '.jpg': 'image', '.jpeg': 'image', '.png': 'image', '.gif': 'image', '.bmp': 'image', '.webp': 'image',
+        '.pdf': 'document', '.doc': 'document', '.docx': 'document', '.txt': 'document'
+      }[ext] || 'file';
+
+      return { success: true, opened: params.path, type: mediaType };
+    });
+
+    this.registerTool('play_audio', {
+      name: 'play_audio',
+      description: 'Play an audio file with the default music player',
+      userDescription: 'Opens and plays an audio file (MP3, WAV, etc.) using the system music player',
+      example: 'TOOL:play_audio{"path":"C:/Users/Music/song.mp3"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Full path to the audio file' }
+        },
+        required: ['path']
+      }
+    }, async (params) => {
+      const { shell } = require('electron');
+      const fs = require('fs');
+
+      if (!fs.existsSync(params.path)) {
+        return { success: false, error: `Audio file not found: ${params.path}` };
+      }
+
+      const result = await shell.openPath(params.path);
+      return result ? { success: false, error: result } : { success: true, playing: params.path };
+    });
+
+    this.registerTool('view_image', {
+      name: 'view_image',
+      description: 'Open an image file with the default image viewer',
+      userDescription: 'Opens an image file using the system image viewer',
+      example: 'TOOL:view_image{"path":"C:/Users/Pictures/photo.jpg"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Full path to the image file' }
+        },
+        required: ['path']
+      }
+    }, async (params) => {
+      const { shell } = require('electron');
+      const fs = require('fs');
+
+      if (!fs.existsSync(params.path)) {
+        return { success: false, error: `Image file not found: ${params.path}` };
+      }
+
+      const result = await shell.openPath(params.path);
+      return result ? { success: false, error: result } : { success: true, viewing: params.path };
+    });
+
     this.registerTool('screenshot', {
       name: 'screenshot',
       description: 'Take a screenshot',
@@ -827,10 +940,10 @@ class MCPServer extends EventEmitter {
       if (toolName.startsWith('calendar_')) this.emit('calendar-update');
       else if (toolName.startsWith('todo_')) this.emit('todo-update');
 
-      this.emit('tool-executed', { toolName, success: true, result });
+      this.emit('tool-executed', { toolName, params, success: true, result });
       return result;
     } catch (error) {
-      this.emit('tool-executed', { toolName, success: false, error: error.message });
+      this.emit('tool-executed', { toolName, params, success: false, error: error.message });
       throw error;
     }
   }
@@ -1050,18 +1163,27 @@ class MCPServer extends EventEmitter {
   }
 
   async activateGroup(groupId) {
+    console.log(`[activateGroup] Attempting to activate: ${groupId}`);
+    console.log(`[activateGroup] Available groups:`, Array.from(this.toolGroups.keys()));
+
     if (!this.toolGroups.has(groupId)) {
       throw new Error(`Unknown group: ${groupId}`);
     }
     this.activeGroups.add(groupId);
+    console.log(`[activateGroup] Active groups now:`, Array.from(this.activeGroups));
 
     // Enable all tools in the group
     const group = this.toolGroups.get(groupId);
+    console.log(`[activateGroup] Group ${groupId} contains tools:`, group.tools);
+    console.log(`[activateGroup] Registered tools in Map:`, Array.from(this.tools.keys()));
+
     for (const toolName of group.tools) {
+      const toolExists = this.tools.has(toolName);
+      console.log(`[activateGroup] Tool "${toolName}" exists in Map: ${toolExists}`);
       await this.setToolActiveState(toolName, true);
     }
 
-    console.log(`Activated group: ${groupId}`);
+    console.log(`[activateGroup] Activated group: ${groupId}`);
     return { activated: groupId, tools: group.tools };
   }
 
@@ -1084,17 +1206,22 @@ class MCPServer extends EventEmitter {
   getActiveTools() {
     // Returns only tools from active groups
     const activeTools = [];
+    console.log('[getActiveTools] Active groups:', Array.from(this.activeGroups));
     for (const groupId of this.activeGroups) {
       const group = this.toolGroups.get(groupId);
       if (group) {
+        console.log(`[getActiveTools] Group ${groupId} has tools:`, group.tools);
         for (const toolName of group.tools) {
           const tool = this.tools.get(toolName);
           if (tool) {
             activeTools.push(tool.definition);
+          } else {
+            console.log(`[getActiveTools] Tool NOT FOUND: ${toolName}`);
           }
         }
       }
     }
+    console.log('[getActiveTools] Returning', activeTools.length, 'tools');
     return activeTools;
   }
 

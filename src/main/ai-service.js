@@ -195,9 +195,12 @@ class AIService {
     let mcpContext = '';
     if (this.mcpServer) {
       // Use getActiveTools() to only include tools from active groups
-      const tools = this.mcpServer.getActiveTools && this.mcpServer.getActiveTools().length > 0
-        ? this.mcpServer.getActiveTools()
+      const activeTools = this.mcpServer.getActiveTools ? this.mcpServer.getActiveTools() : [];
+      const tools = activeTools.length > 0
+        ? activeTools
         : this.mcpServer.getTools(); // Fallback to all tools if groups not loaded
+      console.log(`[AI sendMessage] Using ${activeTools.length > 0 ? 'ACTIVE' : 'ALL'} tools, count: ${tools.length}`);
+      console.log(`[AI sendMessage] Tool names:`, tools.map(t => t.name));
       const docs = this.mcpServer.getToolsDocumentation();
 
       mcpContext = `\n\n<mcp_tools>\nAvailable Tools (from active groups):\n\n`;
@@ -237,13 +240,14 @@ class AIService {
 
       mcpContext += `\n## How to Use Tools\n`;
       mcpContext += `Format: TOOL:tool_name{"param":"value"}\n`;
-      mcpContext += `You MUST use tools for: current time/date, weather, calendar operations, todos, calculations, searching history.\n`;
-      mcpContext += `You can suggest ANY tool - if disabled, the system will ask user for permission.\n`;
+      mcpContext += `Use the APPROPRIATE tool for each request. Match the tool to the user's actual question.\n`;
+      mcpContext += `If a tool times out or fails, tell the user the tool didn't respond - do NOT call a different tool instead.\n`;
       mcpContext += `Always use the exact JSON format shown in examples.\n`;
-      mcpContext += `\n## Intelligent Behavior\n`;
-      mcpContext += `- Mention powerful tools when they would help the user\n`;
-      mcpContext += `- Explain benefits of advanced tools even if currently disabled\n`;
-      mcpContext += `- System handles permission workflows automatically\n`;
+      mcpContext += `\n## Important Rules\n`;
+      mcpContext += `- Only call tools directly relevant to what the user asked\n`;
+      mcpContext += `- If the user asks for weather, use weather/web tools, NOT time tools\n`;
+      mcpContext += `- If a tool fails, explain the failure to the user instead of trying other tools\n`;
+      mcpContext += `- Don't repeat the same tool call from earlier in the conversation\n`;
       mcpContext += `</mcp_tools>`;
       fullSystemPrompt += mcpContext;
     }

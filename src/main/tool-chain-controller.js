@@ -33,12 +33,19 @@ class ToolChainController {
      */
     async executeWithChaining(message, conversationHistory = [], options = {}) {
         this.currentChain = [];
+        this.stopped = false; // Reset stopped flag for new chain
         let stepCount = 0;
         let currentMessage = message;
         let workingHistory = [...conversationHistory];
         let finalResponse = null;
 
         while (stepCount < this.maxChainSteps) {
+            // Check if chain was stopped by user
+            if (this.stopped) {
+                console.log('[Chain] Chain stopped by user');
+                break;
+            }
+
             stepCount++;
             console.log(`[Chain] Step ${stepCount}: Processing message`);
 
@@ -48,19 +55,10 @@ class ToolChainController {
             // Parse tool calls from response
             const toolCalls = this.mcpServer.parseToolCall(response.content);
 
+
             if (toolCalls.length === 0) {
                 // No tool calls - this is the final answer
                 finalResponse = response;
-
-                // Check if response is just echoing previous tool result
-                if (this.currentChain.length > 0 && this.isEchoingResult(response.content, this.currentChain[this.currentChain.length - 1].result)) {
-                    // LLM is being lazy, ask it to think more
-                    console.log('[Chain] Detected echo response, requesting elaboration');
-                    workingHistory.push({ role: 'assistant', content: response.content });
-                    currentMessage = 'Please provide a more thoughtful response based on the tool results, considering the context and the user\'s original request.';
-                    continue;
-                }
-
                 break;
             }
 

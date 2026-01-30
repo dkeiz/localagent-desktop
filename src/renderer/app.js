@@ -71,7 +71,9 @@ class App {
     renderToolGroups(container, groups) {
         container.innerHTML = '';
 
-        Object.entries(groups).forEach(([groupId, group]) => {
+        // groups is an array of {id, name, description, icon, tools, active, toolCount}
+        groups.forEach((group) => {
+            const groupId = group.id; // Use the actual group ID from the object
             const item = document.createElement('div');
             item.className = `tool-group-item ${group.active ? 'active' : ''}`;
             item.dataset.groupId = groupId;
@@ -88,11 +90,15 @@ class App {
                 if (e.target.classList.contains('tool-group-settings')) return;
 
                 const isActive = item.classList.contains('active');
+                console.log(`[Frontend] Toggling group: ${groupId}, currently active: ${isActive}`);
                 try {
                     if (isActive) {
+                        console.log(`[Frontend] Calling deactivateToolGroup(${groupId})`);
                         await window.electronAPI.deactivateToolGroup(groupId);
                     } else {
-                        await window.electronAPI.activateToolGroup(groupId);
+                        console.log(`[Frontend] Calling activateToolGroup(${groupId})`);
+                        const result = await window.electronAPI.activateToolGroup(groupId);
+                        console.log(`[Frontend] activateToolGroup result:`, result);
                     }
                     item.classList.toggle('active');
                 } catch (error) {

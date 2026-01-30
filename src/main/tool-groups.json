@@ -77,14 +77,13 @@
         },
         "media": {
             "name": "Media",
-            "description": "Image, video, audio processing",
+            "description": "Open images, audio, video with OS default apps",
             "icon": "🎬",
             "tools": [
-                "resize_image",
-                "convert_image_format",
-                "get_image_info",
-                "screenshot",
-                "text_to_speech"
+                "open_media",
+                "play_audio",
+                "view_image",
+                "screenshot"
             ],
             "defaultActive": false
         }
