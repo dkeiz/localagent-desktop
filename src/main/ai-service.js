@@ -199,8 +199,6 @@ class AIService {
       const tools = activeTools.length > 0
         ? activeTools
         : this.mcpServer.getTools(); // Fallback to all tools if groups not loaded
-      console.log(`[AI sendMessage] Using ${activeTools.length > 0 ? 'ACTIVE' : 'ALL'} tools, count: ${tools.length}`);
-      console.log(`[AI sendMessage] Tool names:`, tools.map(t => t.name));
       const docs = this.mcpServer.getToolsDocumentation();
 
       mcpContext = `\n\n<mcp_tools>\nAvailable Tools (from active groups):\n\n`;

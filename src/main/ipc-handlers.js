@@ -728,7 +728,8 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
         name: workflow.name,
         description: workflow.description || '',
         trigger_pattern: workflow.name.toLowerCase(),
-        tool_chain: workflow.tool_chain
+        tool_chain: workflow.tool_chain,
+        visual_data: workflow.visual_data || null
       });
       return { success: true, workflow: result };
     } catch (error) {

@@ -36,11 +36,30 @@ class DatabaseWrapper {
     }
 
     async createTables() {
-        // Add session_id column if it doesn't exist
+        // Schema migrations - safely add columns/tables if they don't exist
+        const migrations = [
+            'ALTER TABLE conversations ADD COLUMN session_id INTEGER',
+            'ALTER TABLE workflows ADD COLUMN visual_data TEXT',
+            'ALTER TABLE workflows ADD COLUMN execution_count INTEGER DEFAULT 0'
+        ];
+
+        for (const migration of migrations) {
+            try {
+                this.db.exec(migration);
+            } catch (e) {
+                // Column/table already exists, ignore
+            }
+        }
+
+        // Create tool_states table if not exists
         try {
-            this.db.exec('ALTER TABLE conversations ADD COLUMN session_id INTEGER');
+            this.db.exec(`CREATE TABLE IF NOT EXISTS tool_states (
+                tool_name TEXT PRIMARY KEY,
+                active BOOLEAN DEFAULT TRUE,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
         } catch (e) {
-            // Column already exists, ignore
+            // Ignore if exists
         }
 
         const queries = [
@@ -480,10 +499,12 @@ class DatabaseWrapper {
     }
 
     async addWorkflow(workflow) {
-        const { name, description, trigger_pattern, tool_chain, embedding } = workflow;
+        const { name, description, trigger_pattern, tool_chain, embedding, visual_data } = workflow;
         const result = this.run(
-            'INSERT INTO workflows (name, description, trigger_pattern, tool_chain, embedding) VALUES (?, ?, ?, ?, ?)',
-            [name, description, trigger_pattern, JSON.stringify(tool_chain), embedding ? JSON.stringify(embedding) : null]
+            'INSERT INTO workflows (name, description, trigger_pattern, tool_chain, embedding, visual_data) VALUES (?, ?, ?, ?, ?, ?)',
+            [name, description, trigger_pattern, JSON.stringify(tool_chain),
+                embedding ? JSON.stringify(embedding) : null,
+                visual_data ? JSON.stringify(visual_data) : null]
         );
         return { id: result.id, ...workflow };
     }

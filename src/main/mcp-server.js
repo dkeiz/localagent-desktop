@@ -1009,20 +1009,62 @@ class MCPServer extends EventEmitter {
   parseToolCall(text) {
     // Parse tool calls from AI response
     // Format: TOOL:tool_name{"param":"value"}
-    const toolRegex = /TOOL:(\w+)({[^}]+})?/g;
+    // Improved: Handles nested JSON by counting brace depth
     const calls = [];
+    const toolPrefix = /TOOL:(\w+)/g;
     let match;
 
-    while ((match = toolRegex.exec(text)) !== null) {
+    while ((match = toolPrefix.exec(text)) !== null) {
       const toolName = match[1];
+      const afterTool = text.slice(match.index + match[0].length);
       let params = {};
-      if (match[2]) {
-        try {
-          params = JSON.parse(match[2]);
-        } catch (e) {
-          console.error('Failed to parse tool params:', e);
+
+      if (afterTool.startsWith('{')) {
+        // Find matching closing brace with nesting awareness
+        let depth = 0;
+        let end = 0;
+        let inString = false;
+        let escapeNext = false;
+
+        for (let i = 0; i < afterTool.length; i++) {
+          const char = afterTool[i];
+
+          if (escapeNext) {
+            escapeNext = false;
+            continue;
+          }
+
+          if (char === '\\') {
+            escapeNext = true;
+            continue;
+          }
+
+          if (char === '"' && !escapeNext) {
+            inString = !inString;
+            continue;
+          }
+
+          if (!inString) {
+            if (char === '{') depth++;
+            else if (char === '}') {
+              depth--;
+              if (depth === 0) {
+                end = i + 1;
+                break;
+              }
+            }
+          }
+        }
+
+        if (end > 0) {
+          try {
+            params = JSON.parse(afterTool.slice(0, end));
+          } catch (e) {
+            console.error('Failed to parse tool params:', e);
+          }
         }
       }
+
       calls.push({ toolName, params });
     }
 
@@ -1163,27 +1205,18 @@ class MCPServer extends EventEmitter {
   }
 
   async activateGroup(groupId) {
-    console.log(`[activateGroup] Attempting to activate: ${groupId}`);
-    console.log(`[activateGroup] Available groups:`, Array.from(this.toolGroups.keys()));
-
     if (!this.toolGroups.has(groupId)) {
       throw new Error(`Unknown group: ${groupId}`);
     }
     this.activeGroups.add(groupId);
-    console.log(`[activateGroup] Active groups now:`, Array.from(this.activeGroups));
 
     // Enable all tools in the group
     const group = this.toolGroups.get(groupId);
-    console.log(`[activateGroup] Group ${groupId} contains tools:`, group.tools);
-    console.log(`[activateGroup] Registered tools in Map:`, Array.from(this.tools.keys()));
-
     for (const toolName of group.tools) {
-      const toolExists = this.tools.has(toolName);
-      console.log(`[activateGroup] Tool "${toolName}" exists in Map: ${toolExists}`);
       await this.setToolActiveState(toolName, true);
     }
 
-    console.log(`[activateGroup] Activated group: ${groupId}`);
+    console.log(`[MCP] Activated group: ${groupId} (${group.tools.length} tools)`);
     return { activated: groupId, tools: group.tools };
   }
 
@@ -1206,22 +1239,17 @@ class MCPServer extends EventEmitter {
   getActiveTools() {
     // Returns only tools from active groups
     const activeTools = [];
-    console.log('[getActiveTools] Active groups:', Array.from(this.activeGroups));
     for (const groupId of this.activeGroups) {
       const group = this.toolGroups.get(groupId);
       if (group) {
-        console.log(`[getActiveTools] Group ${groupId} has tools:`, group.tools);
         for (const toolName of group.tools) {
           const tool = this.tools.get(toolName);
           if (tool) {
             activeTools.push(tool.definition);
-          } else {
-            console.log(`[getActiveTools] Tool NOT FOUND: ${toolName}`);
           }
         }
       }
     }
-    console.log('[getActiveTools] Returning', activeTools.length, 'tools');
     return activeTools;
   }
 
