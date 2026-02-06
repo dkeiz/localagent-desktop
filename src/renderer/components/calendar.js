@@ -1,6 +1,9 @@
 class CalendarWidget {
     constructor() {
         this.events = [];
+        const now = new Date();
+        this.currentYear = now.getFullYear();
+        this.currentMonth = now.getMonth();
         this.renderCalendar();
         this.initializeEvents();
     }
@@ -40,7 +43,7 @@ class CalendarWidget {
         }
 
         // Sort events by start time
-        const sortedEvents = [...this.events].sort((a, b) => 
+        const sortedEvents = [...this.events].sort((a, b) =>
             new Date(a.start_time) - new Date(b.start_time)
         );
 
@@ -63,9 +66,9 @@ class CalendarWidget {
 
     renderCalendar() {
         const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
-        const today = now.getDate();
+        const year = this.currentYear;
+        const month = this.currentMonth;
+        const today = (now.getFullYear() === year && now.getMonth() === month) ? now.getDate() : null;
 
         const firstDayOfMonth = new Date(year, month, 1);
         const lastDayOfMonth = new Date(year, month + 1, 0);
@@ -73,12 +76,20 @@ class CalendarWidget {
         const firstDayOfWeek = firstDayOfMonth.getDay();
         const totalDays = lastDayOfMonth.getDate();
 
-        // Update calendar header with current month/year
+        // Update calendar header with current month/year and navigation buttons
         const calendarHeader = document.getElementById('calendar-header');
         if (calendarHeader) {
             const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December'];
-            calendarHeader.textContent = `${monthNames[month]} ${year}`;
+            calendarHeader.innerHTML = `
+                <button class="calendar-nav-btn" id="prev-month" title="Previous Month">◀</button>
+                <span>${monthNames[month]} ${year}</span>
+                <button class="calendar-nav-btn" id="next-month" title="Next Month">▶</button>
+            `;
+
+            // Add event listeners for navigation buttons
+            document.getElementById('prev-month').addEventListener('click', () => this.previousMonth());
+            document.getElementById('next-month').addEventListener('click', () => this.nextMonth());
         }
 
         this.renderWeekdays();
@@ -96,7 +107,7 @@ class CalendarWidget {
         for (let day = 1; day <= totalDays; day++) {
             const dayElement = document.createElement('div');
             dayElement.className = 'calendar-day';
-            if (day === today) {
+            if (today && day === today) {
                 dayElement.classList.add('today');
             }
             dayElement.textContent = day;
@@ -107,14 +118,14 @@ class CalendarWidget {
                     selected.classList.remove('selected');
                 }
                 event.currentTarget.classList.add('selected');
-                
+
                 // Filter chats by this day
                 const clickedDate = new Date(year, month, day).toISOString().split('T')[0];
                 if (window.sidebar) {
                     window.sidebar.loadChatSessions(clickedDate);
                 }
             });
-            
+
             daysContainer.appendChild(dayElement);
         }
     }
@@ -134,16 +145,16 @@ class CalendarWidget {
     createEventElement(event) {
         const element = document.createElement('div');
         element.className = 'calendar-event';
-        
+
         const startTime = new Date(event.start_time);
         const endTime = new Date(startTime.getTime() + event.duration_minutes * 60000);
-        
+
         element.innerHTML = `
             <h4>${event.title}</h4>
             <div class="time">
                 ${startTime.toLocaleDateString()} •
-                ${startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} -
-                ${endTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                ${startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -
+                ${endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
             ${event.description ? `<div class="description">${event.description}</div>` : ''}
             <div class="event-actions">
@@ -220,7 +231,7 @@ class CalendarWidget {
         now.setMinutes(minutes);
         now.setSeconds(0);
         now.setMilliseconds(0);
-        
+
         const startTimeInput = modal.querySelector('input[name="start_time"]');
         startTimeInput.value = now.toISOString().slice(0, 16);
 
@@ -261,6 +272,24 @@ class CalendarWidget {
                 alert('Error deleting event: ' + error.message);
             }
         }
+    }
+
+    previousMonth() {
+        this.currentMonth--;
+        if (this.currentMonth < 0) {
+            this.currentMonth = 11;
+            this.currentYear--;
+        }
+        this.renderCalendar();
+    }
+
+    nextMonth() {
+        this.currentMonth++;
+        if (this.currentMonth > 11) {
+            this.currentMonth = 0;
+            this.currentYear++;
+        }
+        this.renderCalendar();
     }
 }
 

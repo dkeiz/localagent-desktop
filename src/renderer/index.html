@@ -206,19 +206,6 @@
                         <!-- Nodes will be placed here -->
                     </div>
                 </div>
-
-                <!-- Saved Workflows Panel (collapsible) -->
-                <div class="saved-workflows-panel collapsed" id="saved-workflows-panel">
-                    <div class="panel-header" id="toggle-saved-workflows">
-                        <span>📁 Saved Workflows</span>
-                        <span class="toggle-arrow">◀</span>
-                    </div>
-                    <div class="panel-content">
-                        <div id="workflows-list" class="workflows-list">
-                            <!-- Saved workflows will be listed here -->
-                        </div>
-                    </div>
-                </div>
             </section>
 
 
@@ -318,18 +305,25 @@
                 <h3 id="calendar-header">Calendar</h3>
                 <div id="calendar-weekdays"></div>
                 <div id="calendar-days"></div>
-                <div id="calendar-events"></div>
-                <button id="add-event-btn" class="secondary-btn">Add Event</button>
+                <button id="add-event-btn" class="compact-btn">+ Event</button>
             </div>
 
             <div class="todo-widget">
-                <h3>Todo List</h3>
-                <div id="todo-list">
-                    <!-- Todo items will be dynamically added here -->
-                </div>
+                <h3>Todos</h3>
+                <div id="todo-list"></div>
                 <div class="todo-input">
-                    <input type="text" id="new-todo-input" placeholder="Add new task...">
-                    <button id="add-todo-btn" class="secondary-btn">+</button>
+                    <input type="text" id="new-todo-input" placeholder="Add task...">
+                    <button id="add-todo-btn" class="compact-btn">+</button>
+                </div>
+            </div>
+
+            <div class="workflows-widget collapsible-widget">
+                <div class="widget-header" id="toggle-workflows-widget">
+                    <span>⚡ Workflows</span>
+                    <span class="collapse-arrow">▼</span>
+                </div>
+                <div class="widget-content" id="saved-workflows-list">
+                    <!-- Saved workflows will be listed here -->
                 </div>
             </div>
         </aside>
