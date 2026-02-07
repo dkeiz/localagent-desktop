@@ -154,6 +154,45 @@ class App {
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
     window.app.initializeTheme();
+
+    // Privacy: Delete All Conversations modal handlers
+    const deleteBtn = document.getElementById('delete-all-conversations-btn');
+    const modal = document.getElementById('delete-confirm-modal');
+    const cancelBtn = document.getElementById('cancel-delete-btn');
+    const confirmBtn = document.getElementById('confirm-delete-btn');
+
+    if (deleteBtn && modal) {
+        deleteBtn.addEventListener('click', () => {
+            modal.classList.remove('hidden');
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+        });
+
+        // Close modal when clicking outside
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+            }
+        });
+
+        confirmBtn.addEventListener('click', async () => {
+            confirmBtn.textContent = 'Deleting...';
+            confirmBtn.disabled = true;
+
+            try {
+                await window.electronAPI.deleteAllConversations();
+                modal.classList.add('hidden');
+                // Refresh the UI
+                location.reload();
+            } catch (error) {
+                console.error('Failed to delete conversations:', error);
+                confirmBtn.textContent = 'Error! Try Again';
+                confirmBtn.disabled = false;
+            }
+        });
+    }
 });
 
 

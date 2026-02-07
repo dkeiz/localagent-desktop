@@ -34,6 +34,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   loadChatSession: (sessionId) => ipcRenderer.invoke('load-chat-session', sessionId),
   switchChatSession: (sessionId) => ipcRenderer.invoke('switch-chat-session', sessionId),
   deleteChatSession: (sessionId) => ipcRenderer.invoke('delete-chat-session', sessionId),
+  deleteAllConversations: () => ipcRenderer.invoke('delete-all-conversations'),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   verifyQwenKey: (apiKey) => ipcRenderer.invoke('verify-qwen-key', apiKey),
   getPromptRules: () => ipcRenderer.invoke('get-prompt-rules'),
@@ -58,5 +59,34 @@ window.electronAPI = Object.assign(ipcRenderer, {
   isGenerating: () => ipcRenderer.invoke('is-generating'),
   onConversationUpdate: (callback) => ipcRenderer.on('conversation-update', callback),
   onToolUpdate: (callback) => ipcRenderer.on('tool-update', callback),
-  onToolPermissionRequest: (callback) => ipcRenderer.on('tool-permission-request', callback)
+  onToolPermissionRequest: (callback) => ipcRenderer.on('tool-permission-request', callback),
+  onCapabilityUpdate: (callback) => ipcRenderer.on('capability-update', callback),
+  // Capability Management API
+  capability: {
+    getState: () => ipcRenderer.invoke('capability:get-state'),
+    getGroups: () => ipcRenderer.invoke('capability:get-groups'),
+    setMain: (enabled) => ipcRenderer.invoke('capability:set-main', enabled),
+    setGroup: (groupId, enabled) => ipcRenderer.invoke('capability:set-group', groupId, enabled),
+    setFilesMode: (mode) => ipcRenderer.invoke('capability:set-files-mode', mode),
+    getActiveTools: () => ipcRenderer.invoke('capability:get-active-tools'),
+    addPortListener: (listener) => ipcRenderer.invoke('capability:add-port-listener', listener),
+    removePortListener: (port) => ipcRenderer.invoke('capability:remove-port-listener', port),
+    getPortListeners: () => ipcRenderer.invoke('capability:get-port-listeners'),
+    setCustomToolSafe: (toolName, isSafe) => ipcRenderer.invoke('capability:set-custom-tool-safe', toolName, isSafe)
+  },
+  // Port Listener API
+  portListener: {
+    register: (config) => ipcRenderer.invoke('port-listener:register', config),
+    unregister: (port) => ipcRenderer.invoke('port-listener:unregister', port),
+    list: () => ipcRenderer.invoke('port-listener:list')
+  },
+  onPortListenerUpdate: (callback) => ipcRenderer.on('port-listener-update', callback),
+  // Agent Memory API
+  agentMemory: {
+    append: (type, content, filename) => ipcRenderer.invoke('agent-memory:append', type, content, filename),
+    read: (type, filename) => ipcRenderer.invoke('agent-memory:read', type, filename),
+    list: (type) => ipcRenderer.invoke('agent-memory:list', type),
+    stats: () => ipcRenderer.invoke('agent-memory:stats'),
+    saveImage: (imageBuffer, name) => ipcRenderer.invoke('agent-memory:save-image', imageBuffer, name)
+  }
 });

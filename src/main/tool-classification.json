@@ -1,0 +1,106 @@
+{
+  "version": 2,
+  "mainSwitch": {
+    "enabled": true,
+    "description": "Master switch for all tools"
+  },
+  "safeTools": {
+    "description": "Always available when main switch is ON",
+    "tools": [
+      "current_time",
+      "get_stats",
+      "get_memory_usage",
+      "get_disk_space",
+      "calculate",
+      "get_current_provider",
+      "get_system_prompt",
+      "list_active_rules",
+      "conversation_history",
+      "search_conversations",
+      "list_calendar_events",
+      "calendar_read",
+      "todo_list",
+      "clipboard_read",
+      "read_file",
+      "list_directory",
+      "file_exists",
+      "end_answer"
+    ]
+  },
+  "groups": {
+    "unsafe": {
+      "name": "Unsafe Tools",
+      "description": "Tools that can modify agent behavior",
+      "icon": "🔴",
+      "enabled": false,
+      "tools": [
+        "create_tool",
+        "toggle_rule"
+      ]
+    },
+    "web": {
+      "name": "Web Search",
+      "description": "Internet search and data fetching",
+      "icon": "🌐",
+      "enabled": false,
+      "tools": [
+        "search_web",
+        "current_weather",
+        "fetch_url",
+        "get_public_ip",
+        "download_file"
+      ]
+    },
+    "files": {
+      "name": "File Operations",
+      "description": "Read and write files on disk",
+      "icon": "📁",
+      "mode": "off",
+      "modes": {
+        "off": [],
+        "read": [
+          "read_file",
+          "list_directory",
+          "file_exists"
+        ],
+        "full": [
+          "read_file",
+          "list_directory",
+          "file_exists",
+          "write_file",
+          "delete_file"
+        ]
+      }
+    },
+    "terminal": {
+      "name": "Terminal",
+      "description": "Execute shell commands",
+      "icon": "💻",
+      "enabled": false,
+      "tools": [
+        "run_command",
+        "run_python"
+      ]
+    },
+    "ports": {
+      "name": "Port Listeners",
+      "description": "HTTP/WebSocket listeners for external triggers",
+      "icon": "🔌",
+      "enabled": false,
+      "listeners": []
+    },
+    "visual": {
+      "name": "Visual Capture",
+      "description": "Screenshots and image capture",
+      "icon": "📸",
+      "enabled": false,
+      "tools": [
+        "screenshot"
+      ]
+    }
+  },
+  "customTools": {
+    "description": "User-created tools default to unsafe, can be promoted",
+    "defaultSafe": false
+  }
+}

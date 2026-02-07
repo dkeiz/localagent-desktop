@@ -1,6 +1,40 @@
-thats mark downs for inner project agent Well, that work in this application. 
-Should be discovered by the agent.
-This folder and this files - supposed to be markdowns for inner project agent.
-agent can create and use this files as hints or instructions for works.
-Folder memory - supposed to be container for inner memory. Three type of memory should be created by agent: everyday memory - as discriptions and work and tasks that done. 1 file for 1 day. Global memory - to remember crucial parts of user input, memorizing its preferences and important details. 1 file for all time. Agent memory - to remember crucial parts of agent's work, memorizing its preferences and important details, remember workflows, capabilities and mark down failures. One for each big agent task. (for example - capabilities to work with mcp, cmd, web search, run external applications and devices)
-Agent should create this files and folders by itself. 
+# Agent Instructions
+
+This document provides guidance for the LocalAgent LLM on accessing and managing application data.
+
+## Conversation Access
+
+### Available Tools
+- `conversation_history` - Get recent messages from current session
+- `search_conversations` - Search message content across sessions
+
+### Database Structure
+Conversations are stored in SQLite with two tables:
+- `chat_sessions` - Session metadata (id, title, created_at)
+- `conversations` - Messages linked by session_id
+
+### Memory System
+Long-term memory is stored in `agentin/memory/`:
+- `daily/` - Daily work logs (YYYY-MM-DD.md)
+- `global/preferences.md` - User preferences
+- `tasks/` - Task-specific notes
+- `images/` - Visual captures
+
+Memory files are **append-only** and auto-lock after 7 days.
+
+## Available Capabilities
+
+Check current permissions via the capability panel:
+| Group | Description |
+|-------|-------------|
+| 🔴 Unsafe | Tool creation, rule toggling |
+| 🌐 Web | Search, weather, fetch |
+| 📁 Files | Read/Write modes |
+| 💻 Terminal | run_command, run_python |
+| 🔌 Ports | HTTP listeners |
+| 📸 Visual | Screenshots |
+
+## Best Practices
+1. Always check if a tool exists before attempting to use it
+2. Use memory files for persistent context across sessions
+3. Respect user privacy - don't expose conversation content unnecessarily

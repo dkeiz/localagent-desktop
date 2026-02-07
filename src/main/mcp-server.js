@@ -1,9 +1,10 @@
 const { EventEmitter } = require('events');
 
 class MCPServer extends EventEmitter {
-  constructor(db) {
+  constructor(db, capabilityManager = null) {
     super();
     this.db = db;
+    this.capabilityManager = capabilityManager;
     this.aiService = null;
     this.tools = new Map();
     this.toolStates = new Map();
@@ -888,6 +889,150 @@ class MCPServer extends EventEmitter {
       return { success: false, error: 'No screen found' };
     });
 
+    // Terminal tools - require terminal capability
+    this.registerTool('run_command', {
+      name: 'run_command',
+      description: 'Execute a shell command in the terminal. Returns stdout, stderr, and exit code. SECURITY: This tool requires terminal capability to be enabled.',
+      userDescription: 'Runs a shell command and returns its output',
+      example: 'TOOL:run_command{"command":"dir","cwd":"C:/Users"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          command: {
+            type: 'string',
+            description: 'The command to execute'
+          },
+          cwd: {
+            type: 'string',
+            description: 'Working directory for the command (optional)'
+          },
+          timeout: {
+            type: 'number',
+            description: 'Timeout in milliseconds (default: 30000)'
+          }
+        },
+        required: ['command']
+      }
+    }, async (params) => {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      const options = {
+        cwd: params.cwd || process.cwd(),
+        timeout: params.timeout || 30000,
+        maxBuffer: 1024 * 1024 * 5, // 5MB buffer
+        shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash'
+      };
+
+      try {
+        const { stdout, stderr } = await execAsync(params.command, options);
+        return {
+          success: true,
+          command: params.command,
+          cwd: options.cwd,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          exitCode: 0
+        };
+      } catch (error) {
+        return {
+          success: false,
+          command: params.command,
+          cwd: options.cwd,
+          stdout: error.stdout?.trim() || '',
+          stderr: error.stderr?.trim() || error.message,
+          exitCode: error.code || 1
+        };
+      }
+    });
+
+    this.registerTool('run_python', {
+      name: 'run_python',
+      description: 'Execute Python code. Can run a script file or inline code. SECURITY: This tool requires terminal capability to be enabled.',
+      userDescription: 'Runs Python code and returns the output',
+      example: 'TOOL:run_python{"code":"print(Hello World)"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          code: {
+            type: 'string',
+            description: 'Python code to execute (inline)'
+          },
+          scriptPath: {
+            type: 'string',
+            description: 'Path to a Python script file to execute'
+          },
+          args: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Arguments to pass to the script'
+          },
+          cwd: {
+            type: 'string',
+            description: 'Working directory'
+          }
+        }
+      }
+    }, async (params) => {
+      const { spawn } = require('child_process');
+      const fs = require('fs');
+      const path = require('path');
+
+      return new Promise((resolve) => {
+        let pythonArgs = [];
+        let tempFile = null;
+
+        if (params.code) {
+          // Inline code - write to temp file
+          const tempDir = require('os').tmpdir();
+          tempFile = path.join(tempDir, `agent_script_${Date.now()}.py`);
+          fs.writeFileSync(tempFile, params.code);
+          pythonArgs = [tempFile];
+        } else if (params.scriptPath) {
+          pythonArgs = [params.scriptPath];
+        } else {
+          resolve({ success: false, error: 'Either code or scriptPath is required' });
+          return;
+        }
+
+        if (params.args) {
+          pythonArgs = pythonArgs.concat(params.args);
+        }
+
+        const python = spawn('python', pythonArgs, {
+          cwd: params.cwd || process.cwd(),
+          timeout: 60000
+        });
+
+        let stdout = '', stderr = '';
+
+        python.stdout.on('data', (data) => { stdout += data.toString(); });
+        python.stderr.on('data', (data) => { stderr += data.toString(); });
+
+        python.on('close', (code) => {
+          // Clean up temp file
+          if (tempFile && fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile);
+          }
+
+          resolve({
+            success: code === 0,
+            stdout: stdout.trim(),
+            stderr: stderr.trim(),
+            exitCode: code
+          });
+        });
+
+        python.on('error', (error) => {
+          if (tempFile && fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile);
+          }
+          resolve({ success: false, error: error.message });
+        });
+      });
+    });
+
     // Load tool groups configuration
     this.loadToolGroups();
   }
@@ -1237,7 +1382,15 @@ class MCPServer extends EventEmitter {
   }
 
   getActiveTools() {
-    // Returns only tools from active groups
+    // Use CapabilityManager if available (new system)
+    if (this.capabilityManager) {
+      const activeToolNames = this.capabilityManager.getActiveTools();
+      return activeToolNames
+        .map(name => this.tools.get(name)?.definition)
+        .filter(Boolean);
+    }
+
+    // Fallback to legacy group system
     const activeTools = [];
     for (const groupId of this.activeGroups) {
       const group = this.toolGroups.get(groupId);

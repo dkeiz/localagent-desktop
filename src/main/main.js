@@ -7,6 +7,9 @@ const ToolChainController = require('./tool-chain-controller');
 const WorkflowManager = require('./workflow-manager');
 const EmbeddingService = require('./embedding-service');
 const VectorStore = require('./vector-store');
+const CapabilityManager = require('./capability-manager');
+const PortListenerManager = require('./port-listener-manager');
+const AgentMemory = require('./agent-memory');
 const ollamaService = require('./ollama-service');
 
 let mainWindow;
@@ -17,6 +20,9 @@ let chainController;
 let workflowManager;
 let embeddingService;
 let vectorStore;
+let capabilityManager;
+let portListenerManager;
+let agentMemory;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -47,8 +53,11 @@ app.whenReady().then(async () => {
     db = new Database();
     await db.init();
 
+    // Create Capability Manager for tool permissions
+    capabilityManager = new CapabilityManager(db);
+
     // Create MCP server first, then pass it to AI service
-    mcpServer = new MCPServer(db);
+    mcpServer = new MCPServer(db, capabilityManager);
     aiService = new AIService(db, mcpServer);
     mcpServer.setAIService(aiService);
     await mcpServer.loadCustomTools();
@@ -63,10 +72,16 @@ app.whenReady().then(async () => {
     embeddingService = new EmbeddingService();
     vectorStore = new VectorStore(db, embeddingService);
 
+    // Create Port Listener Manager for external triggers
+    portListenerManager = new PortListenerManager(aiService);
+
+    // Create Agent Memory manager
+    agentMemory = new AgentMemory();
+
     createWindow();
 
-    // Setup IPC handlers (pass all services)
-    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore);
+    // Setup IPC handlers (pass all services including capabilityManager)
+    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -87,6 +102,9 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   // Cleanup resources
+  if (portListenerManager) {
+    await portListenerManager.stopAll();
+  }
   if (mcpServer) {
     await mcpServer.stop();
   }

@@ -1,6 +1,6 @@
 // Remove this line - we'll get ollamaService from main.js
 
-module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore) {
+module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory) {
   // Ollama model selection handlers
   ipcMain.handle('getProviderModels', async (event, provider) => {
     if (provider === 'ollama') {
@@ -273,6 +273,17 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       return { success: true };
     } catch (error) {
       console.error('Error deleting chat session:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('delete-all-conversations', async () => {
+    try {
+      await db.deleteAllConversations();
+      mainWindow.webContents.send('conversation-update');
+      return { success: true, message: 'All conversations deleted' };
+    } catch (error) {
+      console.error('Error deleting all conversations:', error);
       throw error;
     }
   });
@@ -583,6 +594,151 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   ipcMain.handle('set-api-key', async (event, provider, key) => {
     await db.setAPIKey(provider, key);
     return { success: true };
+  });
+
+  // ==================== Capability Management ====================
+
+  // Get current capability state
+  ipcMain.handle('capability:get-state', async () => {
+    if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
+    return capabilityManager.getState();
+  });
+
+  // Get all groups configuration
+  ipcMain.handle('capability:get-groups', async () => {
+    if (!capabilityManager) return [];
+    return capabilityManager.getGroupsConfig();
+  });
+
+  // Set main switch (master toggle)
+  ipcMain.handle('capability:set-main', async (event, enabled) => {
+    if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
+    const result = capabilityManager.setMainEnabled(enabled);
+    mainWindow.webContents.send('capability-update', capabilityManager.getState());
+    return { success: true, mainEnabled: result };
+  });
+
+  // Set group enabled state
+  ipcMain.handle('capability:set-group', async (event, groupId, enabled) => {
+    if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
+    const result = capabilityManager.setGroupEnabled(groupId, enabled);
+    mainWindow.webContents.send('capability-update', capabilityManager.getState());
+    return { success: result };
+  });
+
+  // Set files mode (off/read/full)
+  ipcMain.handle('capability:set-files-mode', async (event, mode) => {
+    if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
+    try {
+      const result = capabilityManager.setFilesMode(mode);
+      mainWindow.webContents.send('capability-update', capabilityManager.getState());
+      return { success: true, mode: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Get active tools list (respecting capability settings)
+  ipcMain.handle('capability:get-active-tools', async () => {
+    if (!capabilityManager) return mcpServer.getActiveTools().map(t => t.name);
+    return capabilityManager.getActiveTools();
+  });
+
+  // Port listener management
+  ipcMain.handle('capability:add-port-listener', async (event, listener) => {
+    if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
+    const result = capabilityManager.addPortListener(listener);
+    return { success: true, listener: result };
+  });
+
+  ipcMain.handle('capability:remove-port-listener', async (event, port) => {
+    if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
+    capabilityManager.removePortListener(port);
+    return { success: true };
+  });
+
+  ipcMain.handle('capability:get-port-listeners', async () => {
+    if (!capabilityManager) return [];
+    return capabilityManager.getPortListeners();
+  });
+
+  // Custom tool safety management
+  ipcMain.handle('capability:set-custom-tool-safe', async (event, toolName, isSafe) => {
+    if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
+    capabilityManager.setCustomToolSafe(toolName, isSafe);
+    return { success: true };
+  });
+
+  // ==================== Port Listener Management ====================
+
+  ipcMain.handle('port-listener:register', async (event, config) => {
+    if (!portListenerManager) return { error: 'PortListenerManager not initialized' };
+    try {
+      const result = await portListenerManager.register(config);
+      mainWindow.webContents.send('port-listener-update', portListenerManager.getListeners());
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('port-listener:unregister', async (event, port) => {
+    if (!portListenerManager) return { error: 'PortListenerManager not initialized' };
+    try {
+      const result = await portListenerManager.unregister(port);
+      mainWindow.webContents.send('port-listener-update', portListenerManager.getListeners());
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('port-listener:list', async () => {
+    if (!portListenerManager) return [];
+    return portListenerManager.getListeners();
+  });
+
+  // ==================== Agent Memory Management ====================
+
+  ipcMain.handle('agent-memory:append', async (event, type, content, filename) => {
+    if (!agentMemory) return { error: 'AgentMemory not initialized' };
+    try {
+      return await agentMemory.append(type, content, filename);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('agent-memory:read', async (event, type, filename) => {
+    if (!agentMemory) return { error: 'AgentMemory not initialized' };
+    try {
+      return await agentMemory.read(type, filename);
+    } catch (error) {
+      return { exists: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('agent-memory:list', async (event, type) => {
+    if (!agentMemory) return [];
+    try {
+      return await agentMemory.list(type);
+    } catch (error) {
+      return [];
+    }
+  });
+
+  ipcMain.handle('agent-memory:stats', async () => {
+    if (!agentMemory) return {};
+    return agentMemory.getStats();
+  });
+
+  ipcMain.handle('agent-memory:save-image', async (event, imageBuffer, name) => {
+    if (!agentMemory) return { error: 'AgentMemory not initialized' };
+    try {
+      return await agentMemory.saveImage(Buffer.from(imageBuffer), name);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   });
 
   // Listen for MCP server events and forward to renderer

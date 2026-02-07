@@ -258,6 +258,16 @@ class DatabaseWrapper {
         return { cleared: true };
     }
 
+    async deleteAllConversations() {
+        // Privacy feature: Delete ALL conversations and sessions
+        this.run('DELETE FROM conversations');
+        this.run('DELETE FROM chat_sessions');
+        // Reset current session setting
+        this.run("DELETE FROM settings WHERE key = 'current_session_id'");
+        console.log('All conversations deleted for privacy');
+        return { deleted: true, message: 'All conversation history cleared' };
+    }
+
     // Prompt Rules methods
     async getPromptRules() {
         return this.all('SELECT * FROM prompt_rules ORDER BY created_at DESC');

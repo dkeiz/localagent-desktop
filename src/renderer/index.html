@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="styles/theme.css?v=7">
     <link rel="stylesheet" href="styles/buttons.css?v=7">
     <link rel="stylesheet" href="styles/rule-manager.css?v=7">
+    <link rel="stylesheet" href="styles/capability-panel.css?v=1">
 </head>
 
 <body>
@@ -57,16 +58,62 @@
                     </div>
                 </div>
             </div>
-            <!-- Tool Groups Section -->
-            <div class="collapsible-section expanded" data-section="tool-groups">
-                <div class="section-header">
-                    <span>Tool Groups</span>
-                    <span class="toggle-icon">▼</span>
-                </div>
-                <div class="section-content">
-                    <div class="tool-groups-grid" id="tool-groups-container">
-                        <!-- Tool groups will be dynamically populated -->
+            <!-- Capability Panel - Nested Toggle System -->
+            <div class="capability-panel" id="capability-panel">
+                <!-- Main Pad - Master Toggle -->
+                <div class="capability-main-pad active" id="capability-main-toggle">
+                    <div class="main-label">
+                        <span class="icon">🔧</span>
+                        <span>Tools</span>
                     </div>
+                    <div class="main-status">
+                        <span class="tool-count" id="active-tool-count">0 active</span>
+                        <div class="main-toggle-indicator"></div>
+                    </div>
+                </div>
+
+                <!-- 6 Capability Group Pads -->
+                <div class="capability-groups" id="capability-groups">
+                    <div class="capability-group-pad" data-group="unsafe"
+                        title="Unsafe Tools: create_tool, toggle_rule">
+                        <span class="group-icon">🔴</span>
+                        <span class="group-name">Unsafe</span>
+                    </div>
+                    <div class="capability-group-pad active" data-group="web"
+                        title="Web Search: search_web, weather, fetch_url">
+                        <span class="group-icon">🌐</span>
+                        <span class="group-name">Web</span>
+                    </div>
+                    <div class="capability-group-pad" data-group="files" data-mode="read"
+                        title="File Operations: read/write/delete files">
+                        <span class="group-icon">📁</span>
+                        <span class="group-name">Files</span>
+                        <div class="mode-indicator">
+                            <span class="mode-dot"></span>
+                            <span class="mode-dot"></span>
+                            <span class="mode-dot"></span>
+                        </div>
+                    </div>
+                    <div class="capability-group-pad" data-group="terminal"
+                        title="Terminal: run_command, run_python_script">
+                        <span class="group-icon">💻</span>
+                        <span class="group-name">Terminal</span>
+                    </div>
+                    <div class="capability-group-pad" data-group="ports"
+                        title="Port Listeners: HTTP/WebSocket triggers">
+                        <span class="group-icon">🔌</span>
+                        <span class="group-name">Ports</span>
+                        <span class="config-indicator">configure</span>
+                    </div>
+                    <div class="capability-group-pad" data-group="visual" title="Visual Capture: screenshots">
+                        <span class="group-icon">📸</span>
+                        <span class="group-name">Visual</span>
+                    </div>
+                </div>
+
+                <!-- Safe Tools Info -->
+                <div class="safe-tools-info" id="safe-tools-info">
+                    🔓 Safe tools: current_time, read_file, calculate...
                 </div>
             </div>
             <!-- Collapsible Chat History Section -->
@@ -134,7 +181,28 @@
                         <input type="checkbox" id="minimize-to-tray"> Minimize to system tray
                     </label>
                 </div>
+
+                <div class="settings-group privacy-section">
+                    <h3>🔒 Privacy</h3>
+                    <p class="settings-description">Manage your conversation history and data.</p>
+                    <button id="delete-all-conversations-btn" class="danger-btn">
+                        🗑️ Delete All Conversations
+                    </button>
+                </div>
             </section>
+
+            <!-- Delete Confirmation Modal -->
+            <div id="delete-confirm-modal" class="modal-overlay hidden">
+                <div class="modal-content modal-danger">
+                    <h3>⚠️ Delete All Conversations?</h3>
+                    <p>This will permanently delete <strong>all chat history</strong> from this application. This action
+                        cannot be undone.</p>
+                    <div class="modal-actions">
+                        <button id="cancel-delete-btn" class="secondary-btn">Cancel</button>
+                        <button id="confirm-delete-btn" class="danger-btn">Delete Everything</button>
+                    </div>
+                </div>
+            </div>
 
             <section id="mcp-tab" class="tab-content">
                 <h2>MCP Tools</h2>
@@ -339,6 +407,7 @@
     <script src="components/message-formatter.js?v=7"></script>
     <script src="components/stats.js?v=7"></script>
     <script src="components/workflow-editor.js?v=1"></script>
+    <script src="components/capability-panel.js?v=1"></script>
     <script src="app.js?v=7"></script>
 </body>
 
