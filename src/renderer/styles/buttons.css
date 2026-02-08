@@ -276,11 +276,7 @@
   color: var(--text-secondary);
 }
 
-.tool-activity-container {
-  max-height: 200px;
-  overflow-y: auto;
-  margin-bottom: 1rem;
-}
+/* Removed .tool-activity-container max-height rule - now controlled by layout.css */
 
 .tool-activity-section h3 {
   margin-bottom: 0.5rem;

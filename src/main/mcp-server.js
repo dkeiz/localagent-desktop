@@ -310,6 +310,160 @@ class MCPServer extends EventEmitter {
       return this.aiService.getSystemPrompt();
     });
 
+    // Agent self-modification tools
+    this.registerTool('modify_system_prompt', {
+      name: 'modify_system_prompt',
+      description: 'Modify the system prompt. Agent can update its own behavior instructions.',
+      userDescription: 'Allows the agent to update its own system prompt, changing its core behavior. Changes are saved to agentin/prompts/system.md',
+      example: 'TOOL:modify_system_prompt{"content":"You are a helpful coding assistant..."}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          content: {
+            type: 'string',
+            description: 'The new system prompt content'
+          },
+          append: {
+            type: 'boolean',
+            description: 'If true, append to existing prompt instead of replacing',
+            default: false
+          }
+        },
+        required: ['content']
+      }
+    }, async (params) => {
+      const fs = require('fs');
+      const path = require('path');
+      const promptPath = path.join(process.cwd(), 'agentin', 'prompts', 'system.md');
+
+      let newContent = params.content;
+      if (params.append) {
+        const existing = this.aiService.getSystemPrompt();
+        newContent = existing + '\n\n' + params.content;
+      }
+
+      // Write to file
+      fs.writeFileSync(promptPath, newContent, 'utf-8');
+      // Update in memory
+      await this.aiService.setSystemPrompt(newContent);
+      await this.db.setSetting('system_prompt', newContent);
+
+      return { success: true, message: 'System prompt updated', path: promptPath };
+    });
+
+    this.registerTool('manage_rule', {
+      name: 'manage_rule',
+      description: 'Create, update, or delete a behavioral rule. Rules modify agent behavior dynamically.',
+      userDescription: 'Manage prompt rules that affect agent behavior. Creates files in agentin/prompts/rules/',
+      example: 'TOOL:manage_rule{"action":"create","name":"Code Style","content":"Always use TypeScript...","active":true}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['create', 'update', 'delete', 'toggle'],
+            description: 'Action to perform on the rule'
+          },
+          name: {
+            type: 'string',
+            description: 'Name of the rule'
+          },
+          content: {
+            type: 'string',
+            description: 'Rule content (for create/update)'
+          },
+          active: {
+            type: 'boolean',
+            description: 'Whether the rule is active',
+            default: true
+          },
+          priority: {
+            type: 'number',
+            description: 'Priority order (lower = higher priority)',
+            default: 1
+          }
+        },
+        required: ['action', 'name']
+      }
+    }, async (params) => {
+      const fs = require('fs');
+      const path = require('path');
+      const rulesPath = path.join(process.cwd(), 'agentin', 'prompts', 'rules');
+
+      // Ensure directory exists
+      if (!fs.existsSync(rulesPath)) {
+        fs.mkdirSync(rulesPath, { recursive: true });
+      }
+
+      const safeName = params.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const priority = params.priority || 1;
+      const filename = `${String(priority).padStart(3, '0')}-${safeName}.md`;
+      const filePath = path.join(rulesPath, filename);
+
+      switch (params.action) {
+        case 'create':
+        case 'update':
+          const fileContent = `---
+name: ${params.name}
+active: ${params.active !== false}
+priority: ${priority}
+---
+${params.content || ''}`;
+          fs.writeFileSync(filePath, fileContent, 'utf-8');
+
+          // Also update DB
+          const existing = await this.db.get('SELECT id FROM prompt_rules WHERE name = ?', [params.name]);
+          if (existing) {
+            await this.db.updatePromptRule(existing.id, { name: params.name, content: params.content });
+            await this.db.togglePromptRule(existing.id, params.active !== false);
+          } else {
+            await this.db.addPromptRule({ name: params.name, content: params.content, type: 'rule' });
+          }
+          return { success: true, action: params.action, path: filePath };
+
+        case 'delete':
+          // Find and delete file with matching name
+          const files = fs.readdirSync(rulesPath).filter(f => f.includes(safeName));
+          files.forEach(f => fs.unlinkSync(path.join(rulesPath, f)));
+
+          // Delete from DB
+          const dbRule = await this.db.get('SELECT id FROM prompt_rules WHERE name = ?', [params.name]);
+          if (dbRule) await this.db.deletePromptRule(dbRule.id);
+          return { success: true, action: 'delete', deleted: files };
+
+        case 'toggle':
+          // Update file
+          if (fs.existsSync(filePath)) {
+            let content = fs.readFileSync(filePath, 'utf-8');
+            content = content.replace(/active:\s*(true|false)/, `active: ${params.active}`);
+            fs.writeFileSync(filePath, content, 'utf-8');
+          }
+
+          // Update DB
+          const toggleRule = await this.db.get('SELECT id FROM prompt_rules WHERE name = ?', [params.name]);
+          if (toggleRule) await this.db.togglePromptRule(toggleRule.id, params.active);
+          return { success: true, action: 'toggle', active: params.active };
+
+        default:
+          return { error: 'Invalid action' };
+      }
+    });
+
+    this.registerTool('list_rules', {
+      name: 'list_rules',
+      description: 'List all behavioral rules and their status',
+      userDescription: 'Shows all prompt rules that can affect agent behavior',
+      example: 'TOOL:list_rules{}',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      const rules = await this.db.getPromptRules();
+      return rules.map(r => ({
+        name: r.name,
+        active: r.active === 1 || r.active === true,
+        preview: r.content?.substring(0, 100) + (r.content?.length > 100 ? '...' : '')
+      }));
+    });
+
     this.registerTool('get_current_provider', {
       name: 'get_current_provider',
       description: 'Get the current AI provider',

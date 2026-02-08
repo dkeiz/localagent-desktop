@@ -113,6 +113,8 @@
     background-color: var(--main-bg);
     padding: 1rem;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .tab-content {
@@ -123,6 +125,21 @@
 
 .tab-content.active {
     display: block;
+}
+
+/* Tools tab needs flex layout for proper vertical expansion */
+#tools-tab.tab-content.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Ensure workflow tab properly hides when not active */
+.tab-content.workflow-editor-container {
+    display: none;
+}
+
+.tab-content.workflow-editor-container.active {
+    display: flex;
 }
 
 /* Chat specific styles */
@@ -1590,12 +1607,16 @@
 .tool-activity-container {
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .tool-activity-list {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    overflow-y: auto;
+    flex: 1;
 }
 
 .tool-activity-item {
@@ -1678,7 +1699,7 @@
     padding: 0.25rem;
     font-size: 0.6rem;
     font-family: monospace;
-    max-height: 100px;
+    max-height: 400px;
     overflow: auto;
     white-space: pre-wrap;
     word-break: break-all;
@@ -1687,6 +1708,19 @@
 
 .tool-json.error-text {
     color: var(--danger);
+}
+
+/* Tools tab specific layout */
+#tools-tab h2 {
+    margin: 0.5rem 0;
+    flex-shrink: 0;
+}
+
+#tools-tab .tool-activity-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 #tools-tab .tool-activity-list {

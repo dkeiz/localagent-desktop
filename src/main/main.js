@@ -10,6 +10,7 @@ const VectorStore = require('./vector-store');
 const CapabilityManager = require('./capability-manager');
 const PortListenerManager = require('./port-listener-manager');
 const AgentMemory = require('./agent-memory');
+const PromptFileManager = require('./prompt-file-manager');
 const ollamaService = require('./ollama-service');
 
 let mainWindow;
@@ -23,6 +24,7 @@ let vectorStore;
 let capabilityManager;
 let portListenerManager;
 let agentMemory;
+let promptFileManager;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -78,10 +80,17 @@ app.whenReady().then(async () => {
     // Create Agent Memory manager
     agentMemory = new AgentMemory();
 
+    // Create Prompt File Manager for file-based prompts/rules
+    promptFileManager = new PromptFileManager(db);
+    await promptFileManager.initialize();
+    // Load system prompt from file into ai-service
+    const systemPrompt = await promptFileManager.loadSystemPrompt();
+    await aiService.setSystemPrompt(systemPrompt);
+
     createWindow();
 
     // Setup IPC handlers (pass all services including capabilityManager)
-    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory);
+    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

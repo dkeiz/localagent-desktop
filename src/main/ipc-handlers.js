@@ -1,6 +1,6 @@
 // Remove this line - we'll get ollamaService from main.js
 
-module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory) {
+module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager) {
   // Ollama model selection handlers
   ipcMain.handle('getProviderModels', async (event, provider) => {
     if (provider === 'ollama') {
@@ -218,7 +218,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     }
   });
 
-  // Prompt Rules operations
+  // Prompt Rules operations (with file sync)
   ipcMain.handle('get-prompt-rules', async () => {
     return await db.getPromptRules();
   });
@@ -228,19 +228,39 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   });
 
   ipcMain.handle('add-prompt-rule', async (event, rule) => {
-    return await db.addPromptRule(rule);
+    const result = await db.addPromptRule(rule);
+    // Sync to files
+    if (promptFileManager) {
+      await promptFileManager.syncToFiles();
+    }
+    return result;
   });
 
   ipcMain.handle('update-prompt-rule', async (event, id, rule) => {
-    return await db.updatePromptRule(id, rule);
+    const result = await db.updatePromptRule(id, rule);
+    // Sync to files
+    if (promptFileManager) {
+      await promptFileManager.syncToFiles();
+    }
+    return result;
   });
 
   ipcMain.handle('toggle-prompt-rule', async (event, id, active) => {
-    return await db.togglePromptRule(id, active);
+    const result = await db.togglePromptRule(id, active);
+    // Sync to files
+    if (promptFileManager) {
+      await promptFileManager.syncToFiles();
+    }
+    return result;
   });
 
   ipcMain.handle('delete-prompt-rule', async (event, id) => {
-    return await db.deletePromptRule(id);
+    const result = await db.deletePromptRule(id);
+    // Sync to files
+    if (promptFileManager) {
+      await promptFileManager.syncToFiles();
+    }
+    return result;
   });
 
   // Chat Sessions operations
@@ -438,6 +458,10 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   ipcMain.handle('set-system-prompt', async (event, prompt) => {
     await aiService.setSystemPrompt(prompt);
+    // Sync to file
+    if (promptFileManager) {
+      await promptFileManager.saveSystemPrompt(prompt, false); // false = already in DB
+    }
     return { success: true };
   });
 
@@ -911,6 +935,45 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     } catch (error) {
       return { success: false, error: error.message };
     }
+  });
+
+  // Prompt File Manager handlers
+  ipcMain.handle('prompt:get-paths', async () => {
+    if (!promptFileManager) return { error: 'PromptFileManager not initialized' };
+    return promptFileManager.getPaths();
+  });
+
+  ipcMain.handle('prompt:sync-from-files', async () => {
+    if (!promptFileManager) return { error: 'PromptFileManager not initialized' };
+    await promptFileManager.syncFromFiles();
+    // Reload into AIService
+    const systemPrompt = await promptFileManager.loadSystemPrompt();
+    await aiService.setSystemPrompt(systemPrompt);
+    return { success: true };
+  });
+
+  ipcMain.handle('prompt:sync-to-files', async () => {
+    if (!promptFileManager) return { error: 'PromptFileManager not initialized' };
+    await promptFileManager.syncToFiles();
+    return { success: true };
+  });
+
+  ipcMain.handle('prompt:get-system', async () => {
+    if (!promptFileManager) return aiService.getSystemPrompt();
+    return await promptFileManager.loadSystemPrompt();
+  });
+
+  ipcMain.handle('prompt:set-system', async (event, content) => {
+    if (promptFileManager) {
+      await promptFileManager.saveSystemPrompt(content, true);
+    }
+    await aiService.setSystemPrompt(content);
+    return { success: true };
+  });
+
+  ipcMain.handle('prompt:get-rules-from-files', async () => {
+    if (!promptFileManager) return [];
+    return await promptFileManager.loadRulesFromFiles();
   });
 
   // Initialize AI service

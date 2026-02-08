@@ -35,14 +35,17 @@
       "enabled": false,
       "tools": [
         "create_tool",
-        "toggle_rule"
+        "toggle_rule",
+        "modify_system_prompt",
+        "manage_rule",
+        "list_rules"
       ]
     },
     "web": {
       "name": "Web Search",
       "description": "Internet search and data fetching",
       "icon": "🌐",
-      "enabled": false,
+      "enabled": true,
       "tools": [
         "search_web",
         "current_weather",
@@ -55,7 +58,7 @@
       "name": "File Operations",
       "description": "Read and write files on disk",
       "icon": "📁",
-      "mode": "off",
+      "mode": "read",
       "modes": {
         "off": [],
         "read": [
@@ -76,7 +79,7 @@
       "name": "Terminal",
       "description": "Execute shell commands",
       "icon": "💻",
-      "enabled": false,
+      "enabled": true,
       "tools": [
         "run_command",
         "run_python"
@@ -86,7 +89,7 @@
       "name": "Port Listeners",
       "description": "HTTP/WebSocket listeners for external triggers",
       "icon": "🔌",
-      "enabled": false,
+      "enabled": true,
       "listeners": []
     },
     "visual": {
