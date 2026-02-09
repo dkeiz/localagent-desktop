@@ -291,20 +291,10 @@ class AIService {
   }
 
   async _callOllama(messages, options) {
-    // Get model type (local or cloud) from settings
-    const modelType = await this.db.getSetting('llm.modelType') || 'local';
-    let contextLength = null;
-
-    // Apply context window setting based on model type
-    if (modelType === 'local') {
-      const userContextWindow = await this.db.getSetting('context_window');
-      contextLength = userContextWindow ? parseInt(userContextWindow) : 8192;
-      console.log('Using context window for local model:', contextLength);
-    } else {
-      // Cloud models get 32k context by default (can be expensive but capable)
-      contextLength = 32768;
-      console.log('Using context window for cloud model:', contextLength);
-    }
+    // Always use user's context_window setting for Ollama (Ollama is always local)
+    const userContextWindow = await this.db.getSetting('context_window');
+    const contextLength = userContextWindow ? parseInt(userContextWindow) : 8192;
+    console.log(`[Ollama] num_ctx=${contextLength} (saved: ${userContextWindow || 'default'})`);
 
     const requestBody = {
       model: options.model,
@@ -312,14 +302,10 @@ class AIService {
       stream: false,
       options: {
         temperature: options.temperature || 0.7,
-        top_p: options.top_p || 0.9
+        top_p: options.top_p || 0.9,
+        num_ctx: contextLength
       }
     };
-
-    // Only add num_ctx for local models
-    if (contextLength) {
-      requestBody.options.num_ctx = contextLength;
-    }
 
     // Create abort controller for this request
     this.abortController = new AbortController();

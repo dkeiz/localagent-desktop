@@ -1,8 +1,32 @@
 {
     "groups": {
-        "storage": {
-            "name": "Storage",
-            "description": "File read/write, directory operations",
+        "web": {
+            "name": "Web",
+            "description": "Internet search, weather, API calls",
+            "icon": "🌐",
+            "tools": [
+                "search_web",
+                "current_weather",
+                "fetch_url",
+                "get_public_ip",
+                "download_file"
+            ],
+            "defaultActive": true
+        },
+        "terminal": {
+            "name": "Terminal",
+            "description": "Execute shell commands and scripts",
+            "icon": "💻",
+            "tools": [
+                "run_command",
+                "run_python",
+                "run_python_script"
+            ],
+            "defaultActive": true
+        },
+        "files": {
+            "name": "Files",
+            "description": "Read and write files on disk",
             "icon": "📁",
             "tools": [
                 "read_file",
@@ -11,31 +35,33 @@
                 "file_exists",
                 "delete_file"
             ],
-            "defaultActive": false
+            "defaultActive": true
         },
-        "web": {
-            "name": "Web",
-            "description": "Web browsing, API calls, weather",
-            "icon": "🌐",
+        "system": {
+            "name": "System",
+            "description": "Time, stats, utilities",
+            "icon": "⚙️",
             "tools": [
-                "current_weather",
-                "search_web",
-                "fetch_url",
-                "download_file",
-                "get_public_ip"
+                "current_time",
+                "get_stats",
+                "get_memory_usage",
+                "get_disk_space",
+                "calculate",
+                "get_current_provider",
+                "end_answer"
             ],
             "defaultActive": true
         },
         "agent": {
             "name": "Agent",
-            "description": "AI notes, rules, calendar, todos, conversations",
+            "description": "Conversations, rules, calendar, todos",
             "icon": "🤖",
             "tools": [
                 "conversation_history",
                 "search_conversations",
+                "get_system_prompt",
                 "list_active_rules",
                 "toggle_rule",
-                "get_system_prompt",
                 "create_calendar_event",
                 "calendar_write",
                 "list_calendar_events",
@@ -46,44 +72,38 @@
             ],
             "defaultActive": true
         },
-        "call": {
-            "name": "Call",
-            "description": "External applications and commands",
-            "icon": "📞",
+        "clipboard": {
+            "name": "Clipboard",
+            "description": "Read and write clipboard",
+            "icon": "📋",
             "tools": [
-                "run_command",
-                "open_url",
-                "run_python_script",
                 "clipboard_read",
                 "clipboard_write"
-            ],
-            "defaultActive": false
-        },
-        "system": {
-            "name": "System",
-            "description": "System info, stats, utilities",
-            "icon": "⚙️",
-            "tools": [
-                "current_time",
-                "get_current_provider",
-                "get_stats",
-                "calculate",
-                "create_tool",
-                "end_answer",
-                "get_memory_usage",
-                "get_disk_space"
             ],
             "defaultActive": true
         },
         "media": {
             "name": "Media",
-            "description": "Open images, audio, video with OS default apps",
+            "description": "Screenshots, images, audio, video",
             "icon": "🎬",
             "tools": [
                 "open_media",
                 "play_audio",
                 "view_image",
-                "screenshot"
+                "screenshot",
+                "open_url"
+            ],
+            "defaultActive": false
+        },
+        "unsafe": {
+            "name": "Unsafe",
+            "description": "Tools that can modify agent behavior",
+            "icon": "🔴",
+            "tools": [
+                "create_tool",
+                "modify_system_prompt",
+                "manage_rule",
+                "list_rules"
             ],
             "defaultActive": false
         }

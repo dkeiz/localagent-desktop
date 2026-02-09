@@ -312,9 +312,12 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   ipcMain.handle('send-message', async (event, message, useChaining = true) => {
     try {
       const conversations = await db.getConversations(20);
+      // Clean TOOL: patterns from history so model doesn't mimic past tool calls
       const conversationHistory = conversations.map(c => ({
         role: c.role,
-        content: c.content
+        content: c.role === 'assistant'
+          ? c.content.replace(/TOOL:\w+\{[^}]*\}/g, '').trim()
+          : c.content
       })).reverse();
 
       await db.addConversation({ role: 'user', content: message });
