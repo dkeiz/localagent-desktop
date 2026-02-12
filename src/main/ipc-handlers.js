@@ -1,5 +1,46 @@
 // Remove this line - we'll get ollamaService from main.js
 
+/**
+ * Strip TOOL:name{...} patterns from text (handles nested JSON braces)
+ */
+function stripToolPatterns(text) {
+  if (!text) return '';
+  let result = '';
+  let i = 0;
+
+  while (i < text.length) {
+    // Check for TOOL: pattern
+    const toolMatch = text.slice(i).match(/^TOOL:\w+\{/);
+    if (toolMatch) {
+      // Found TOOL:name{ — now find the matching closing brace
+      const braceStart = i + toolMatch[0].length - 1;
+      let depth = 1;
+      let j = braceStart + 1;
+      let inString = false;
+      let escapeNext = false;
+
+      while (j < text.length && depth > 0) {
+        const char = text[j];
+        if (escapeNext) { escapeNext = false; j++; continue; }
+        if (char === '\\') { escapeNext = true; j++; continue; }
+        if (char === '"') { inString = !inString; j++; continue; }
+        if (!inString) {
+          if (char === '{') depth++;
+          else if (char === '}') depth--;
+        }
+        j++;
+      }
+      // Skip the entire TOOL:name{...} block
+      i = j;
+    } else {
+      result += text[i];
+      i++;
+    }
+  }
+
+  return result.trim();
+}
+
 module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager) {
   // Ollama model selection handlers
   ipcMain.handle('getProviderModels', async (event, provider) => {
@@ -313,12 +354,13 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     try {
       const conversations = await db.getConversations(20);
       // Clean TOOL: patterns from history so model doesn't mimic past tool calls
+      // Use brace-depth-aware stripping for nested JSON
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
-          ? c.content.replace(/TOOL:\w+\{[^}]*\}/g, '').trim()
+          ? stripToolPatterns(c.content)
           : c.content
-      })).reverse();
+      })).filter(c => c.content && c.content.trim().length > 0).reverse();
 
       await db.addConversation({ role: 'user', content: message });
 
@@ -347,18 +389,57 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
           const interpretPrompt = `Based on the tool results below, provide a natural response to the user:\n\n${toolContext}`;
           const interpretedResponse = await aiService.sendMessage(interpretPrompt, conversationHistory);
 
-          await db.addConversation({ role: 'assistant', content: interpretedResponse.content });
+          const cleanContent = stripToolPatterns(interpretedResponse.content);
+          await db.addConversation({ role: 'assistant', content: cleanContent });
           mainWindow.webContents.send('conversation-update');
-          return interpretedResponse;
+          return { ...interpretedResponse, content: cleanContent };
         }
       }
 
-      await db.addConversation({ role: 'assistant', content: response.content });
+      // Safety check for null response
+      if (!response || !response.content) {
+        console.error('[IPC] No response from AI service');
+        response = { content: 'Sorry, I was unable to generate a response. Please try again.', model: 'unknown' };
+      }
+
+      // Clean any leftover TOOL: patterns from the final response
+      const cleanContent = stripToolPatterns(response.content);
+      await db.addConversation({ role: 'assistant', content: cleanContent });
       mainWindow.webContents.send('conversation-update');
-      return response;
+      return { ...response, content: cleanContent };
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
+    }
+  });
+
+  // Interpret a tool result through the LLM (used by permission flow)
+  ipcMain.handle('interpret-tool-result', async (event, toolName, params, toolResult) => {
+    try {
+      const conversations = await db.getConversations(20);
+      const conversationHistory = conversations.map(c => ({
+        role: c.role,
+        content: c.role === 'assistant'
+          ? stripToolPatterns(c.content)
+          : c.content
+      })).filter(c => c.content && c.content.trim().length > 0).reverse();
+
+      const toolContext = `Tool "${toolName}" was executed with parameters: ${JSON.stringify(params)}\n\nResult: ${JSON.stringify(toolResult, null, 2)}\n\nBased on this tool result, provide a natural, helpful response to the user. Do NOT call any tools.`;
+
+      const response = await aiService.sendMessage(toolContext, conversationHistory);
+      const cleanContent = stripToolPatterns(response.content);
+
+      await db.addConversation({ role: 'assistant', content: cleanContent });
+      mainWindow.webContents.send('conversation-update');
+
+      return { ...response, content: cleanContent };
+    } catch (error) {
+      console.error('Error interpreting tool result:', error);
+      // Fallback: return a basic formatted result
+      return {
+        content: `Tool ${toolName} returned: ${JSON.stringify(toolResult, null, 2)}`,
+        model: 'fallback'
+      };
     }
   });
 
@@ -536,17 +617,19 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   ipcMain.handle('execute-mcp-tool-once', async (event, toolName, params) => {
     try {
-      // Create a temporary enabled state for this execution
-      const originalState = await mcpServer.getToolActiveState(toolName);
-
-      // Temporarily enable the tool
+      // Temporarily enable the tool for this execution
       await mcpServer.setToolActiveState(toolName, true);
 
       // Execute normally
       const result = await mcpServer.executeTool(toolName, params);
 
-      // Restore original state
-      await mcpServer.setToolActiveState(toolName, originalState);
+      // Check DB for permanent state — if user permanently enabled it, keep it enabled
+      const toolStates = await db.getToolStates();
+      const isPermanentlyEnabled = toolStates[toolName]?.active !== false;
+      if (!isPermanentlyEnabled) {
+        // Only revert if not permanently enabled
+        await mcpServer.setToolActiveState(toolName, false);
+      }
 
       return { success: true, result };
     } catch (error) {
@@ -566,7 +649,13 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   ipcMain.handle('set-tool-active', async (event, toolName, active) => {
     try {
+      // Save to DB (persistent)
       await db.setToolActive(toolName, active);
+      // Also update in-memory state so chain controller sees it immediately
+      if (mcpServer.setToolActiveState) {
+        await mcpServer.setToolActiveState(toolName, active);
+      }
+      console.log(`[IPC] Tool ${toolName} ${active ? 'enabled' : 'disabled'} (DB + memory)`);
       return { success: true, toolName, active };
     } catch (error) {
       console.error('Failed to set tool active state:', error);

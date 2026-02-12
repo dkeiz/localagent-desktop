@@ -388,6 +388,39 @@ TOOL:toggle_rule{"rule_id":1,"active":true}
 
 ---
 
+## Tool Call Tracking System
+
+### How It Works
+
+Each tool call is automatically tracked with:
+- **Unique ID**: Format `call_<timestamp>_<random>` (e.g., `call_1707567080_a8f3d9b2`)
+- **Timestamp**: ISO 8601 format showing when the tool was executed
+- **Result metadata**: Full tracking information for each execution
+
+### Benefits
+
+✓ **Prevents redundant calls**: The AI can see which tools were already used  
+✓ **Better debugging**: Each tool call is uniquely identifiable  
+✓ **Temporal tracking**: Know exactly when tools were executed  
+✓ **Conversation clarity**: Clear indication of completed operations  
+
+### Example Result Format
+
+When a tool is executed, results are formatted like this:
+
+```
+[Tool Call ID: call_1707567080_a8f3d9b2]
+Tool: "current_time"
+Timestamp: 2026-02-10T02:44:52+03:00
+Result: "2026-02-10T02:44:52.000Z"
+
+✓ This tool was successfully executed. Do NOT call it again with the same parameters.
+```
+
+This system follows industry standards used by OpenAI, Anthropic, and other major LLM providers.
+
+---
+
 ## How the AI Uses Tools
 
 The AI assistant automatically uses these tools when:

@@ -54,6 +54,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   captureWorkflow: (trigger, toolChain, name) => ipcRenderer.invoke('capture-workflow', trigger, toolChain, name),
   searchWorkflows: (query, topK) => ipcRenderer.invoke('search-workflows', query, topK),
   deleteWorkflow: (workflowId) => ipcRenderer.invoke('delete-workflow', workflowId),
+  interpretToolResult: (toolName, params, result) => ipcRenderer.invoke('interpret-tool-result', toolName, params, result),
   // Generation control
   stopGeneration: () => ipcRenderer.invoke('stop-generation'),
   isGenerating: () => ipcRenderer.invoke('is-generating'),

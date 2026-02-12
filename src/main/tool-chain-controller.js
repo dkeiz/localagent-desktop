@@ -25,6 +25,35 @@ class ToolChainController {
     }
 
     /**
+     * Strip TOOL: patterns from text (brace-depth aware)
+     */
+    stripToolPatterns(text) {
+        if (!text) return text;
+        return text.replace(/TOOL:\w+\{/g, (match, offset) => {
+            // Find matching closing brace with nesting
+            const startIdx = offset + match.length - 1; // position of opening {
+            let depth = 1;
+            let i = startIdx + 1;
+            let inString = false;
+            let escapeNext = false;
+            
+            while (i < text.length && depth > 0) {
+                const char = text[i];
+                if (escapeNext) { escapeNext = false; i++; continue; }
+                if (char === '\\') { escapeNext = true; i++; continue; }
+                if (char === '"' && !escapeNext) { inString = !inString; i++; continue; }
+                if (!inString) {
+                    if (char === '{') depth++;
+                    else if (char === '}') depth--;
+                }
+                i++;
+            }
+            // Return empty string to remove the entire TOOL:name{...} pattern
+            return '\x00'.repeat(i - offset); // placeholder
+        }).replace(/\x00+/g, '').trim();
+    }
+
+    /**
      * Execute a message with tool chaining support
      * @param {string} message - User message
      * @param {Array} conversationHistory - Previous conversation
@@ -34,10 +63,12 @@ class ToolChainController {
     async executeWithChaining(message, conversationHistory = [], options = {}) {
         this.currentChain = [];
         this.stopped = false; // Reset stopped flag for new chain
+        this.executedToolCalls = new Map(); // Track executed tool calls by ID
         let stepCount = 0;
         let currentMessage = message;
         let workingHistory = [...conversationHistory];
         let finalResponse = null;
+        let lastLLMResponse = null; // Track last response for fallback
 
         while (stepCount < this.maxChainSteps) {
             // Check if chain was stopped by user
@@ -50,15 +81,20 @@ class ToolChainController {
             console.log(`[Chain] Step ${stepCount}: Processing message`);
 
             // Send message to LLM
+            // On continuation steps, currentMessage is null — tool results are in workingHistory
             const response = await this.aiService.sendMessage(currentMessage, workingHistory, options);
+            lastLLMResponse = response;
 
             // Parse tool calls from response
             const toolCalls = this.mcpServer.parseToolCall(response.content);
 
-
             if (toolCalls.length === 0) {
                 // No tool calls - this is the final answer
-                finalResponse = response;
+                // Clean any leftover TOOL: patterns from content
+                finalResponse = {
+                    ...response,
+                    content: this.stripToolPatterns(response.content) || response.content
+                };
                 break;
             }
 
@@ -66,12 +102,17 @@ class ToolChainController {
             const toolResults = [];
             for (const call of toolCalls) {
                 try {
-                    const result = await this.mcpServer.executeTool(call.toolName, call.params);
+                    // Pass tool call ID to executeTool
+                    const result = await this.mcpServer.executeTool(
+                        call.toolName, 
+                        call.params,
+                        call.toolCallId  // Pass the unique ID
+                    );
 
                     // Check if it's the special end_answer tool
                     if (call.toolName === 'end_answer') {
                         finalResponse = {
-                            content: result.answer || response.content,
+                            content: result.result?.answer || this.stripToolPatterns(response.content) || response.content,
                             model: response.model,
                             usage: response.usage,
                             chainComplete: true
@@ -81,8 +122,9 @@ class ToolChainController {
 
                     // Check for permission requirement
                     if (result && result.needsPermission) {
+                        // Return the LLM's text (stripped of TOOL: calls) with permission info
                         finalResponse = {
-                            content: response.content,
+                            content: this.stripToolPatterns(response.content) || response.content,
                             model: response.model,
                             needsPermission: true,
                             permissionRequest: result
@@ -90,22 +132,33 @@ class ToolChainController {
                         break;
                     }
 
+                    // Track this execution
+                    this.executedToolCalls.set(call.toolCallId, {
+                        toolName: call.toolName,
+                        params: call.params,
+                        result: result.result,
+                        timestamp: result.timestamp
+                    });
+
                     toolResults.push({
+                        toolCallId: call.toolCallId,  // Include unique ID
                         tool: call.toolName,
                         params: call.params,
+                        timestamp: result.timestamp,  // Include timestamp
                         success: true,
-                        result
+                        result: result.result  // Unwrap the actual result
                     });
 
                     // Add to current chain for workflow learning
                     this.currentChain.push({
                         tool: call.toolName,
                         params: call.params,
-                        result
+                        result: result.result
                     });
 
                 } catch (error) {
                     toolResults.push({
+                        toolCallId: call.toolCallId,
                         tool: call.toolName,
                         params: call.params,
                         success: false,
@@ -117,27 +170,58 @@ class ToolChainController {
             // If we got a final response (end_answer or permission needed), break
             if (finalResponse) break;
 
-            // Build tool results context and continue
-            const toolContext = toolResults.map(r =>
-                r.success
-                    ? `Tool "${r.tool}" result: ${JSON.stringify(r.result)}`
-                    : `Tool "${r.tool}" error: ${r.error}`
-            ).join('\n');
+            // Build tool results context with tracking metadata
+            const toolContext = toolResults.map(r => {
+                if (r.success) {
+                    return `[Tool Call ID: ${r.toolCallId}]
+Tool: "${r.tool}"
+Timestamp: ${r.timestamp}
+Result: ${JSON.stringify(r.result)}
 
-            // Add to history and continue
+✓ This tool was successfully executed. Do NOT call it again with the same parameters.`;
+                } else {
+                    return `[Tool Call ID: ${r.toolCallId}]
+Tool: "${r.tool}"
+Error: ${r.error}`;
+                }
+            }).join('\n\n---\n\n');
+
+            // Add LLM's response (with tool calls) to history as assistant turn
             workingHistory.push({ role: 'assistant', content: response.content });
-            workingHistory.push({ role: 'user', content: `Tool execution results:\n${toolContext}\n\nBased on these results, either use another tool if needed, or provide the final answer to the user.` });
+            // Add tool results as user turn — this IS the next message, so set currentMessage to null
+            workingHistory.push({ 
+                role: 'user', 
+                content: `Tool Execution Results:\n\n${toolContext}\n\nBased on these results, provide a natural, helpful answer to the user's original question. Do NOT call these tools again.` 
+            });
 
-            currentMessage = ''; // Empty message, context is in history
+            // CRITICAL FIX: Set to null so sendMessage doesn't add another empty user message
+            currentMessage = null;
+        }
+
+        // Handle case where loop ended without finalResponse (maxSteps exceeded)
+        if (!finalResponse && lastLLMResponse) {
+            console.log('[Chain] Max steps reached, using last response');
+            finalResponse = {
+                ...lastLLMResponse,
+                content: this.stripToolPatterns(lastLLMResponse.content) || 'I ran into an issue processing your request. Please try again.',
+                chainExhausted: true
+            };
+        }
+
+        // Safety: ensure we always return something
+        if (!finalResponse) {
+            finalResponse = {
+                content: 'Sorry, I was unable to process your request. Please try again.',
+                model: 'unknown',
+                usage: { total_tokens: 0 }
+            };
         }
 
         // Add chain metadata to response
-        if (finalResponse) {
-            finalResponse.chain = {
-                steps: stepCount,
-                tools: this.currentChain.map(c => c.tool)
-            };
-        }
+        finalResponse.chain = {
+            steps: stepCount,
+            tools: this.currentChain.map(c => c.tool)
+        };
 
         return finalResponse;
     }

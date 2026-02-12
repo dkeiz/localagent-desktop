@@ -185,6 +185,17 @@ class AIService {
   async sendMessage(message, conversationHistory = [], options = {}) {
     // Build system prompt with active rules
     let fullSystemPrompt = this.systemPrompt;
+
+    // Add working directory and memory context
+    const path = require('path');
+    const appDir = path.resolve(__dirname, '..', '..');
+    fullSystemPrompt += `\n\n<environment>
+Working Directory: ${appDir}
+Memory Directory: ${path.join(appDir, 'agentin', 'memory')}
+Agent Config: ${path.join(appDir, 'agentin')}
+When using file tools (list_directory, read_file, etc.), use these paths. Your memory files are in the agentin/memory/ directory.
+</environment>`;
+
     const activeRules = await this.db.getActivePromptRules();
     if (activeRules && activeRules.length > 0) {
       const rulesText = activeRules.map(r => r.content).join('\n');
@@ -250,10 +261,12 @@ class AIService {
       fullSystemPrompt += mcpContext;
     }
 
+    // Build messages array — only add user message if it's not null/empty
+    // (on chain continuation, message is null and tool results are already in conversationHistory)
     const messages = [
       { role: 'system', content: fullSystemPrompt },
       ...conversationHistory,
-      { role: 'user', content: message }
+      ...(message ? [{ role: 'user', content: message }] : [])
     ];
 
     try {

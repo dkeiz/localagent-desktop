@@ -1195,7 +1195,7 @@ ${params.content || ''}`;
     this.tools.set(name, { definition, handler });
   }
 
-  async executeTool(toolName, params = {}) {
+  async executeTool(toolName, params = {}, toolCallId = null) {
     const tool = this.tools.get(toolName);
     if (!tool) {
       this.emit('tool-executed', { toolName, success: false, error: 'Tool not found' });
@@ -1239,10 +1239,26 @@ ${params.content || ''}`;
       if (toolName.startsWith('calendar_')) this.emit('calendar-update');
       else if (toolName.startsWith('todo_')) this.emit('todo-update');
 
-      this.emit('tool-executed', { toolName, params, success: true, result });
-      return result;
+      // Wrap result with tracking metadata
+      const enrichedResult = {
+        toolCallId: toolCallId || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        toolName: toolName,
+        timestamp: new Date().toISOString(),
+        success: true,
+        result: result
+      };
+
+      this.emit('tool-executed', enrichedResult);
+      return enrichedResult;
     } catch (error) {
-      this.emit('tool-executed', { toolName, params, success: false, error: error.message });
+      const errorResult = {
+        toolCallId: toolCallId || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        toolName: toolName,
+        timestamp: new Date().toISOString(),
+        success: false,
+        error: error.message
+      };
+      this.emit('tool-executed', errorResult);
       throw error;
     }
   }
@@ -1364,7 +1380,15 @@ ${params.content || ''}`;
         }
       }
 
-      calls.push({ toolName, params });
+      // Generate unique tool call ID
+      const toolCallId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      calls.push({
+        toolName,
+        params,
+        toolCallId,  // Unique identifier for this tool call
+        timestamp: new Date().toISOString()  // When the call was made
+      });
     }
 
     return calls;

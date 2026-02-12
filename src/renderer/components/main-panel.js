@@ -251,8 +251,8 @@ class MainPanel {
         window.electronAPI.sendMessage(message)
             .then(response => {
                 this.removeMessage(loadingId);
-                // Don't add message if generation was stopped
-                if (!response.stopped) {
+                // Don't add message if generation was stopped or needs permission
+                if (!response.stopped && !response.needsPermission) {
                     this.addMessage('assistant', response.content);
                     this.updateContextUsage(response);
                     if (this.autoSpeak) this.speakText(response.content);
@@ -334,7 +334,11 @@ class MainPanel {
 
     removeMessage(messageId) {
         const messageDiv = document.getElementById(messageId);
-        if (messageDiv) messageDiv.remove();
+        if (messageDiv) {
+            // Remove the wrapper parent if it exists (message-wrapper), otherwise just the div
+            const wrapper = messageDiv.closest('.message-wrapper');
+            (wrapper || messageDiv).remove();
+        }
     }
 
     updateContextUsage(response) {
@@ -741,43 +745,84 @@ class MainPanel {
     }
 
     async allowToolOnce(toolName) {
-        try {
-            // Execute tool once without changing state
-            const result = await window.electronAPI.executeMCPToolOnce(this.currentPermissionRequest.toolName, this.currentPermissionRequest.params);
+        // Capture request data and close modal IMMEDIATELY (non-blocking UI)
+        const reqToolName = this.currentPermissionRequest.toolName;
+        const reqParams = this.currentPermissionRequest.params;
+        this.closePermissionDialog();
 
-            // Handle the result like normal
+        try {
+            const result = await window.electronAPI.executeMCPToolOnce(reqToolName, reqParams);
+
             if (result.success) {
-                this.addMessage('assistant', `Executed ${toolName} once: ${JSON.stringify(result.result, null, 2)}`);
+                const loadingId = this.addMessage('assistant', '...');
+
+                try {
+                    const interpreted = await window.electronAPI.interpretToolResult(
+                        reqToolName, reqParams, result.result
+                    );
+
+                    this.removeMessage(loadingId);
+                    this.addMessage('assistant', interpreted.content);
+                    this.updateContextUsage(interpreted);
+                    if (this.autoSpeak) this.speakText(interpreted.content);
+                } catch (interpretError) {
+                    console.error('Failed to interpret tool result:', interpretError);
+                    this.removeMessage(loadingId);
+                    const resultStr = typeof result.result === 'object'
+                        ? JSON.stringify(result.result, null, 2)
+                        : String(result.result);
+                    this.addMessage('assistant', `Tool ${toolName} result:\n${resultStr}`);
+                }
             } else {
                 this.addMessage('assistant', `Failed to execute ${toolName}: ${result.error}`);
             }
-
-            this.updateContextUsage(result);
-            if (this.autoSpeak) this.speakText(result.content);
-
-            this.closePermissionDialog();
         } catch (error) {
             console.error('Error allowing tool once:', error);
-            this.closePermissionDialog();
+            this.addMessage('assistant', `Error executing ${toolName}: ${error.message}`);
         }
     }
 
     async enableTool(toolName) {
-        try {
-            await window.electronAPI.setToolActive(toolName, true);
+        // Capture request data and close modal IMMEDIATELY
+        const reqToolName = this.currentPermissionRequest.toolName;
+        const reqParams = this.currentPermissionRequest.params;
+        this.closePermissionDialog();
 
-            // Refresh the tool list to show updated state
+        try {
+            await window.electronAPI.setToolActive(reqToolName, true);
+
             if (window.sidebar && window.sidebar.loadMCPTools) {
                 await window.sidebar.loadMCPTools();
             }
 
             this.showNotification(`✅ ${toolName} enabled permanently`);
 
-            // Now execute the tool
-            await this.allowToolOnce(toolName);
+            // Execute tool and interpret results (modal already closed)
+            const result = await window.electronAPI.executeMCPToolOnce(reqToolName, reqParams);
+            if (result.success) {
+                const loadingId = this.addMessage('assistant', '...');
+                try {
+                    const interpreted = await window.electronAPI.interpretToolResult(
+                        reqToolName, reqParams, result.result
+                    );
+                    this.removeMessage(loadingId);
+                    this.addMessage('assistant', interpreted.content);
+                    this.updateContextUsage(interpreted);
+                    if (this.autoSpeak) this.speakText(interpreted.content);
+                } catch (interpretError) {
+                    console.error('Failed to interpret tool result:', interpretError);
+                    this.removeMessage(loadingId);
+                    const resultStr = typeof result.result === 'object'
+                        ? JSON.stringify(result.result, null, 2)
+                        : String(result.result);
+                    this.addMessage('assistant', `Tool ${toolName} result:\n${resultStr}`);
+                }
+            } else {
+                this.addMessage('assistant', `Failed to execute ${toolName}: ${result.error}`);
+            }
         } catch (error) {
             console.error('Error enabling tool:', error);
-            this.closePermissionDialog();
+            this.addMessage('assistant', `Error enabling ${toolName}: ${error.message}`);
         }
     }
 
