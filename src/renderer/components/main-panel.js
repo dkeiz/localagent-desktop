@@ -6,10 +6,15 @@ class MainPanel {
         this.synthesis = window.speechSynthesis;
         this.autoSpeak = false;
 
+        // Multi-chat tab management
+        this.chatTabs = new Map(); // sessionId -> { title, messagesHTML, isSending, loadingId }
+        this.activeTabId = null;
+
         // Initialize immediately since we're already in DOMContentLoaded
         this.initializeEvents();
         this.initializeVoice();
         this.initContextSettings();
+        this.restoreOpenTabs();
     }
 
     async loadSystemPrompt() {
@@ -54,6 +59,9 @@ class MainPanel {
         }
 
         if (newChatBtn) newChatBtn.addEventListener('click', () => this.newChat());
+
+        const newSessionBtn = document.getElementById('new-session-btn');
+        if (newSessionBtn) newSessionBtn.addEventListener('click', () => this.clearCurrentChat());
         attachBtn.addEventListener('click', () => this.attachFile());
         voiceBtn.addEventListener('click', () => this.toggleVoiceInput());
         speakBtn.addEventListener('click', () => this.toggleAutoSpeak());
@@ -232,6 +240,9 @@ class MainPanel {
 
         if (!message && this.attachedFiles.length === 0) return;
 
+        const sessionId = this.activeTabId;
+        const tab = this.chatTabs.get(sessionId);
+
         // Add user message to UI immediately
         if (message) this.addMessage('user', message);
         messageInput.value = '';
@@ -243,31 +254,42 @@ class MainPanel {
         if (sendBtn) sendBtn.classList.add('hidden');
         if (stopBtn) stopBtn.classList.remove('hidden');
         this.isSending = true;
+        if (tab) { tab.isSending = true; this.renderTabs(); }
+
+        // Auto-title the tab from first user message
+        if (tab && (tab.title.startsWith('Chat ') || !tab.title)) {
+            tab.title = message.substring(0, 30) + (message.length > 30 ? '…' : '');
+            this.renderTabs();
+        }
 
         // Add loading indicator
         const loadingId = this.addMessage('assistant', '...');
 
-        // Send async - don't block input
-        window.electronAPI.sendMessage(message)
+        // Send async with sessionId for per-chat isolation
+        window.electronAPI.sendMessage(message, sessionId)
             .then(response => {
-                this.removeMessage(loadingId);
-                // Don't add message if generation was stopped or needs permission
-                if (!response.stopped && !response.needsPermission) {
-                    this.addMessage('assistant', response.content);
-                    this.updateContextUsage(response);
-                    if (this.autoSpeak) this.speakText(response.content);
+                // Only update UI if this tab is still active
+                if (this.activeTabId === sessionId) {
+                    this.removeMessage(loadingId);
+                    if (!response.stopped && !response.needsPermission) {
+                        this.addMessage('assistant', response.content);
+                        this.updateContextUsage(response);
+                        if (this.autoSpeak) this.speakText(response.content);
+                    }
                 }
             })
             .catch(error => {
                 console.error('Error sending message:', error);
-                this.removeMessage(loadingId);
-                this.addMessage('system', `Error: ${error.message}`);
+                if (this.activeTabId === sessionId) {
+                    this.removeMessage(loadingId);
+                    this.addMessage('system', `Error: ${error.message}`);
+                }
             })
             .finally(() => {
-                // Restore buttons
                 if (sendBtn) sendBtn.classList.remove('hidden');
                 if (stopBtn) stopBtn.classList.add('hidden');
                 this.isSending = false;
+                if (tab) { tab.isSending = false; this.renderTabs(); }
             });
     }
 
@@ -413,16 +435,240 @@ class MainPanel {
         }
     }
 
+    // Clear the CURRENT tab in-place — wipe messages, get fresh backend session, stay in same tab
+    async clearCurrentChat() {
+        try {
+            // Ask backend to clear history and return a fresh session id
+            const result = await window.electronAPI.clearConversations();
+            const newSessionId = result.sessionId;
+
+            // Wipe the messages display
+            const container = document.getElementById('messages-container');
+            if (container) container.innerHTML = '';
+            this.updateContextUsage(null);
+
+            // Update the active tab to track the new session id
+            if (this.activeTabId && this.chatTabs.has(this.activeTabId)) {
+                const tab = this.chatTabs.get(this.activeTabId);
+                this.chatTabs.delete(this.activeTabId);
+                tab.title = 'New Chat';
+                tab.messagesHTML = '';
+                this.chatTabs.set(newSessionId, tab);
+            }
+            this.activeTabId = newSessionId;
+
+            this.renderTabs();
+            this.saveOpenTabIds();
+
+            // Refresh sidebar session history
+            if (window.sidebar) window.sidebar.loadChatSessions();
+        } catch (error) {
+            console.error('Error clearing chat:', error);
+        }
+    }
+
     async newChat() {
         try {
-            // Create a completely new session (not just clear current)
-            await window.electronAPI.invoke('create-chat-session');
+            const session = await window.electronAPI.invoke('create-chat-session');
+            const sessionId = session.id;
+
+            // Save current tab's messages before switching
+            this.saveCurrentTabMessages();
+
+            // Create tab state
+            this.chatTabs.set(sessionId, {
+                title: `Chat ${this.chatTabs.size + 1}`,
+                messagesHTML: '',
+                isSending: false,
+                loadingId: null
+            });
+
+            this.activeTabId = sessionId;
             document.getElementById('messages-container').innerHTML = '';
+            this.renderTabs();
+            this.saveOpenTabIds();
+
             if (window.sidebar) window.sidebar.loadChatSessions();
-            this.showNotification('New chat started');
         } catch (error) {
             console.error('Error starting new chat:', error);
-            this.showNotification('Error: ' + error.message, 'error');
+        }
+    }
+
+    openNewWindow() {
+        // Ask main process to open a second app window
+        window.electronAPI.invoke('open-new-window').catch(err => {
+            console.error('Failed to open new window:', err);
+        });
+    }
+
+    async restoreOpenTabs() {
+        try {
+            const settings = await window.electronAPI.getSettings();
+            const openTabsRaw = settings?.open_chat_tabs;
+            const activeRaw = settings?.active_chat_tab;
+            let tabIds = [];
+
+            if (openTabsRaw) {
+                try { tabIds = JSON.parse(openTabsRaw); } catch (e) { tabIds = []; }
+            }
+
+            if (tabIds.length === 0) {
+                const sessions = await window.electronAPI.getChatSessions(null, 1);
+                if (sessions && sessions.length > 0) {
+                    tabIds = [sessions[0].id];
+                } else {
+                    const session = await window.electronAPI.invoke('create-chat-session');
+                    tabIds = [session.id];
+                }
+            }
+
+            for (let i = 0; i < tabIds.length; i++) {
+                const sid = tabIds[i];
+                this.chatTabs.set(sid, {
+                    title: `Chat ${i + 1}`,
+                    messagesHTML: '',
+                    isSending: false,
+                    loadingId: null
+                });
+            }
+
+            const activeId = activeRaw ? parseInt(activeRaw) : null;
+            this.activeTabId = (activeId && this.chatTabs.has(activeId)) ? activeId : tabIds[0];
+
+            await this.loadTabConversations(this.activeTabId);
+            await window.electronAPI.switchChatSession(this.activeTabId);
+
+            for (const sid of tabIds) {
+                await this.autoTitleTab(sid);
+            }
+
+            this.renderTabs();
+            this.saveOpenTabIds();
+        } catch (error) {
+            console.error('Error restoring tabs:', error);
+            await this.newChat();
+        }
+    }
+
+    async autoTitleTab(sessionId) {
+        try {
+            const conversations = await window.electronAPI.loadChatSession(sessionId);
+            const firstUserMsg = conversations.find(c => c.role === 'user');
+            if (firstUserMsg) {
+                const title = firstUserMsg.content.substring(0, 30) + (firstUserMsg.content.length > 30 ? '…' : '');
+                const tab = this.chatTabs.get(sessionId);
+                if (tab) tab.title = title;
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    saveCurrentTabMessages() {
+        if (!this.activeTabId || !this.chatTabs.has(this.activeTabId)) return;
+        const container = document.getElementById('messages-container');
+        if (container) {
+            this.chatTabs.get(this.activeTabId).messagesHTML = container.innerHTML;
+        }
+    }
+
+    async switchTab(sessionId) {
+        if (sessionId === this.activeTabId) return;
+        if (!this.chatTabs.has(sessionId)) return;
+
+        this.saveCurrentTabMessages();
+        this.activeTabId = sessionId;
+
+        const tab = this.chatTabs.get(sessionId);
+        const container = document.getElementById('messages-container');
+
+        if (tab.messagesHTML) {
+            container.innerHTML = tab.messagesHTML;
+        } else {
+            await this.loadTabConversations(sessionId);
+        }
+
+        container.scrollTop = container.scrollHeight;
+        this.renderTabs();
+
+        await window.electronAPI.saveSetting('active_chat_tab', sessionId.toString());
+        await window.electronAPI.switchChatSession(sessionId);
+        await this.calculateContextUsage();
+    }
+
+    async loadTabConversations(sessionId) {
+        try {
+            const conversations = await window.electronAPI.loadChatSession(sessionId);
+            const container = document.getElementById('messages-container');
+            if (!container) return;
+
+            container.innerHTML = '';
+            conversations.forEach(conv => {
+                this.addMessage(conv.role, conv.content);
+            });
+            container.scrollTop = container.scrollHeight;
+        } catch (error) {
+            console.error('Error loading tab conversations:', error);
+        }
+    }
+
+    async closeTab(sessionId) {
+        if (this.chatTabs.size <= 1) return;
+
+        this.chatTabs.delete(sessionId);
+
+        if (sessionId === this.activeTabId) {
+            const remaining = [...this.chatTabs.keys()];
+            await this.switchTab(remaining[remaining.length - 1]);
+        }
+
+        this.renderTabs();
+        this.saveOpenTabIds();
+    }
+
+    renderTabs() {
+        // Render tabs into the dedicated list div (not the full bar)
+        const list = document.getElementById('chat-tabs-list');
+        if (!list) return;
+
+        list.innerHTML = '';
+
+        for (const [sessionId, tab] of this.chatTabs) {
+            const tabEl = document.createElement('div');
+            tabEl.className = `chat-tab${sessionId === this.activeTabId ? ' active' : ''}`;
+            tabEl.dataset.sessionId = sessionId;
+
+            const statusDot = document.createElement('span');
+            statusDot.className = `chat-tab-status${tab.isSending ? ' thinking' : ''}`;
+
+            const label = document.createElement('span');
+            label.className = 'chat-tab-label';
+            label.textContent = tab.title || `Chat ${sessionId}`;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'chat-tab-close';
+            closeBtn.textContent = '×';
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.closeTab(sessionId);
+            });
+
+            tabEl.appendChild(statusDot);
+            tabEl.appendChild(label);
+            if (this.chatTabs.size > 1) tabEl.appendChild(closeBtn);
+            tabEl.addEventListener('click', () => this.switchTab(sessionId));
+
+            list.appendChild(tabEl);
+        }
+    }
+
+    async saveOpenTabIds() {
+        const ids = [...this.chatTabs.keys()];
+        try {
+            await window.electronAPI.saveSetting('open_chat_tabs', JSON.stringify(ids));
+            if (this.activeTabId) {
+                await window.electronAPI.saveSetting('active_chat_tab', this.activeTabId.toString());
+            }
+        } catch (e) {
+            console.error('Error saving open tabs:', e);
         }
     }
 
@@ -512,49 +758,13 @@ class MainPanel {
     }
 
     async initializeSession() {
-        try {
-            const sessions = await window.electronAPI.getChatSessions(null, 1);
-
-            if (sessions && sessions.length > 0) {
-                const sessionId = sessions[0].id;
-                await window.electronAPI.switchChatSession(sessionId);
-
-                const conversations = await window.electronAPI.loadChatSession(sessionId);
-                const messagesContainer = document.getElementById('messages-container');
-                if (!messagesContainer) return;
-
-                messagesContainer.innerHTML = '';
-
-                // Match sidebar's approach - create simple message divs
-                conversations.forEach(conv => {
-                    const messageDiv = document.createElement('div');
-                    messageDiv.className = `message ${conv.role}`;
-                    messageDiv.textContent = conv.content;
-                    messagesContainer.appendChild(messageDiv);
-                });
-
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                await this.calculateContextUsage();
-            }
-        } catch (error) {
-            console.error('Error initializing session:', error);
-        }
+        // Tab system handles initialization now via restoreOpenTabs()
+        // This is kept for backward compatibility
     }
 
     async loadConversations() {
-        try {
-            const conversations = await window.electronAPI.getConversations();
-            const messagesContainer = document.getElementById('messages-container');
-            messagesContainer.innerHTML = '';
-
-            conversations.forEach(conv => {
-                this.addMessage(conv.role, conv.content);
-            });
-
-            // Calculate context after loading
-            await this.calculateContextUsage();
-        } catch (error) {
-            console.error('Error loading conversations:', error);
+        if (this.activeTabId) {
+            await this.loadTabConversations(this.activeTabId);
         }
     }
 

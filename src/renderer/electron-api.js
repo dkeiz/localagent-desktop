@@ -3,7 +3,7 @@ const { ipcRenderer } = require('electron');
 // Expose both direct access and convenience wrappers
 window.electronAPI = Object.assign(ipcRenderer, {
   // Convenience wrappers
-  sendMessage: (msg) => ipcRenderer.invoke('send-message', msg),
+  sendMessage: (msg, sessionId) => ipcRenderer.invoke('send-message', msg, true, sessionId),
   getConversations: (limit, sessionId) => ipcRenderer.invoke('get-conversations', limit, sessionId),
   clearConversations: () => ipcRenderer.invoke('clear-conversations'),
   getSystemPrompt: () => ipcRenderer.invoke('get-system-prompt'),
@@ -36,6 +36,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   deleteChatSession: (sessionId) => ipcRenderer.invoke('delete-chat-session', sessionId),
   deleteAllConversations: () => ipcRenderer.invoke('delete-all-conversations'),
   getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSetting: (key, value) => ipcRenderer.invoke('save-setting', key, value),
   verifyQwenKey: (apiKey) => ipcRenderer.invoke('verify-qwen-key', apiKey),
   getPromptRules: () => ipcRenderer.invoke('get-prompt-rules'),
   addPromptRule: (rule) => ipcRenderer.invoke('add-prompt-rule', rule),

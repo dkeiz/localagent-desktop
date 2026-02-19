@@ -1202,17 +1202,30 @@ ${params.content || ''}`;
       throw new Error(`Tool not found: ${toolName}`);
     }
 
-    // CHECK TOOL ACTIVATION STATE FIRST
-    const isActive = await this.getToolActiveState(toolName);
-    if (!isActive) {
-      // Don't execute - return permission request object
+    // CHECK CAPABILITY MANAGER FIRST (group-level permission — new system)
+    if (this.capabilityManager && !this.capabilityManager.isToolActive(toolName)) {
       const permissionRequest = {
         needsPermission: true,
         toolName,
         params,
-        toolDefinition: tool.definition
+        toolDefinition: tool.definition,
+        reason: 'capability_group_disabled'
       };
-      console.log(`Tool ${toolName} disabled, requesting permission`);
+      console.log(`[MCP] Tool ${toolName} blocked by CapabilityManager`);
+      return permissionRequest;
+    }
+
+    // LEGACY: per-tool DB activation state (kept for backward compatibility)
+    const isActive = await this.getToolActiveState(toolName);
+    if (!isActive) {
+      const permissionRequest = {
+        needsPermission: true,
+        toolName,
+        params,
+        toolDefinition: tool.definition,
+        reason: 'tool_disabled'
+      };
+      console.log(`[MCP] Tool ${toolName} disabled (DB state), requesting permission`);
       return permissionRequest;
     }
 
@@ -1502,6 +1515,29 @@ ${params.content || ''}`;
   // ============================================
 
   loadToolGroups() {
+    // If CapabilityManager is available, delegate entirely to it (new system)
+    if (this.capabilityManager) {
+      try {
+        this.toolGroups = new Map();
+        this.activeGroups = new Set();
+        const groups = this.capabilityManager.getGroupsConfig();
+        for (const group of groups) {
+          this.toolGroups.set(group.id, {
+            name: group.name,
+            description: group.description,
+            icon: group.icon,
+            tools: group.allTools || group.tools || []
+          });
+          if (group.enabled) this.activeGroups.add(group.id);
+        }
+        console.log(`[MCP] Loaded ${this.toolGroups.size} tool groups from CapabilityManager`);
+        return;
+      } catch (e) {
+        console.error('[MCP] Failed to load groups from CapabilityManager, falling back:', e.message);
+      }
+    }
+
+    // DEPRECATED FALLBACK: tool-groups.json (kept for safety until fully removed)
     try {
       const path = require('path');
       const fs = require('fs');
@@ -1518,10 +1554,9 @@ ${params.content || ''}`;
           this.activeGroups.add(groupId);
         }
       }
-
-      console.log(`Loaded ${this.toolGroups.size} tool groups, ${this.activeGroups.size} active by default`);
+      console.warn('[MCP] WARNING: Using deprecated tool-groups.json. CapabilityManager not available.');
     } catch (error) {
-      console.error('Failed to load tool groups:', error.message);
+      console.error('[MCP] Failed to load tool groups:', error.message);
       this.toolGroups = new Map();
       this.activeGroups = new Set();
     }
@@ -1585,6 +1620,21 @@ ${params.content || ''}`;
   }
 
   getToolGroups() {
+    // Delegate to CapabilityManager (single source of truth)
+    if (this.capabilityManager) {
+      return this.capabilityManager.getGroupsConfig().map(g => ({
+        id: g.id,
+        name: g.name,
+        description: g.description,
+        icon: g.icon,
+        tools: g.allTools || g.tools || [],
+        active: g.enabled,
+        toolCount: (g.allTools || g.tools || []).length,
+        mode: g.mode,
+        modes: g.modes
+      }));
+    }
+    // Fallback (deprecated)
     const groups = [];
     for (const [groupId, group] of this.toolGroups) {
       groups.push({
@@ -1630,8 +1680,14 @@ ${params.content || ''}`;
       name: tool.name,
       description: tool.description,
       userDescription: tool.description,
-      inputSchema: tool.input_schema || { type: 'object' }
+      inputSchema: tool.input_schema || { type: 'object' },
+      isCustom: true
     }, async (params) => handler(params));
+    // Register in CapabilityManager as unsafe (requires unsafe group enabled)
+    if (this.capabilityManager) {
+      this.capabilityManager.registerCustomTool(tool.name, false);
+    }
+    console.log(`[MCP] Custom tool registered: ${tool.name}`);
   }
 
   async loadCustomTools() {
@@ -1646,11 +1702,12 @@ ${params.content || ''}`;
             input_schema: JSON.parse(tool.input_schema || '{}')
           });
         } catch (e) {
-          console.error(`Failed to load custom tool ${tool.name}:`, e);
+          console.error(`[MCP] Failed to load custom tool ${tool.name}:`, e);
         }
       }
+      console.log(`[MCP] Loaded ${tools.length} custom tools`);
     } catch (e) {
-      console.error('Failed to load custom tools:', e);
+      console.error('[MCP] Failed to load custom tools:', e);
     }
   }
 }

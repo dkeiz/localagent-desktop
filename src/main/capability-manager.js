@@ -177,32 +177,62 @@ class CapabilityManager extends EventEmitter {
     // ==================== State Export ====================
 
     getState() {
+        // Build groups dynamically from config — no hard-coding
+        const groups = {};
+        for (const [id, group] of Object.entries(this.config.groups)) {
+            if (id === 'files') {
+                groups[id] = group.mode; // string: 'off'|'read'|'full'
+            } else {
+                groups[id] = group.enabled === true;
+            }
+        }
         return {
             mainEnabled: this.config.mainSwitch.enabled,
-            groups: {
-                unsafe: this.config.groups.unsafe.enabled,
-                web: this.config.groups.web.enabled,
-                files: this.config.groups.files.mode,
-                terminal: this.config.groups.terminal.enabled,
-                ports: this.config.groups.ports.enabled,
-                visual: this.config.groups.visual.enabled
-            },
+            groups,
             activeToolCount: this.getActiveTools().length,
             portListeners: this.getPortListeners()
         };
     }
 
+    // Returns the group id that owns a given tool name, or null
+    getGroupForTool(toolName) {
+        for (const [id, group] of Object.entries(this.config.groups)) {
+            if (id === 'files') {
+                // Check all mode arrays
+                const allTools = new Set([
+                    ...(group.modes?.off || []),
+                    ...(group.modes?.read || []),
+                    ...(group.modes?.full || [])
+                ]);
+                if (allTools.has(toolName)) return id;
+            } else if (Array.isArray(group.tools) && group.tools.includes(toolName)) {
+                return id;
+            }
+        }
+        return null;
+    }
+
     getGroupsConfig() {
-        return Object.entries(this.config.groups).map(([id, group]) => ({
-            id,
-            name: group.name,
-            description: group.description,
-            icon: group.icon,
-            enabled: id === 'files' ? group.mode !== 'off' : group.enabled,
-            mode: id === 'files' ? group.mode : undefined,
-            tools: group.tools || [],
-            listeners: group.listeners
-        }));
+        return Object.entries(this.config.groups).map(([id, group]) => {
+            // For files group, compute active tools based on current mode
+            const tools = id === 'files'
+                ? (group.modes?.[group.mode] || [])
+                : (group.tools || []);
+            return {
+                id,
+                name: group.name,
+                description: group.description,
+                icon: group.icon,
+                enabled: id === 'files' ? group.mode !== 'off' : group.enabled === true,
+                mode: id === 'files' ? group.mode : undefined,
+                modes: id === 'files' ? group.modes : undefined,
+                tools,
+                allTools: id === 'files'
+                    ? Object.values(group.modes || {}).flat()
+                    : (group.tools || []),
+                listeners: group.listeners
+            };
+        });
     }
 }
 

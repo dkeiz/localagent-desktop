@@ -240,14 +240,14 @@ class DatabaseWrapper {
         return this.all('SELECT * FROM conversations WHERE session_id = ? ORDER BY timestamp', [session.id]);
     }
 
-    async addConversation(message) {
+    async addConversation(message, sessionId = null) {
         const { role, content } = message;
-        const session = await this.getCurrentSession();
+        const sid = sessionId || (await this.getCurrentSession()).id;
         this.run(
             'INSERT INTO conversations (session_id, role, content) VALUES (?, ?, ?)',
-            [session.id, role, content]
+            [sid, role, content]
         );
-        this.run('UPDATE chat_sessions SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [session.id]);
+        this.run('UPDATE chat_sessions SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [sid]);
         return message;
     }
 

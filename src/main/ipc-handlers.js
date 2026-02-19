@@ -305,6 +305,10 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   });
 
   // Chat Sessions operations
+  ipcMain.handle('save-setting', async (event, key, value) => {
+    return await db.saveSetting(key, value);
+  });
+
   ipcMain.handle('create-chat-session', async () => {
     return await db.createChatSession();
   });
@@ -350,11 +354,11 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   });
 
   // AI operations - with tool chaining support
-  ipcMain.handle('send-message', async (event, message, useChaining = true) => {
+  ipcMain.handle('send-message', async (event, message, useChaining = true, sessionId = null) => {
     try {
-      const conversations = await db.getConversations(20);
+      // Use explicit sessionId for per-chat isolation
+      const conversations = await db.getConversations(20, sessionId);
       // Clean TOOL: patterns from history so model doesn't mimic past tool calls
-      // Use brace-depth-aware stripping for nested JSON
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
@@ -362,18 +366,18 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
           : c.content
       })).filter(c => c.content && c.content.trim().length > 0).reverse();
 
-      await db.addConversation({ role: 'user', content: message });
+      await db.addConversation({ role: 'user', content: message }, sessionId);
 
       let response;
 
       // Use chain controller if available and enabled
       if (chainController && useChaining) {
         console.log('[IPC] Using tool chain controller');
-        response = await chainController.executeWithChaining(message, conversationHistory);
+        response = await chainController.executeWithChaining(message, conversationHistory, { sessionId });
 
         if (response && response.needsPermission) {
-          mainWindow.webContents.send('tool-permission-request', response.permissionRequest);
-          return { needsPermission: true, ...response.permissionRequest };
+          mainWindow.webContents.send('tool-permission-request', { ...response.permissionRequest, sessionId });
+          return { needsPermission: true, sessionId, ...response.permissionRequest };
         }
       } else {
         // Fallback to legacy single-step
@@ -390,9 +394,9 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
           const interpretedResponse = await aiService.sendMessage(interpretPrompt, conversationHistory);
 
           const cleanContent = stripToolPatterns(interpretedResponse.content);
-          await db.addConversation({ role: 'assistant', content: cleanContent });
-          mainWindow.webContents.send('conversation-update');
-          return { ...interpretedResponse, content: cleanContent };
+          await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
+          mainWindow.webContents.send('conversation-update', { sessionId });
+          return { ...interpretedResponse, content: cleanContent, sessionId };
         }
       }
 
@@ -404,9 +408,9 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
       // Clean any leftover TOOL: patterns from the final response
       const cleanContent = stripToolPatterns(response.content);
-      await db.addConversation({ role: 'assistant', content: cleanContent });
-      mainWindow.webContents.send('conversation-update');
-      return { ...response, content: cleanContent };
+      await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
+      mainWindow.webContents.send('conversation-update', { sessionId });
+      return { ...response, content: cleanContent, sessionId };
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
@@ -655,6 +659,20 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       if (mcpServer.setToolActiveState) {
         await mcpServer.setToolActiveState(toolName, active);
       }
+
+      // If enabling a tool whose capability group is disabled, auto-enable the group
+      if (active && capabilityManager) {
+        const groupId = capabilityManager.getGroupForTool(toolName);
+        if (groupId && !capabilityManager.isGroupEnabled(groupId)) {
+          capabilityManager.setGroupEnabled(groupId, true);
+          console.log(`[IPC] Auto-enabled capability group '${groupId}' because tool '${toolName}' was enabled`);
+        }
+        // Emit updated state to UI so capability panel stays in sync
+        mainWindow.webContents.send('capability-update', capabilityManager.getState());
+      } else if (!active && capabilityManager) {
+        mainWindow.webContents.send('capability-update', capabilityManager.getState());
+      }
+
       console.log(`[IPC] Tool ${toolName} ${active ? 'enabled' : 'disabled'} (DB + memory)`);
       return { success: true, toolName, active };
     } catch (error) {
@@ -666,6 +684,10 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   ipcMain.handle('create-custom-tool', async (event, toolData) => {
     try {
       await mcpServer.executeTool('create_tool', toolData);
+      // Emit capability-update so UI refreshes with new tool's unsafe-group membership
+      if (capabilityManager) {
+        mainWindow.webContents.send('capability-update', capabilityManager.getState());
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -684,6 +706,10 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     try {
       await db.deleteCustomTool(toolName);
       mcpServer.tools.delete(toolName);
+      // Clean up from capability manager's safety map
+      if (capabilityManager) {
+        capabilityManager.customToolSafety.delete(toolName);
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -704,6 +730,24 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     for (const [key, value] of Object.entries(settings)) {
       await db.setSetting(key, value);
     }
+    return { success: true };
+  });
+
+  // Open a second independent chat window
+  ipcMain.handle('open-new-window', async () => {
+    const { BrowserWindow } = require('electron');
+    const path = require('path');
+    const win = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false
+      },
+      show: false
+    });
+    win.loadFile(path.join(__dirname, '../renderer/index.html'));
+    win.once('ready-to-show', () => win.show());
     return { success: true };
   });
 

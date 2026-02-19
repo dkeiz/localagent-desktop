@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="styles/buttons.css?v=7">
     <link rel="stylesheet" href="styles/rule-manager.css?v=7">
     <link rel="stylesheet" href="styles/capability-panel.css?v=1">
+    <link rel="stylesheet" href="styles/chat-tabs.css?v=1">
 </head>
 
 <body>
@@ -139,8 +140,10 @@
         <main class="content-panel">
             <section id="chat-tab" class="tab-content active">
                 <div class="chat-container">
-                    <div class="chat-header">
-                        <button id="new-chat-btn" class="secondary-btn">🆕 New Chat</button>
+                    <div class="chat-tabs-bar" id="chat-tabs-bar">
+                        <button id="new-session-btn" class="chat-tab-new-session" title="New Chat">New Chat</button>
+                        <div id="chat-tabs-list" class="chat-tabs-list"></div>
+                        <button id="new-chat-btn" class="chat-tab-new" title="New Tab">+</button>
                         <div id="context-usage" class="context-usage"></div>
                     </div>
                     <div class="messages-container" id="messages-container">

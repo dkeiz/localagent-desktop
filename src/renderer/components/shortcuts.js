@@ -31,7 +31,8 @@ class ShortcutsManager {
     }
 
     newChat() {
-        const btn = document.getElementById('new-chat-btn');
+        // Ctrl+N clears the current chat in-place (same tab)
+        const btn = document.getElementById('new-session-btn');
         if (btn) btn.click();
     }
 
@@ -133,12 +134,12 @@ class ShortcutsManager {
 // Add event listeners for help and stats buttons
 document.addEventListener('DOMContentLoaded', () => {
     window.shortcuts = new ShortcutsManager();
-    
+
     setTimeout(() => {
         document.getElementById('show-shortcuts-btn')?.addEventListener('click', () => {
             window.shortcuts.showHelp();
         });
-        
+
         document.getElementById('show-stats-btn')?.addEventListener('click', () => {
             window.statsTracker?.showStats();
         });

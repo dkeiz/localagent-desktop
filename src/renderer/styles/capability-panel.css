@@ -240,3 +240,34 @@
 [data-theme="dark"] .capability-group-pad .group-name {
     color: var(--text-secondary, #9ca3af);
 }
+
+/* =========================================================
+   MCP Tab: Disabled Group / Tool States
+   ========================================================= */
+
+/* A card whose capability group is off */
+.mcp-tool-card.tool-group-disabled {
+    opacity: 0.55;
+    filter: grayscale(0.3);
+}
+
+.mcp-tool-card.tool-group-disabled .tool-card-name {
+    color: var(--text-secondary, #9ca3af);
+}
+
+/* The lock badge shown on disabled tool names */
+.tool-disabled-badge {
+    font-size: 0.75rem;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+}
+
+/* Group header when the group is disabled */
+.mcp-group-header.group-disabled {
+    opacity: 0.7;
+}
+
+/* Input checkbox dimmed inside a disabled group */
+.mcp-tool-card.tool-group-disabled .tool-toggle {
+    opacity: 0.6;
+}

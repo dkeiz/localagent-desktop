@@ -58,7 +58,7 @@
       "name": "File Operations",
       "description": "Read and write files on disk",
       "icon": "📁",
-      "mode": "full",
+      "mode": "read",
       "modes": {
         "off": [],
         "read": [

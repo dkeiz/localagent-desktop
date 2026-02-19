@@ -9,6 +9,7 @@ class Sidebar {
         this.setupToolListeners();
         this.loadChatSessions();
         this.setupCollapsibleSections();  // Added collapsible functionality
+        this.setupCapabilityListener();   // Keep MCP tab in sync with capability changes
     }
 
     resetUnseenToolCount() {
@@ -111,7 +112,8 @@ class Sidebar {
         try {
             const tools = await window.electronAPI.getMCPTools();
             const customTools = await window.electronAPI.getCustomTools?.() || [];
-            const toolGroups = await window.electronAPI.getToolGroups() || [];
+            // Use capability groups as the single source of truth for group info
+            const capabilityGroups = await window.electronAPI.capability?.getGroups?.() || [];
             const container = document.getElementById('mcp-tools-container');
             const toolSelect = document.getElementById('tool-select');
             const activityContainer = document.getElementById('tool-activity');
@@ -129,7 +131,7 @@ class Sidebar {
                 });
             }
 
-            // Get tool activation states
+            // Get DB tool activation states
             let toolStates = {};
             try {
                 toolStates = await window.electronAPI.getToolStates?.() || {};
@@ -137,103 +139,204 @@ class Sidebar {
                 console.warn('Could not load tool states, using defaults:', error);
             }
 
+            // Also get the active tools list from CapabilityManager
+            let activeToolNames = new Set();
+            try {
+                const activeTools = await window.electronAPI.capability?.getActiveTools?.() || [];
+                activeToolNames = new Set(activeTools);
+            } catch (e) { /* graceful fallback */ }
+
             const customToolNames = new Set(customTools.map(t => t.name));
 
-            // Create a map of tool name -> group info with colors
-            const groupColors = {
-                storage: '#8b5cf6',  // purple
-                web: '#3b82f6',      // blue
-                agent: '#10b981',    // green
-                call: '#f59e0b',     // amber
-                system: '#6b7280',   // gray
-                media: '#ec4899'     // pink
-            };
-
+            // Build tool -> group map from capability groups (dynamic, not hard-coded)
+            const groupColorPalette = [
+                '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6',
+                '#ec4899', '#6b7280', '#ef4444', '#14b8a6'
+            ];
             const toolToGroup = new Map();
-            toolGroups.forEach(group => {
-                group.tools.forEach(toolName => {
+            capabilityGroups.forEach((group, idx) => {
+                const color = groupColorPalette[idx % groupColorPalette.length];
+                // allTools covers all tools in any mode for this group
+                const allTools = group.allTools || group.tools || [];
+                allTools.forEach(toolName => {
                     toolToGroup.set(toolName, {
                         id: group.id,
                         name: group.name,
                         icon: group.icon,
-                        active: group.active,
-                        color: groupColors[group.id] || '#6b7280'
+                        enabled: group.enabled,
+                        color
                     });
                 });
             });
 
-            // Render all tools in flat grid
+            // Group tools visually by their capability group
+            // Sort: enabled groups first, then disabled, then ungrouped
+            const groupOrder = capabilityGroups.map(g => g.id);
+            const toolsByGroup = new Map(); // groupId -> tools[]
+            const ungroupedTools = [];
+
             tools.forEach(tool => {
-                const toolElement = document.createElement('div');
-                const isActive = toolStates[tool.name]?.active !== false;
-                const isCustom = customToolNames.has(tool.name);
                 const groupInfo = toolToGroup.get(tool.name);
-                const groupColor = groupInfo?.color || '#6b7280';
-                const groupIcon = groupInfo?.icon || '🔧';
+                if (groupInfo) {
+                    if (!toolsByGroup.has(groupInfo.id)) toolsByGroup.set(groupInfo.id, []);
+                    toolsByGroup.get(groupInfo.id).push({ tool, groupInfo });
+                } else if (customToolNames.has(tool.name)) {
+                    // Custom tools go into a virtual "custom" group
+                    if (!toolsByGroup.has('custom')) toolsByGroup.set('custom', []);
+                    toolsByGroup.get('custom').push({ tool, groupInfo: { id: 'custom', name: 'Custom Tools', icon: '🔧', enabled: true, color: '#6b7280' } });
+                } else {
+                    ungroupedTools.push({ tool, groupInfo: null });
+                }
+            });
 
-                toolElement.className = 'mcp-tool-card';
-                toolElement.style.borderLeft = `3px solid ${groupColor}`;
-                toolElement.setAttribute('data-full-description', tool.description);
-                toolElement.setAttribute('data-group', groupInfo?.id || 'custom');
-                toolElement.innerHTML = `
-                    <div class="tool-card-header">
-                        <h4 class="tool-card-name"><span class="tool-group-badge" title="${groupInfo?.name || 'Custom'}">${groupIcon}</span> ${isCustom ? '🔧 ' : ''}${tool.name}</h4>
-                        <div style="display: flex; gap: 0.5rem; align-items: center;">
-                            ${isCustom ? '<button class="delete-tool-btn" data-tool="' + tool.name + '" title="Delete custom tool">🗑️</button>' : ''}
-                            <label class="tool-toggle">
-                                <input type="checkbox" class="tool-active-checkbox"
-                                       data-tool="${tool.name}"
-                                       ${isActive ? 'checked' : ''}>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="tool-card-description">${tool.description}</div>
-                    ${tool.inputSchema?.properties ? `<div class="tool-card-params">Params: ${Object.keys(tool.inputSchema.properties).join(', ')}</div>` : ''}
+            // Render groups
+            const renderOrder = [...groupOrder, 'custom'];
+            renderOrder.forEach(groupId => {
+                const groupTools = toolsByGroup.get(groupId);
+                if (!groupTools || groupTools.length === 0) return;
+
+                const groupInfo = groupTools[0].groupInfo;
+                const groupEnabled = groupId === 'custom' ? true : (groupInfo?.enabled ?? true);
+
+                // Group header
+                const groupHeader = document.createElement('div');
+                groupHeader.className = `mcp-group-header ${groupEnabled ? '' : 'group-disabled'}`;
+                groupHeader.style.cssText = `
+                    display: flex; align-items: center; gap: 0.5rem;
+                    padding: 0.4rem 0.6rem; margin: 0.6rem 0 0.2rem 0;
+                    border-radius: 6px;
+                    background: ${groupEnabled ? `${groupInfo.color}18` : 'rgba(100,100,100,0.08)'};
+                    border-left: 3px solid ${groupEnabled ? groupInfo.color : '#9ca3af'};
+                    font-size: 0.82rem; font-weight: 600; color: ${groupEnabled ? 'inherit' : '#9ca3af'};
                 `;
+                groupHeader.innerHTML = `
+                    <span>${groupInfo.icon}</span>
+                    <span>${groupInfo.name}</span>
+                    ${groupEnabled ? '' : '<span style="margin-left:auto;font-size:0.75rem;">🔒 disabled</span>'}
+                `;
+                container.appendChild(groupHeader);
 
-                // Toggle handler
-                const checkbox = toolElement.querySelector('.tool-active-checkbox');
-                checkbox.addEventListener('change', async (e) => {
-                    const toolName = e.target.dataset.tool;
-                    const active = e.target.checked;
-                    try {
-                        await window.electronAPI.setToolActive?.(toolName, active);
-                        console.log(`${toolName} ${active ? 'enabled' : 'disabled'}`);
-                    } catch (error) {
-                        console.error('Failed to update tool state:', error);
-                        e.target.checked = !active;
-                    }
-                });
+                // Tools in this group
+                groupTools.forEach(({ tool, groupInfo: gi }) => {
+                    const toolElement = document.createElement('div');
+                    const isCustom = customToolNames.has(tool.name);
+                    const isCapabilityActive = activeToolNames.size > 0 ? activeToolNames.has(tool.name) : true;
+                    const isDbActive = toolStates[tool.name]?.active !== false;
+                    const isActive = isCapabilityActive && isDbActive;
+                    const groupColor = gi?.color || '#6b7280';
 
-                // Delete handler for custom tools
-                const deleteBtn = toolElement.querySelector('.delete-tool-btn');
-                if (deleteBtn) {
-                    deleteBtn.addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        const toolName = e.target.dataset.tool;
-                        if (confirm(`Delete custom tool "${toolName}"?`)) {
-                            try {
-                                await window.electronAPI.deleteCustomTool(toolName);
-                                await this.loadMCPTools();
-                                if (window.mainPanel) {
-                                    window.mainPanel.showNotification(`Tool "${toolName}" deleted`);
-                                }
-                            } catch (error) {
-                                console.error('Failed to delete tool:', error);
-                                if (window.mainPanel) {
-                                    window.mainPanel.showNotification('Failed to delete tool', 'error');
-                                }
+                    toolElement.className = `mcp-tool-card ${!groupEnabled ? 'tool-group-disabled' : ''}`;
+                    toolElement.style.borderLeft = `3px solid ${groupEnabled ? groupColor : '#9ca3af'}`;
+                    toolElement.setAttribute('data-full-description', tool.description);
+                    toolElement.setAttribute('data-group', gi?.id || 'custom');
+
+                    toolElement.innerHTML = `
+                        <div class="tool-card-header">
+                            <h4 class="tool-card-name">
+                                ${isCustom ? '🔧 ' : ''}${tool.name}
+                                ${!groupEnabled ? '<span class="tool-disabled-badge" title="Group disabled">🔒</span>' : ''}
+                            </h4>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                ${isCustom ? '<button class="delete-tool-btn" data-tool="' + tool.name + '" title="Delete custom tool">🗑️</button>' : ''}
+                                <label class="tool-toggle" title="${!groupEnabled ? 'Enable group to allow this tool' : ''}">
+                                    <input type="checkbox" class="tool-active-checkbox"
+                                           data-tool="${tool.name}"
+                                           data-group="${gi?.id || ''}"
+                                           data-group-enabled="${groupEnabled}"
+                                           ${isActive ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="tool-card-description">${tool.description}</div>
+                        ${tool.inputSchema?.properties ? `<div class="tool-card-params">Params: ${Object.keys(tool.inputSchema.properties).join(', ')}</div>` : ''}
+                    `;
+
+                    // Toggle handler — auto-enables group if needed
+                    const checkbox = toolElement.querySelector('.tool-active-checkbox');
+                    checkbox.addEventListener('change', async (e) => {
+                        const tName = e.target.dataset.tool;
+                        const active = e.target.checked;
+                        const gId = e.target.dataset.group;
+                        const gEnabled = e.target.dataset.groupEnabled === 'true';
+
+                        if (active && !gEnabled && gId) {
+                            const confirmed = confirm(`The "${gi?.name || gId}" group is currently disabled.\nEnable the group to allow this tool?`);
+                            if (!confirmed) {
+                                e.target.checked = false;
+                                return;
                             }
+                            // Enable the capability group
+                            await window.electronAPI.capability?.setGroup?.(gId, true);
+                        }
+                        try {
+                            await window.electronAPI.setToolActive?.(tName, active);
+                        } catch (error) {
+                            console.error('Failed to update tool state:', error);
+                            e.target.checked = !active;
                         }
                     });
-                }
 
-                container.appendChild(toolElement);
+                    // Delete handler for custom tools
+                    const deleteBtn = toolElement.querySelector('.delete-tool-btn');
+                    if (deleteBtn) {
+                        deleteBtn.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            const tName = e.currentTarget.dataset.tool;
+                            if (confirm(`Delete custom tool "${tName}"?`)) {
+                                try {
+                                    await window.electronAPI.deleteCustomTool(tName);
+                                    await this.loadMCPTools();
+                                    window.mainPanel?.showNotification?.(`Tool "${tName}" deleted`);
+                                } catch (error) {
+                                    console.error('Failed to delete tool:', error);
+                                    window.mainPanel?.showNotification?.('Failed to delete tool', 'error');
+                                }
+                            }
+                        });
+                    }
+
+                    container.appendChild(toolElement);
+                });
             });
 
-            // Setup tool tester
-            document.getElementById('test-tool-btn')?.addEventListener('click', () => this.testTool());
+            // Render any ungrouped tools at the bottom
+            if (ungroupedTools.length > 0) {
+                const ugHeader = document.createElement('div');
+                ugHeader.style.cssText = 'padding:0.3rem 0.6rem;margin:0.6rem 0 0.2rem;font-size:0.78rem;color:#9ca3af;';
+                ugHeader.textContent = 'Other';
+                container.appendChild(ugHeader);
+                ungroupedTools.forEach(({ tool }) => {
+                    const toolElement = document.createElement('div');
+                    toolElement.className = 'mcp-tool-card';
+                    toolElement.style.borderLeft = '3px solid #6b7280';
+                    toolElement.innerHTML = `
+                        <div class="tool-card-header">
+                            <h4 class="tool-card-name">${tool.name}</h4>
+                        </div>
+                        <div class="tool-card-description">${tool.description}</div>
+                    `;
+                    container.appendChild(toolElement);
+                });
+            }
+
+            // Update tool tester dropdown
+            if (toolSelect) {
+                toolSelect.innerHTML = '<option value="">Select a tool...</option>';
+                tools.forEach(tool => {
+                    const option = document.createElement('option');
+                    option.value = tool.name;
+                    option.textContent = tool.name;
+                    toolSelect.appendChild(option);
+                });
+            }
+
+            // Setup tool tester button
+            const testBtn = document.getElementById('test-tool-btn');
+            if (testBtn && !testBtn._listenerAdded) {
+                testBtn.addEventListener('click', () => this.testTool());
+                testBtn._listenerAdded = true;
+            }
 
             if (activityContainer) {
                 if (this.toolActivity.length === 0) {
@@ -244,6 +347,17 @@ class Sidebar {
             }
         } catch (error) {
             console.error('Error loading MCP tools:', error);
+        }
+    }
+
+    // Called on capability-update events to refresh MCP tab if it's visible
+    setupCapabilityListener() {
+        if (window.electronAPI?.onCapabilityUpdate) {
+            window.electronAPI.onCapabilityUpdate(() => {
+                if (this.currentTab === 'mcp') {
+                    this.loadMCPTools();
+                }
+            });
         }
     }
 
