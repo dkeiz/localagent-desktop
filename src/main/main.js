@@ -13,6 +13,7 @@ const AgentMemory = require('./agent-memory');
 const PromptFileManager = require('./prompt-file-manager');
 const AgentLoop = require('./agent-loop');
 const ConnectorRuntime = require('./connector-runtime');
+const InferenceDispatcher = require('./inference-dispatcher');
 const ollamaService = require('./ollama-service');
 
 let mainWindow;
@@ -29,6 +30,7 @@ let agentMemory;
 let promptFileManager;
 let agentLoop;
 let connectorRuntime;
+let dispatcher;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -68,8 +70,11 @@ app.whenReady().then(async () => {
     mcpServer.setAIService(aiService);
     await mcpServer.loadCustomTools();
 
-    // Create chain controller for multi-tool execution
-    chainController = new ToolChainController(aiService, mcpServer, db);
+    // Create central inference dispatcher
+    dispatcher = new InferenceDispatcher(aiService, db, mcpServer);
+
+    // Create chain controller for multi-tool execution (uses dispatcher)
+    chainController = new ToolChainController(dispatcher, mcpServer, db);
 
     // Create workflow manager for learning tool chains
     workflowManager = new WorkflowManager(db, mcpServer);
@@ -78,8 +83,8 @@ app.whenReady().then(async () => {
     embeddingService = new EmbeddingService();
     vectorStore = new VectorStore(db, embeddingService);
 
-    // Create Port Listener Manager for external triggers
-    portListenerManager = new PortListenerManager(aiService);
+    // Create Port Listener Manager for external triggers (uses dispatcher)
+    portListenerManager = new PortListenerManager(dispatcher);
 
     // Create Agent Memory manager
     agentMemory = new AgentMemory();
@@ -91,18 +96,18 @@ app.whenReady().then(async () => {
     const systemPrompt = await promptFileManager.loadSystemPrompt();
     await aiService.setSystemPrompt(systemPrompt);
 
-    // Create Agent Loop for autonomous behaviors
-    agentLoop = new AgentLoop(aiService, agentMemory, db);
+    // Create Agent Loop for autonomous behaviors (uses dispatcher)
+    agentLoop = new AgentLoop(dispatcher, agentMemory, db);
     mcpServer.setAgentLoop(agentLoop);
 
-    // Create Connector Runtime for dynamic external service connectors
-    connectorRuntime = new ConnectorRuntime(aiService, db);
+    // Create Connector Runtime for dynamic external service connectors (uses dispatcher)
+    connectorRuntime = new ConnectorRuntime(dispatcher, db);
     mcpServer.setConnectorRuntime(connectorRuntime);
 
     createWindow();
 
     // Setup IPC handlers (pass all services)
-    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime);
+    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

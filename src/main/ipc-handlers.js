@@ -41,7 +41,7 @@ function stripToolPatterns(text) {
   return result.trim();
 }
 
-module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime) {
+module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher) {
   // Ollama model selection handlers
   ipcMain.handle('getProviderModels', async (event, provider) => {
     if (provider === 'ollama') {
@@ -437,9 +437,9 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   });
 
   // Interpret a tool result through the LLM (used by permission flow)
-  ipcMain.handle('interpret-tool-result', async (event, toolName, params, toolResult) => {
+  ipcMain.handle('interpret-tool-result', async (event, toolName, params, toolResult, sessionId = null) => {
     try {
-      const conversations = await db.getConversations(20);
+      const conversations = await db.getConversations(20, sessionId);
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
@@ -449,13 +449,13 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
       const toolContext = `Tool "${toolName}" was executed with parameters: ${JSON.stringify(params)}\n\nResult: ${JSON.stringify(toolResult, null, 2)}\n\nBased on this tool result, provide a natural, helpful response to the user. Do NOT call any tools.`;
 
-      const response = await aiService.sendMessage(toolContext, conversationHistory);
+      const response = await dispatcher.dispatch(toolContext, conversationHistory, { mode: 'chat', sessionId });
       const cleanContent = stripToolPatterns(response.content);
 
-      await db.addConversation({ role: 'assistant', content: cleanContent });
-      mainWindow.webContents.send('conversation-update');
+      await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
+      mainWindow.webContents.send('conversation-update', { sessionId });
 
-      return { ...response, content: cleanContent };
+      return { ...response, content: cleanContent, sessionId };
     } catch (error) {
       console.error('Error interpreting tool result:', error);
       // Fallback: return a basic formatted result
@@ -934,7 +934,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   });
 
   // File handling
-  ipcMain.handle('handle-file-drop', async (event, filePath) => {
+  ipcMain.handle('handle-file-drop', async (event, filePath, sessionId = null) => {
     const fs = require('fs');
     const path = require('path');
 
@@ -942,38 +942,46 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       const fileName = path.basename(filePath);
       const ext = path.extname(filePath).toLowerCase();
 
+      let message;
+
       // Image files - encode as base64
       if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(ext)) {
         const buffer = fs.readFileSync(filePath);
         const base64 = buffer.toString('base64');
-        const message = `User dropped image "${fileName}". [Image data: ${base64.substring(0, 100)}... (base64 encoded)]`;
-
-        await db.addConversation({ role: 'user', content: message });
-        const conversations = await db.getConversations(20);
-        const conversationHistory = conversations.map(c => ({ role: c.role, content: c.content })).reverse();
-        const response = await aiService.sendMessage(message, conversationHistory);
-        await db.addConversation({ role: 'assistant', content: response.content });
-        mainWindow.webContents.send('conversation-update');
-
-        return { success: true, response };
+        message = `User dropped image "${fileName}". [Image data: ${base64.substring(0, 100)}... (base64 encoded)]`;
+      } else {
+        // Text files
+        const content = fs.readFileSync(filePath, 'utf-8');
+        message = `User dropped file "${fileName}". Content:\n\n---\n\n${content}`;
       }
 
-      // Text files
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const message = `User dropped file "${fileName}". Content:\n\n---\n\n${content}`;
+      await db.addConversation({ role: 'user', content: message }, sessionId);
 
-      await db.addConversation({ role: 'user', content: message });
-      const conversations = await db.getConversations(20);
-      const conversationHistory = conversations.map(c => ({ role: c.role, content: c.content })).reverse();
-      const response = await aiService.sendMessage(message, conversationHistory);
-      await db.addConversation({ role: 'assistant', content: response.content });
-      mainWindow.webContents.send('conversation-update');
+      // Route through chain controller (same path as send-message)
+      const conversations = await db.getConversations(20, sessionId);
+      const conversationHistory = conversations.map(c => ({
+        role: c.role,
+        content: c.role === 'assistant'
+          ? stripToolPatterns(c.content)
+          : c.content
+      })).filter(c => c.content && c.content.trim().length > 0).reverse();
 
-      return { success: true, response };
+      let response;
+      if (chainController) {
+        response = await chainController.executeWithChaining(message, conversationHistory, { sessionId });
+      } else {
+        response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId });
+      }
+
+      const cleanContent = stripToolPatterns(response.content);
+      await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
+      mainWindow.webContents.send('conversation-update', { sessionId });
+
+      return { success: true, response: { ...response, content: cleanContent }, sessionId };
     } catch (error) {
       console.error('Error handling file drop:', error);
-      await db.addConversation({ role: 'system', content: `Error processing file: ${error.message}` });
-      mainWindow.webContents.send('conversation-update');
+      await db.addConversation({ role: 'system', content: `Error processing file: ${error.message}` }, sessionId);
+      mainWindow.webContents.send('conversation-update', { sessionId });
       throw error;
     }
   });

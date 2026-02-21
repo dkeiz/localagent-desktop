@@ -182,92 +182,32 @@ class AIService {
     }
   }
 
-  async sendMessage(message, conversationHistory = [], options = {}) {
-    // Build system prompt with active rules
-    let fullSystemPrompt = this.systemPrompt;
+  /**
+   * Send a message to the LLM provider.
+   *
+   * New-style (from InferenceDispatcher): sendMessage(messagesArray, options)
+   *   - messagesArray is a fully constructed [{role, content}, ...] array
+   *   - System prompt, tools, rules already baked in by the dispatcher
+   *
+   * Legacy-style (backward compat): sendMessage(string, historyArray, options)
+   *   - Falls back to building system prompt internally (deprecated path)
+   */
+  async sendMessage(messageOrMessages, historyOrOptions = [], optionsOrUndefined = {}) {
+    let messages;
+    let options;
 
-    // Add working directory and memory context
-    const path = require('path');
-    const appDir = path.resolve(__dirname, '..', '..');
-    fullSystemPrompt += `\n\n<environment>
-Working Directory: ${appDir}
-Memory Directory: ${path.join(appDir, 'agentin', 'memory')}
-Agent Config: ${path.join(appDir, 'agentin')}
-When using file tools (list_directory, read_file, etc.), use these paths. Your memory files are in the agentin/memory/ directory.
-</environment>`;
-
-    const activeRules = await this.db.getActivePromptRules();
-    if (activeRules && activeRules.length > 0) {
-      const rulesText = activeRules.map(r => r.content).join('\n');
-      fullSystemPrompt += `\n\nActive Rules:\n${rulesText}`;
+    // Detect new-style vs legacy call
+    if (Array.isArray(messageOrMessages)) {
+      // New-style: first arg is the pre-built messages array
+      messages = messageOrMessages;
+      options = historyOrOptions || {};
+    } else {
+      // Legacy-style: first arg is a string prompt, second is history array
+      const message = messageOrMessages;
+      const conversationHistory = Array.isArray(historyOrOptions) ? historyOrOptions : [];
+      options = optionsOrUndefined || {};
+      messages = await this._buildLegacyMessages(message, conversationHistory);
     }
-
-    // Build MCP tool context (separate from system prompt)
-    let mcpContext = '';
-    if (this.mcpServer) {
-      // Use getActiveTools() to only include tools from active groups
-      const activeTools = this.mcpServer.getActiveTools ? this.mcpServer.getActiveTools() : [];
-      const tools = activeTools.length > 0
-        ? activeTools
-        : this.mcpServer.getTools(); // Fallback to all tools if groups not loaded
-      const docs = this.mcpServer.getToolsDocumentation();
-
-      mcpContext = `\n\n<mcp_tools>\nAvailable Tools (from active groups):\n\n`;
-
-      // Create a map of tool docs for easy lookup
-      const docsMap = new Map(docs.map(doc => [doc.name, doc]));
-
-      tools.forEach(tool => {
-        // Get activation state
-        const isActive = this.mcpServer.toolStates.get(tool.name) !== false;
-        const status = isActive ? '✅ Available' : '⚠️ Disabled (permission required)';
-
-        mcpContext += `## ${tool.name} [${status}]\n`;
-        mcpContext += `Description: ${tool.description}\n`;
-
-        // Add parameters with detailed descriptions
-        if (tool.inputSchema?.properties) {
-          const props = tool.inputSchema.properties;
-          const required = tool.inputSchema.required || [];
-          mcpContext += `Parameters:\n`;
-
-          Object.entries(props).forEach(([key, prop]) => {
-            const isRequired = required.includes(key);
-            const defaultVal = prop.default !== undefined ? ` (default: ${JSON.stringify(prop.default)})` : '';
-            const requiredMark = isRequired ? ' [REQUIRED]' : '';
-            mcpContext += `  - ${key} (${prop.type})${requiredMark}${defaultVal}: ${prop.description || 'No description'}\n`;
-          });
-        }
-
-        // Add usage example
-        if (tool.example) {
-          mcpContext += `Example: ${tool.example}\n`;
-        }
-
-        mcpContext += `\n`;
-      });
-
-      mcpContext += `\n## How to Use Tools\n`;
-      mcpContext += `Format: TOOL:tool_name{"param":"value"}\n`;
-      mcpContext += `Use the APPROPRIATE tool for each request. Match the tool to the user's actual question.\n`;
-      mcpContext += `If a tool times out or fails, tell the user the tool didn't respond - do NOT call a different tool instead.\n`;
-      mcpContext += `Always use the exact JSON format shown in examples.\n`;
-      mcpContext += `\n## Important Rules\n`;
-      mcpContext += `- Only call tools directly relevant to what the user asked\n`;
-      mcpContext += `- If the user asks for weather, use weather/web tools, NOT time tools\n`;
-      mcpContext += `- If a tool fails, explain the failure to the user instead of trying other tools\n`;
-      mcpContext += `- Don't repeat the same tool call from earlier in the conversation\n`;
-      mcpContext += `</mcp_tools>`;
-      fullSystemPrompt += mcpContext;
-    }
-
-    // Build messages array — only add user message if it's not null/empty
-    // (on chain continuation, message is null and tool results are already in conversationHistory)
-    const messages = [
-      { role: 'system', content: fullSystemPrompt },
-      ...conversationHistory,
-      ...(message ? [{ role: 'user', content: message }] : [])
-    ];
 
     try {
       const model = await this.db.getSetting('llm.model');
@@ -488,6 +428,72 @@ When using file tools (list_directory, read_file, etc.), use these paths. Your m
       this.modelCache = {};
       console.log('Cleared all model caches');
     }
+  }
+
+  /**
+   * Legacy message builder — used when sendMessage is called the old way.
+   * Replicates the original system-prompt-building logic.
+   * @deprecated Use InferenceDispatcher.dispatch() instead.
+   */
+  async _buildLegacyMessages(message, conversationHistory) {
+    let fullSystemPrompt = this.systemPrompt;
+
+    const path = require('path');
+    const appDir = path.resolve(__dirname, '..', '..');
+    fullSystemPrompt += `\n\n<environment>
+Working Directory: ${appDir}
+Memory Directory: ${path.join(appDir, 'agentin', 'memory')}
+Agent Config: ${path.join(appDir, 'agentin')}
+When using file tools (list_directory, read_file, etc.), use these paths. Your memory files are in the agentin/memory/ directory.
+</environment>`;
+
+    const activeRules = await this.db.getActivePromptRules();
+    if (activeRules && activeRules.length > 0) {
+      const rulesText = activeRules.map(r => r.content).join('\n');
+      fullSystemPrompt += `\n\nActive Rules:\n${rulesText}`;
+    }
+
+    if (this.mcpServer) {
+      const activeTools = this.mcpServer.getActiveTools ? this.mcpServer.getActiveTools() : [];
+      const tools = activeTools.length > 0 ? activeTools : this.mcpServer.getTools();
+
+      let mcpContext = `\n\n<mcp_tools>\nAvailable Tools (from active groups):\n\n`;
+      tools.forEach(tool => {
+        const isActive = this.mcpServer.toolStates.get(tool.name) !== false;
+        const status = isActive ? '✅ Available' : '⚠️ Disabled (permission required)';
+        mcpContext += `## ${tool.name} [${status}]\nDescription: ${tool.description}\n`;
+        if (tool.inputSchema?.properties) {
+          const props = tool.inputSchema.properties;
+          const required = tool.inputSchema.required || [];
+          mcpContext += `Parameters:\n`;
+          Object.entries(props).forEach(([key, prop]) => {
+            const isRequired = required.includes(key);
+            const defaultVal = prop.default !== undefined ? ` (default: ${JSON.stringify(prop.default)})` : '';
+            const requiredMark = isRequired ? ' [REQUIRED]' : '';
+            mcpContext += `  - ${key} (${prop.type})${requiredMark}${defaultVal}: ${prop.description || 'No description'}\n`;
+          });
+        }
+        if (tool.example) mcpContext += `Example: ${tool.example}\n`;
+        mcpContext += `\n`;
+      });
+      mcpContext += `\n## How to Use Tools\nFormat: TOOL:tool_name{"param":"value"}\n`;
+      mcpContext += `Use the APPROPRIATE tool for each request. Match the tool to the user's actual question.\n`;
+      mcpContext += `If a tool times out or fails, tell the user the tool didn't respond - do NOT call a different tool instead.\n`;
+      mcpContext += `Always use the exact JSON format shown in examples.\n`;
+      mcpContext += `\n## Important Rules\n`;
+      mcpContext += `- Only call tools directly relevant to what the user asked\n`;
+      mcpContext += `- If the user asks for weather, use weather/web tools, NOT time tools\n`;
+      mcpContext += `- If a tool fails, explain the failure to the user instead of trying other tools\n`;
+      mcpContext += `- Don't repeat the same tool call from earlier in the conversation\n`;
+      mcpContext += `</mcp_tools>`;
+      fullSystemPrompt += mcpContext;
+    }
+
+    return [
+      { role: 'system', content: fullSystemPrompt },
+      ...conversationHistory,
+      ...(message ? [{ role: 'user', content: message }] : [])
+    ];
   }
 }
 

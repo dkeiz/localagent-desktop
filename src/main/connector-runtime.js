@@ -13,9 +13,9 @@ const path = require('path');
  * main process for LLM invocation, config access, and logging.
  */
 class ConnectorRuntime extends EventEmitter {
-    constructor(aiService, db) {
+    constructor(dispatcher, db) {
         super();
-        this.aiService = aiService;
+        this.dispatcher = dispatcher;
         this.db = db;
         this.connectors = new Map(); // name -> { worker, config, status, meta, logs }
         this.connectorsDir = path.join(__dirname, '../../agentin/connectors');
@@ -117,9 +117,9 @@ class ConnectorRuntime extends EventEmitter {
                         break;
 
                     case 'invoke':
-                        // Worker wants to invoke LLM
+                        // Worker wants to invoke LLM — use dispatcher (mode=connector: no tools, no rules)
                         try {
-                            const response = await this.aiService.sendMessage(msg.prompt, []);
+                            const response = await this.dispatcher.dispatch(msg.prompt, [], { mode: 'connector' });
                             worker.postMessage({
                                 type: 'invoke-response',
                                 requestId: msg.requestId,

@@ -11,9 +11,9 @@ const { EventEmitter } = require('events');
  * - Return LLM response to caller
  */
 class PortListenerManager extends EventEmitter {
-    constructor(aiService) {
+    constructor(dispatcher) {
         super();
-        this.aiService = aiService;
+        this.dispatcher = dispatcher;
         this.listeners = new Map(); // port -> { server, config }
         this.maxListeners = 10;
         this.maxRequestSize = 1024 * 100; // 100KB
@@ -184,12 +184,12 @@ class PortListenerManager extends EventEmitter {
      * Invoke the AI service with the formatted prompt
      */
     async invokeLLM(prompt) {
-        if (!this.aiService) {
-            throw new Error('AI service not available');
+        if (!this.dispatcher) {
+            throw new Error('Inference dispatcher not available');
         }
 
-        // Use the same path as regular chat
-        const response = await this.aiService.sendMessage(prompt, []);
+        // Use dispatcher with mode 'port-listener' (no tools, no rules)
+        const response = await this.dispatcher.dispatch(prompt, [], { mode: 'port-listener' });
         return response;
     }
 

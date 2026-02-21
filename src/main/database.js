@@ -39,6 +39,7 @@ class DatabaseWrapper {
         // Schema migrations - safely add columns/tables if they don't exist
         const migrations = [
             'ALTER TABLE conversations ADD COLUMN session_id INTEGER',
+            'ALTER TABLE conversations ADD COLUMN metadata TEXT',
             'ALTER TABLE workflows ADD COLUMN visual_data TEXT',
             'ALTER TABLE workflows ADD COLUMN execution_count INTEGER DEFAULT 0'
         ];
@@ -86,6 +87,7 @@ class DatabaseWrapper {
                 session_id INTEGER,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
+                metadata TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
             )`,
@@ -241,11 +243,12 @@ class DatabaseWrapper {
     }
 
     async addConversation(message, sessionId = null) {
-        const { role, content } = message;
+        const { role, content, metadata } = message;
         const sid = sessionId || (await this.getCurrentSession()).id;
+        const metaStr = metadata ? JSON.stringify(metadata) : null;
         this.run(
-            'INSERT INTO conversations (session_id, role, content) VALUES (?, ?, ?)',
-            [sid, role, content]
+            'INSERT INTO conversations (session_id, role, content, metadata) VALUES (?, ?, ?, ?)',
+            [sid, role, content, metaStr]
         );
         this.run('UPDATE chat_sessions SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [sid]);
         return message;

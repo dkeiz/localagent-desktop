@@ -13,9 +13,9 @@ const { EventEmitter } = require('events');
  * AutoMemory is OFF by default per session. User enables via automemory tool.
  */
 class AgentLoop extends EventEmitter {
-    constructor(aiService, agentMemory, db) {
+    constructor(dispatcher, agentMemory, db) {
         super();
-        this.aiService = aiService;
+        this.dispatcher = dispatcher;
         this.agentMemory = agentMemory;
         this.db = db;
 
@@ -190,8 +190,8 @@ class AgentLoop extends EventEmitter {
             const template = this._loadTemplate('idle');
             const prompt = `${template}\n\nConversation:\n${conversationText}`;
 
-            // Internal LLM call (not shown in chat)
-            const response = await this.aiService.sendMessage(prompt, [], { internal: true });
+            // Internal LLM call via dispatcher (mode=internal: no tools, no rules)
+            const response = await this.dispatcher.dispatch(prompt, [], { mode: 'internal' });
 
             if (response && response.content) {
                 // Strip any tool calls from the response
@@ -238,7 +238,7 @@ class AgentLoop extends EventEmitter {
             const template = this._loadTemplate('close');
             const prompt = `${template}\n\nConversation:\n${conversationText}`;
 
-            const response = await this.aiService.sendMessage(prompt, [], { internal: true });
+            const response = await this.dispatcher.dispatch(prompt, [], { mode: 'internal' });
 
             if (response && response.content) {
                 const cleanContent = this._stripToolCalls(response.content);
