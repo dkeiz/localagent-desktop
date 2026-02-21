@@ -68,7 +68,8 @@
                 "calendar_read",
                 "todo_create",
                 "todo_list",
-                "todo_complete"
+                "todo_complete",
+                "automemory"
             ],
             "defaultActive": true
         },
@@ -106,6 +107,19 @@
                 "list_rules"
             ],
             "defaultActive": false
+        },
+        "connectors": {
+            "name": "Connectors & Ports",
+            "description": "External service connectors and listeners",
+            "icon": "🔌",
+            "tools": [
+                "create_connector",
+                "start_connector",
+                "stop_connector",
+                "list_connectors",
+                "connector_config"
+            ],
+            "defaultActive": true
         }
     }
 }

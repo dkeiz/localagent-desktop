@@ -16,6 +16,18 @@ class MCPServer extends EventEmitter {
     this.aiService = aiService;
   }
 
+  setAgentLoop(agentLoop) {
+    this._agentLoop = agentLoop;
+  }
+
+  setCurrentSessionId(sessionId) {
+    this._currentSessionId = sessionId;
+  }
+
+  setConnectorRuntime(connectorRuntime) {
+    this._connectorRuntime = connectorRuntime;
+  }
+
   initializeBuiltInTools() {
     // System tools
     this.registerTool('current_time', {
@@ -621,6 +633,129 @@ ${params.content || ''}`;
       }
     }, async (params) => {
       return { complete: true, answer: params.answer };
+    });
+
+    // AutoMemory tool — toggles idle memory for current session
+    this.registerTool('automemory', {
+      name: 'automemory',
+      description: 'Toggle automatic memory creation during idle periods. Off by default — user must enable. When enabled, after idle_seconds of no user input the agent will automatically summarize the conversation to daily memory.',
+      userDescription: 'Enable/disable automatic memory saving during idle chat periods',
+      example: 'TOOL:automemory{"enabled":true,"idle_seconds":60}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            description: 'true to enable auto-memory, false to disable'
+          },
+          idle_seconds: {
+            type: 'number',
+            description: 'Seconds of idle before triggering memory save',
+            default: 60
+          }
+        },
+        required: ['enabled']
+      }
+    }, async (params) => {
+      if (this._agentLoop) {
+        const sessionId = this._currentSessionId || 'default';
+        return this._agentLoop.setAutoMemory(sessionId, params.enabled, params.idle_seconds || 60);
+      }
+      return { error: 'Agent loop not initialized' };
+    });
+
+    // ============================================
+    // CONNECTOR GROUP - Dynamic connector management
+    // ============================================
+
+    this.registerTool('create_connector', {
+      name: 'create_connector',
+      description: 'Create a new connector JS file in agentin/connectors/. The file should export {name, description, configSchema, start(context), stop()}. Use connector_config to store API keys BEFORE creating the file.',
+      userDescription: 'Create a new external service connector script',
+      example: 'TOOL:create_connector{"name":"my-service","code":"module.exports = { name: \'my-service\', ... }"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Connector name (used as filename, no .js extension)' },
+          code: { type: 'string', description: 'Full JavaScript source code for the connector' }
+        },
+        required: ['name', 'code']
+      }
+    }, async (params) => {
+      const fs = require('fs');
+      const path = require('path');
+      const filePath = path.join(__dirname, '../../agentin/connectors', `${params.name}.js`);
+      fs.writeFileSync(filePath, params.code, 'utf-8');
+      return { success: true, path: filePath, name: params.name };
+    });
+
+    this.registerTool('start_connector', {
+      name: 'start_connector',
+      description: 'Start a connector by name. The connector JS file must exist in agentin/connectors/.',
+      userDescription: 'Start an external service connector',
+      example: 'TOOL:start_connector{"name":"telegram-bot"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Connector name (filename without .js)' }
+        },
+        required: ['name']
+      }
+    }, async (params) => {
+      if (!this._connectorRuntime) return { error: 'Connector runtime not initialized' };
+      return await this._connectorRuntime.startConnector(params.name);
+    });
+
+    this.registerTool('stop_connector', {
+      name: 'stop_connector',
+      description: 'Stop a running connector by name.',
+      userDescription: 'Stop a running external service connector',
+      example: 'TOOL:stop_connector{"name":"telegram-bot"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Connector name to stop' }
+        },
+        required: ['name']
+      }
+    }, async (params) => {
+      if (!this._connectorRuntime) return { error: 'Connector runtime not initialized' };
+      return await this._connectorRuntime.stopConnector(params.name);
+    });
+
+    this.registerTool('list_connectors', {
+      name: 'list_connectors',
+      description: 'List all available connectors and their status (running/stopped/error).',
+      userDescription: 'List all external service connectors',
+      example: 'TOOL:list_connectors{}',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      if (!this._connectorRuntime) return { error: 'Connector runtime not initialized' };
+      return await this._connectorRuntime.listConnectors();
+    });
+
+    this.registerTool('connector_config', {
+      name: 'connector_config',
+      description: 'Set or get configuration values for a connector. API keys and secrets are stored securely in the database, never in connector files.',
+      userDescription: 'Manage connector configuration (API keys, settings)',
+      example: 'TOOL:connector_config{"name":"telegram-bot","action":"set","key":"botToken","value":"123:ABC"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Connector name' },
+          action: { type: 'string', enum: ['set', 'get'], description: 'set or get config' },
+          key: { type: 'string', description: 'Config key (for set action)' },
+          value: { type: 'string', description: 'Config value (for set action)' }
+        },
+        required: ['name', 'action']
+      }
+    }, async (params) => {
+      if (!this._connectorRuntime) return { error: 'Connector runtime not initialized' };
+      if (params.action === 'set') {
+        return await this._connectorRuntime.setConfig(params.name, params.key, params.value);
+      } else {
+        return await this._connectorRuntime.getConfig(params.name);
+      }
     });
 
     // ============================================

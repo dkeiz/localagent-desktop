@@ -41,7 +41,7 @@ function stripToolPatterns(text) {
   return result.trim();
 }
 
-module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager) {
+module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime) {
   // Ollama model selection handlers
   ipcMain.handle('getProviderModels', async (event, provider) => {
     if (provider === 'ollama') {
@@ -323,7 +323,18 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   ipcMain.handle('switch-chat-session', async (event, sessionId) => {
     try {
+      // Trigger agent loop close for the previous session
+      if (agentLoop) {
+        const prevSession = await db.getCurrentSession();
+        if (prevSession && prevSession.id !== sessionId) {
+          agentLoop.onSessionClose(prevSession.id).catch(e => console.error('[IPC] Session close error:', e));
+        }
+      }
       await db.setCurrentSession(sessionId);
+      // Set current session in MCP server for automemory tool
+      if (mcpServer.setCurrentSessionId) {
+        mcpServer.setCurrentSessionId(sessionId);
+      }
       return { success: true, sessionId };
     } catch (error) {
       console.error('Error switching session:', error);
@@ -365,6 +376,14 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
           ? stripToolPatterns(c.content)
           : c.content
       })).filter(c => c.content && c.content.trim().length > 0).reverse();
+
+      // Record activity in agent loop and set current session
+      if (agentLoop) {
+        agentLoop.recordActivity(sessionId || 'default');
+      }
+      if (mcpServer.setCurrentSessionId) {
+        mcpServer.setCurrentSessionId(sessionId || 'default');
+      }
 
       await db.addConversation({ role: 'user', content: message }, sessionId);
 
@@ -1110,6 +1129,55 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   ipcMain.handle('prompt:get-rules-from-files', async () => {
     if (!promptFileManager) return [];
     return await promptFileManager.loadRulesFromFiles();
+  });
+
+  // ==================== Agent Loop ====================
+
+  // Load memory context for a session (called when session loads in UI)
+  ipcMain.handle('agent-loop:memory-start', async (event, sessionId) => {
+    if (!agentLoop) return null;
+    return await agentLoop.loadMemoryContext(sessionId);
+  });
+
+  // Get automemory state for a session
+  ipcMain.handle('agent-loop:get-state', async (event, sessionId) => {
+    if (!agentLoop) return { autoMemory: false };
+    const session = agentLoop.getSession(sessionId);
+    return { autoMemory: session.autoMemory, idleSeconds: session.idleSeconds };
+  });
+
+  // ==================== Connectors ====================
+
+  ipcMain.handle('connectors:list', async () => {
+    if (!connectorRuntime) return [];
+    return await connectorRuntime.listConnectors();
+  });
+
+  ipcMain.handle('connectors:start', async (event, name) => {
+    if (!connectorRuntime) return { error: 'Connector runtime not initialized' };
+    return await connectorRuntime.startConnector(name);
+  });
+
+  ipcMain.handle('connectors:stop', async (event, name) => {
+    if (!connectorRuntime) return { error: 'Connector runtime not initialized' };
+    return await connectorRuntime.stopConnector(name);
+  });
+
+  ipcMain.handle('connectors:logs', async (event, name, limit) => {
+    if (!connectorRuntime) return [];
+    return connectorRuntime.getLogs(name, limit);
+  });
+
+  ipcMain.handle('connectors:delete', async (event, name) => {
+    if (!connectorRuntime) return { error: 'Connector runtime not initialized' };
+    // Stop if running
+    try { await connectorRuntime.stopConnector(name); } catch (e) { /* may not be running */ }
+    // Delete file
+    const fs = require('fs');
+    const path = require('path');
+    const filePath = path.join(__dirname, '../../agentin/connectors', `${name}.js`);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return { success: true, name };
   });
 
   // Initialize AI service

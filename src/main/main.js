@@ -11,6 +11,8 @@ const CapabilityManager = require('./capability-manager');
 const PortListenerManager = require('./port-listener-manager');
 const AgentMemory = require('./agent-memory');
 const PromptFileManager = require('./prompt-file-manager');
+const AgentLoop = require('./agent-loop');
+const ConnectorRuntime = require('./connector-runtime');
 const ollamaService = require('./ollama-service');
 
 let mainWindow;
@@ -25,6 +27,8 @@ let capabilityManager;
 let portListenerManager;
 let agentMemory;
 let promptFileManager;
+let agentLoop;
+let connectorRuntime;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -87,10 +91,18 @@ app.whenReady().then(async () => {
     const systemPrompt = await promptFileManager.loadSystemPrompt();
     await aiService.setSystemPrompt(systemPrompt);
 
+    // Create Agent Loop for autonomous behaviors
+    agentLoop = new AgentLoop(aiService, agentMemory, db);
+    mcpServer.setAgentLoop(agentLoop);
+
+    // Create Connector Runtime for dynamic external service connectors
+    connectorRuntime = new ConnectorRuntime(aiService, db);
+    mcpServer.setConnectorRuntime(connectorRuntime);
+
     createWindow();
 
-    // Setup IPC handlers (pass all services including capabilityManager)
-    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager);
+    // Setup IPC handlers (pass all services)
+    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -110,6 +122,14 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  // Save all agent loop sessions on quit
+  if (agentLoop) {
+    await agentLoop.onAppQuit();
+  }
+  // Stop all connectors
+  if (connectorRuntime) {
+    await connectorRuntime.stopAll();
+  }
   // Cleanup resources
   if (portListenerManager) {
     await portListenerManager.stopAll();
