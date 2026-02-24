@@ -13,11 +13,12 @@ const { EventEmitter } = require('events');
  * AutoMemory is OFF by default per session. User enables via automemory tool.
  */
 class AgentLoop extends EventEmitter {
-    constructor(dispatcher, agentMemory, db) {
+    constructor(dispatcher, agentMemory, db, sessionWorkspace = null) {
         super();
         this.dispatcher = dispatcher;
         this.agentMemory = agentMemory;
         this.db = db;
+        this.sessionWorkspace = sessionWorkspace;
 
         // Per-session state: sessionId -> { autoMemory, idleSeconds, idleTimer, memorySaved, memoryLoaded, lastActivity, messageCount }
         this.sessions = new Map();
@@ -252,6 +253,11 @@ class AgentLoop extends EventEmitter {
         }
 
         this.removeSession(sessionId);
+
+        // Clean up session workspace
+        if (this.sessionWorkspace) {
+            this.sessionWorkspace.cleanup(sessionId);
+        }
     }
 
     /**

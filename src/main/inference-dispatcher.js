@@ -47,7 +47,7 @@ class InferenceDispatcher {
         const includeEnv = mode === 'chat' || mode === 'internal';
 
         // Build system prompt
-        const systemPrompt = await this._buildSystemPrompt({ includeTools, includeRules, includeEnv });
+        const systemPrompt = await this._buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId: options.sessionId });
 
         // Assemble messages array
         const messages = [
@@ -68,18 +68,40 @@ class InferenceDispatcher {
 
     // ------- system prompt construction -------
 
-    async _buildSystemPrompt({ includeTools, includeRules, includeEnv }) {
+    async _buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId }) {
         let prompt = this.aiService.systemPrompt;
 
         // Environment paths (useful for chat + internal modes)
         if (includeEnv) {
             const appDir = path.resolve(__dirname, '..', '..');
+            const sid = sessionId || 'default';
             prompt += `\n\n<environment>
 Working Directory: ${appDir}
 Memory Directory: ${path.join(appDir, 'agentin', 'memory')}
+Session Workspace: ${path.join(appDir, 'agentin', 'workspaces', String(sid))}
 Agent Config: ${path.join(appDir, 'agentin')}
 When using file tools (list_directory, read_file, etc.), use these paths. Your memory files are in the agentin/memory/ directory.
-</environment>`;
+</environment>
+
+<workspace_guidance>
+For commands with potentially large output (builds, installs, logs, directory trees):
+- Use output_to_file=true in run_command to save output to a workspace file (auto-triggers at 1000+ chars)
+- Then use read_file or search_workspace to inspect specific parts
+- This keeps your context window lean and avoids token waste
+Your session workspace is personal and auto-cleaned on session close.
+</workspace_guidance>
+
+<memory_on_start>
+IMPORTANT: At the start of every new conversation, you MUST read your core memory files using the read_file tool BEFORE answering the user. This is how you remember who you are and who the user is.
+
+Read these files (use read_file tool):
+1. ${path.join(appDir, 'agentin', 'agent.md')} — your identity and technical reference
+2. ${path.join(appDir, 'agentin', 'userabout', 'memoryaboutuser.md')} — what you know about the user
+3. ${path.join(appDir, 'agentin', 'memory', 'global', 'preferences.md')} — permanent preferences
+4. ${path.join(appDir, 'agentin', 'memory', 'daily')} — use list_directory then read today's log
+
+Do this silently as part of your first response. You must still answer the user's question in the same turn — chain the file reads then respond naturally.
+</memory_on_start>`;
         }
 
         // Active rules

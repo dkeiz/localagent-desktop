@@ -28,6 +28,10 @@ class MCPServer extends EventEmitter {
     this._connectorRuntime = connectorRuntime;
   }
 
+  setSessionWorkspace(sessionWorkspace) {
+    this._sessionWorkspace = sessionWorkspace;
+  }
+
   initializeBuiltInTools() {
     // System tools
     this.registerTool('current_time', {
@@ -1198,6 +1202,11 @@ ${params.content || ''}`;
           timeout: {
             type: 'number',
             description: 'Timeout in milliseconds (default: 30000)'
+          },
+          output_to_file: {
+            type: 'boolean',
+            description: 'Save output to a workspace file instead of returning inline. Auto-triggers when output exceeds 1000 chars. Use for commands with large output (builds, installs, logs).',
+            default: false
           }
         },
         required: ['command']
@@ -1214,21 +1223,67 @@ ${params.content || ''}`;
         shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash'
       };
 
+      const OUTPUT_THRESHOLD = 1000; // chars
+
       try {
         const { stdout, stderr } = await execAsync(params.command, options);
+        const fullOutput = (stdout || '') + (stderr ? '\n--- stderr ---\n' + stderr : '');
+
+        // Auto-redirect to file when output is large or explicitly requested
+        if (this._sessionWorkspace && (params.output_to_file || fullOutput.length > OUTPUT_THRESHOLD)) {
+          const sessionId = this._currentSessionId || 'default';
+          const label = params.command.split(/\s+/)[0]; // Use first word of command as label
+          const result = this._sessionWorkspace.writeOutput(sessionId, label, fullOutput);
+          const lineCount = fullOutput.split('\n').length;
+          const summary = fullOutput.substring(0, 500);
+          return {
+            success: true,
+            command: params.command,
+            cwd: options.cwd,
+            output_mode: 'file',
+            file_path: result.filePath,
+            file_name: result.fileName,
+            file_size: result.size,
+            line_count: lineCount,
+            summary: summary + (fullOutput.length > 500 ? '\n... (truncated, see file)' : ''),
+            exitCode: 0
+          };
+        }
+
         return {
           success: true,
           command: params.command,
           cwd: options.cwd,
+          output_mode: 'inline',
           stdout: stdout.trim(),
           stderr: stderr.trim(),
           exitCode: 0
         };
       } catch (error) {
+        const fullOutput = (error.stdout || '') + (error.stderr ? '\n--- stderr ---\n' + error.stderr : error.message);
+
+        // Also redirect error output to file if large
+        if (this._sessionWorkspace && (params.output_to_file || fullOutput.length > OUTPUT_THRESHOLD)) {
+          const sessionId = this._currentSessionId || 'default';
+          const label = params.command.split(/\s+/)[0] + '_error';
+          const result = this._sessionWorkspace.writeOutput(sessionId, label, fullOutput);
+          return {
+            success: false,
+            command: params.command,
+            cwd: options.cwd,
+            output_mode: 'file',
+            file_path: result.filePath,
+            file_name: result.fileName,
+            summary: fullOutput.substring(0, 500),
+            exitCode: error.code || 1
+          };
+        }
+
         return {
           success: false,
           command: params.command,
           cwd: options.cwd,
+          output_mode: 'inline',
           stdout: error.stdout?.trim() || '',
           stderr: error.stderr?.trim() || error.message,
           exitCode: error.code || 1
@@ -1320,6 +1375,45 @@ ${params.content || ''}`;
           resolve({ success: false, error: error.message });
         });
       });
+    });
+
+    // ============================================
+    // WORKSPACE GROUP - Session workspace tools
+    // ============================================
+
+    this.registerTool('list_workspace', {
+      name: 'list_workspace',
+      description: 'List all files in the current session workspace. Workspace files include command outputs, temp files, and other session artifacts.',
+      userDescription: 'Lists files in the session temp workspace',
+      example: 'TOOL:list_workspace{}',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      if (!this._sessionWorkspace) return { error: 'Session workspace not initialized' };
+      const sessionId = this._currentSessionId || 'default';
+      const files = this._sessionWorkspace.listFiles(sessionId);
+      return { sessionId, fileCount: files.length, files };
+    });
+
+    this.registerTool('search_workspace', {
+      name: 'search_workspace',
+      description: 'Search file contents in the session workspace (grep-like). Useful for finding specific output in command log files without loading entire files into context.',
+      userDescription: 'Search text within session workspace files',
+      example: 'TOOL:search_workspace{"query":"error"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Text to search for in workspace files (case-insensitive)'
+          }
+        },
+        required: ['query']
+      }
+    }, async (params) => {
+      if (!this._sessionWorkspace) return { error: 'Session workspace not initialized' };
+      const sessionId = this._currentSessionId || 'default';
+      const results = this._sessionWorkspace.searchFiles(sessionId, params.query);
+      return { sessionId, query: params.query, resultCount: results.length, results };
     });
 
     // Load tool groups configuration

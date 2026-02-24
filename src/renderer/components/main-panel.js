@@ -11,6 +11,7 @@ class MainPanel {
         this.activeTabId = null;
 
         // Initialize immediately since we're already in DOMContentLoaded
+        this.commandHandler = new CommandHandler(this);
         this.initializeEvents();
         this.initializeVoice();
         this.initContextSettings();
@@ -69,7 +70,27 @@ class MainPanel {
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
+                this.hideCommandAutocomplete();
                 this.sendMessage();
+            }
+        });
+
+        // Autocomplete for /commands
+        messageInput.addEventListener('input', () => {
+            const val = messageInput.value;
+            if (val.startsWith('/') && !val.includes(' ')) {
+                const completions = this.commandHandler.getCompletions(val);
+                this.showCommandAutocomplete(completions);
+            } else {
+                this.hideCommandAutocomplete();
+            }
+        });
+
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.hideCommandAutocomplete();
+            if (e.key === 'Tab' && this._autocompleteVisible) {
+                e.preventDefault();
+                this.acceptFirstAutocomplete();
             }
         });
 
@@ -240,6 +261,24 @@ class MainPanel {
 
         if (!message && this.attachedFiles.length === 0) return;
 
+        // Intercept /commands
+        if (this.commandHandler.isCommand(message)) {
+            messageInput.value = '';
+            this.addMessage('user', message);
+            const result = await this.commandHandler.execute(message);
+
+            // If the command returns a passthrough, send that to the AI instead
+            if (result.passthrough) {
+                messageInput.value = result.passthrough;
+                return this.sendMessage();
+            }
+
+            if (result.output) {
+                this.addMessage('system', result.output, result.style);
+            }
+            return;
+        }
+
         const sessionId = this.activeTabId;
         const tab = this.chatTabs.get(sessionId);
 
@@ -293,7 +332,7 @@ class MainPanel {
             });
     }
 
-    addMessage(role, content) {
+    addMessage(role, content, style) {
         const messagesContainer = document.getElementById('messages-container');
         const messageWrapper = document.createElement('div');
         messageWrapper.className = `message-wrapper ${role}`;
@@ -301,8 +340,14 @@ class MainPanel {
         const messageDiv = document.createElement('div');
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
-        messageDiv.className = `message ${role}`;
+        messageDiv.className = `message ${role}${style === 'terminal' ? ' terminal-output' : ''}`;
         messageDiv.textContent = content;
+
+        // Use preformatted text for terminal-style output
+        if (style === 'terminal') {
+            messageDiv.style.whiteSpace = 'pre-wrap';
+            messageDiv.style.fontFamily = 'monospace';
+        }
 
         messageWrapper.appendChild(messageDiv);
 
@@ -322,6 +367,59 @@ class MainPanel {
         messagesContainer.appendChild(messageWrapper);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         return messageId;
+    }
+
+    // ==================== Command Autocomplete ====================
+
+    showCommandAutocomplete(completions) {
+        let dropdown = document.getElementById('cmd-autocomplete');
+        if (!dropdown) {
+            dropdown = document.createElement('div');
+            dropdown.id = 'cmd-autocomplete';
+            dropdown.className = 'cmd-autocomplete';
+            const inputRow = document.querySelector('.chat-input-row');
+            if (inputRow) inputRow.style.position = 'relative';
+            inputRow?.appendChild(dropdown);
+        }
+
+        if (completions.length === 0) {
+            this.hideCommandAutocomplete();
+            return;
+        }
+
+        dropdown.innerHTML = '';
+        completions.forEach(c => {
+            const item = document.createElement('div');
+            item.className = 'cmd-autocomplete-item';
+            item.innerHTML = `<span class="cmd-name">${c.name}</span> <span class="cmd-desc">${c.description}</span>`;
+            item.addEventListener('click', () => {
+                document.getElementById('message-input').value = c.name + ' ';
+                document.getElementById('message-input').focus();
+                this.hideCommandAutocomplete();
+            });
+            dropdown.appendChild(item);
+        });
+
+        dropdown.style.display = 'block';
+        this._autocompleteVisible = true;
+    }
+
+    hideCommandAutocomplete() {
+        const dropdown = document.getElementById('cmd-autocomplete');
+        if (dropdown) dropdown.style.display = 'none';
+        this._autocompleteVisible = false;
+    }
+
+    acceptFirstAutocomplete() {
+        const dropdown = document.getElementById('cmd-autocomplete');
+        if (dropdown) {
+            const first = dropdown.querySelector('.cmd-autocomplete-item .cmd-name');
+            if (first) {
+                document.getElementById('message-input').value = first.textContent + ' ';
+                document.getElementById('message-input').focus();
+            }
+        }
+        this.hideCommandAutocomplete();
     }
 
     addMessageWithAttachment(role, content, attachment) {

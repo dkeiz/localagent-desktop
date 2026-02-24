@@ -120,6 +120,16 @@
                 "connector_config"
             ],
             "defaultActive": true
+        },
+        "workspace": {
+            "name": "Workspace",
+            "description": "Session temp files, command output logs",
+            "icon": "📂",
+            "tools": [
+                "list_workspace",
+                "search_workspace"
+            ],
+            "defaultActive": true
         }
     }
 }

@@ -1,0 +1,71 @@
+/* Command autocomplete dropdown */
+.cmd-autocomplete {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 6px;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 1000;
+    margin-bottom: 4px;
+}
+
+.cmd-autocomplete-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    transition: background 0.15s ease;
+    border-bottom: 1px solid var(--border-color, #eee);
+}
+
+.cmd-autocomplete-item:last-child {
+    border-bottom: none;
+}
+
+.cmd-autocomplete-item:hover {
+    background: var(--hover-bg, #f0f0f0);
+}
+
+.cmd-name {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-weight: 600;
+    color: var(--primary-color, #007bff);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.cmd-desc {
+    color: var(--text-secondary, #888);
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Terminal-style output messages */
+.message.terminal-output {
+    background: #1e1e1e !important;
+    color: #d4d4d4 !important;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    border-left: 3px solid #569cd6;
+    overflow-x: auto;
+}
+
+/* System command output (non-terminal) */
+.message.system {
+    white-space: pre-wrap;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}

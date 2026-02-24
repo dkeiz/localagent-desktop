@@ -1,0 +1,321 @@
+/**
+ * CommandHandler — Intercepts /commands from user input before they reach the AI.
+ *
+ * Commands are local actions (clear, stats, tools) or may call the backend
+ * (compact, save, model, terminal).
+ */
+class CommandHandler {
+    constructor(mainPanel) {
+        this.mainPanel = mainPanel;
+        this.commands = new Map();
+        this._registerBuiltInCommands();
+    }
+
+    /**
+     * Check if text is a /command.
+     */
+    isCommand(text) {
+        return text.startsWith('/');
+    }
+
+    /**
+     * Parse and execute a /command.
+     * Returns { output: string, style: 'system'|'terminal' }
+     */
+    async execute(text) {
+        const parts = text.trim().split(/\s+/);
+        const cmdName = parts[0].toLowerCase();
+        const args = parts.slice(1);
+
+        const cmd = this.commands.get(cmdName);
+        if (!cmd) {
+            return {
+                output: `Unknown command: ${cmdName}\nType /help for available commands.`,
+                style: 'system'
+            };
+        }
+
+        try {
+            return await cmd.execute(args);
+        } catch (error) {
+            return {
+                output: `Error executing ${cmdName}: ${error.message}`,
+                style: 'system'
+            };
+        }
+    }
+
+    /**
+     * Get list of commands matching a prefix (for autocomplete).
+     */
+    getCompletions(prefix) {
+        const lower = prefix.toLowerCase();
+        const matches = [];
+        for (const [name, cmd] of this.commands) {
+            if (name.startsWith(lower)) {
+                matches.push({ name, description: cmd.description });
+            }
+        }
+        return matches;
+    }
+
+    _registerBuiltInCommands() {
+        // /help
+        this.commands.set('/help', {
+            description: 'Show all available commands',
+            execute: async () => {
+                const lines = ['📋 **Available Commands:**', ''];
+                for (const [name, cmd] of this.commands) {
+                    lines.push(`  ${name.padEnd(20)} ${cmd.description}`);
+                }
+                return { output: lines.join('\n'), style: 'system' };
+            }
+        });
+
+        // /clear
+        this.commands.set('/clear', {
+            description: 'Clear current chat messages',
+            execute: async () => {
+                await this.mainPanel.clearCurrentChat();
+                return { output: '🧹 Chat cleared.', style: 'system' };
+            }
+        });
+
+        // /stop
+        this.commands.set('/stop', {
+            description: 'Stop current AI generation',
+            execute: async () => {
+                try {
+                    await window.electronAPI.stopGeneration();
+                    this.mainPanel.isSending = false;
+                    const sendBtn = document.getElementById('send-btn');
+                    const stopBtn = document.getElementById('stop-btn');
+                    if (sendBtn) sendBtn.classList.remove('hidden');
+                    if (stopBtn) stopBtn.classList.add('hidden');
+                    return { output: '⏹ Generation stopped.', style: 'system' };
+                } catch (e) {
+                    return { output: 'No active generation to stop.', style: 'system' };
+                }
+            }
+        });
+
+        // /resume
+        this.commands.set('/resume', {
+            description: 'Continue generation after /stop',
+            execute: async () => {
+                return {
+                    output: null,
+                    passthrough: 'Continue from where you left off. Pick up exactly where you stopped and complete your response.',
+                    style: 'system'
+                };
+            }
+        });
+
+        // /stats
+        this.commands.set('/stats', {
+            description: 'Show token usage and conversation stats',
+            execute: async () => {
+                try {
+                    const conversations = await window.electronAPI.getConversations(10000);
+                    const sessions = await window.electronAPI.getChatSessions(null, 1000);
+                    const usage = this.mainPanel.lastContextUsage;
+
+                    const lines = ['📊 **Stats:**'];
+                    lines.push(`  Sessions:     ${sessions?.length || 0}`);
+                    lines.push(`  Messages:     ${conversations?.length || 0}`);
+                    if (usage) {
+                        lines.push(`  Tokens used:  ${usage.total_tokens || 'N/A'}`);
+                        lines.push(`  Context max:  ${usage.contextLength || 'N/A'}`);
+                    }
+                    return { output: lines.join('\n'), style: 'system' };
+                } catch (e) {
+                    return { output: `Stats error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /tools [list|enable|disable <group>]
+        this.commands.set('/tools', {
+            description: 'List or toggle tool groups',
+            execute: async (args) => {
+                try {
+                    const groups = await window.electronAPI.getToolGroups();
+
+                    if (!args.length || args[0] === 'list') {
+                        const lines = ['🔧 **Tool Groups:**'];
+                        for (const g of groups) {
+                            const status = g.active ? '✅' : '❌';
+                            lines.push(`  ${status} ${g.id.padEnd(15)} ${g.name} — ${g.description}`);
+                        }
+                        return { output: lines.join('\n'), style: 'system' };
+                    }
+
+                    const action = args[0];
+                    const groupId = args[1];
+                    if (!groupId) return { output: `Usage: /tools ${action} <group_id>`, style: 'system' };
+
+                    if (action === 'enable') {
+                        await window.electronAPI.activateToolGroup(groupId);
+                        return { output: `✅ Enabled tool group: ${groupId}`, style: 'system' };
+                    } else if (action === 'disable') {
+                        await window.electronAPI.deactivateToolGroup(groupId);
+                        return { output: `❌ Disabled tool group: ${groupId}`, style: 'system' };
+                    }
+
+                    return { output: `Unknown action: ${action}. Use list, enable, or disable.`, style: 'system' };
+                } catch (e) {
+                    return { output: `Tools error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /memory [list|read <type> [filename]]
+        this.commands.set('/memory', {
+            description: 'View or list agent memory files',
+            execute: async (args) => {
+                try {
+                    if (!args.length || args[0] === 'list') {
+                        const types = ['daily', 'global', 'tasks', 'images'];
+                        const lines = ['🧠 **Agent Memory:**'];
+                        for (const type of types) {
+                            const files = await window.electronAPI.agentMemory.list(type);
+                            lines.push(`  ${type}/: ${files.length} file(s)`);
+                            files.forEach(f => {
+                                const lockIcon = f.locked ? '🔒' : '  ';
+                                lines.push(`    ${lockIcon} ${f.filename}`);
+                            });
+                        }
+                        return { output: lines.join('\n'), style: 'system' };
+                    }
+
+                    if (args[0] === 'read') {
+                        const type = args[1] || 'daily';
+                        const filename = args[2] || null;
+                        const result = await window.electronAPI.agentMemory.read(type, filename);
+                        if (!result.exists) return { output: `No ${type} memory found.`, style: 'system' };
+                        return { output: `📄 **${type}** memory:\n\n${result.content}`, style: 'system' };
+                    }
+
+                    return { output: 'Usage: /memory [list|read <type> [filename]]', style: 'system' };
+                } catch (e) {
+                    return { output: `Memory error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /workspace [list|clean]
+        this.commands.set('/workspace', {
+            description: 'List or clean session workspace files',
+            execute: async (args) => {
+                try {
+                    if (!args.length || args[0] === 'list') {
+                        const result = await window.electronAPI.executeMCPTool('list_workspace', {});
+                        if (result.error) return { output: `Workspace: ${result.error}`, style: 'system' };
+
+                        if (!result.files || result.files.length === 0) {
+                            return { output: '📂 Session workspace is empty.', style: 'system' };
+                        }
+
+                        const lines = [`📂 **Workspace** (${result.fileCount} files):`];
+                        result.files.forEach(f => {
+                            const sizeKB = (f.size / 1024).toFixed(1);
+                            lines.push(`  ${f.name} (${sizeKB} KB)`);
+                        });
+                        return { output: lines.join('\n'), style: 'system' };
+                    }
+
+                    if (args[0] === 'clean') {
+                        // TODO: implement clean via backend IPC
+                        return { output: '🧹 Workspace will be auto-cleaned on session close.', style: 'system' };
+                    }
+
+                    return { output: 'Usage: /workspace [list|clean]', style: 'system' };
+                } catch (e) {
+                    return { output: `Workspace error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /model [name]
+        this.commands.set('/model', {
+            description: 'Show or switch current model (calls LLM)',
+            execute: async (args) => {
+                try {
+                    const config = await window.electronAPI.llm.getConfig();
+
+                    if (!args.length) {
+                        const lines = ['🤖 **Current Model Config:**'];
+                        lines.push(`  Provider: ${config.provider || 'N/A'}`);
+                        lines.push(`  Model:    ${config.model || 'N/A'}`);
+                        return { output: lines.join('\n'), style: 'system' };
+                    }
+
+                    // Switch model — send as chat to let AI handle it
+                    const switchMsg = `Switch to model: ${args.join(' ')}`;
+                    return { output: null, passthrough: switchMsg, style: 'system' };
+                } catch (e) {
+                    return { output: `Model error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /compact — calls LLM to summarize conversation
+        this.commands.set('/compact', {
+            description: 'Summarize conversation context (calls LLM)',
+            execute: async () => {
+                return {
+                    output: null,
+                    passthrough: 'Please compact and summarize our conversation so far into key points. Keep only the essential context and decisions. Remove redundant details.',
+                    style: 'system'
+                };
+            }
+        });
+
+        // /save — save chat + trigger LLM memory creation
+        this.commands.set('/save', {
+            description: 'Save chat and create memories about recent conversation',
+            execute: async () => {
+                return {
+                    output: null,
+                    passthrough: 'Please save a summary of our current conversation to your daily memory. Include key decisions, important information, and any action items.',
+                    style: 'system'
+                };
+            }
+        });
+
+        // /terminal <cmd> — run command and show output
+        this.commands.set('/terminal', {
+            description: 'Execute a terminal command directly',
+            execute: async (args) => {
+                if (!args.length) {
+                    return { output: 'Usage: /terminal <command>', style: 'system' };
+                }
+
+                const command = args.join(' ');
+
+                try {
+                    const result = await window.electronAPI.executeMCPTool('run_command', {
+                        command,
+                        output_to_file: false
+                    });
+
+                    const lines = [`$ ${command}`];
+                    if (result.stdout) lines.push(result.stdout);
+                    if (result.stderr) lines.push(`stderr: ${result.stderr}`);
+                    if (result.output_mode === 'file') {
+                        lines.push(`Output saved to: ${result.file_path}`);
+                        if (result.summary) lines.push(result.summary);
+                    }
+                    lines.push(`Exit code: ${result.exitCode || 0}`);
+
+                    return { output: lines.join('\n'), style: 'terminal' };
+                } catch (e) {
+                    return { output: `Terminal error: ${e.message}`, style: 'terminal' };
+                }
+            }
+        });
+    }
+}
+
+// Export for use in main-panel
+if (typeof module !== 'undefined') module.exports = CommandHandler;

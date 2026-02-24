@@ -14,6 +14,7 @@ const PromptFileManager = require('./prompt-file-manager');
 const AgentLoop = require('./agent-loop');
 const ConnectorRuntime = require('./connector-runtime');
 const InferenceDispatcher = require('./inference-dispatcher');
+const SessionWorkspace = require('./session-workspace');
 const ollamaService = require('./ollama-service');
 
 let mainWindow;
@@ -31,6 +32,7 @@ let promptFileManager;
 let agentLoop;
 let connectorRuntime;
 let dispatcher;
+let sessionWorkspace;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -89,6 +91,10 @@ app.whenReady().then(async () => {
     // Create Agent Memory manager
     agentMemory = new AgentMemory();
 
+    // Create Session Workspace for per-session temp folders
+    sessionWorkspace = new SessionWorkspace();
+    sessionWorkspace.cleanupStale(30); // Purge workspaces older than 30 days
+
     // Create Prompt File Manager for file-based prompts/rules
     promptFileManager = new PromptFileManager(db);
     await promptFileManager.initialize();
@@ -97,8 +103,9 @@ app.whenReady().then(async () => {
     await aiService.setSystemPrompt(systemPrompt);
 
     // Create Agent Loop for autonomous behaviors (uses dispatcher)
-    agentLoop = new AgentLoop(dispatcher, agentMemory, db);
+    agentLoop = new AgentLoop(dispatcher, agentMemory, db, sessionWorkspace);
     mcpServer.setAgentLoop(agentLoop);
+    mcpServer.setSessionWorkspace(sessionWorkspace);
 
     // Create Connector Runtime for dynamic external service connectors (uses dispatcher)
     connectorRuntime = new ConnectorRuntime(dispatcher, db);
