@@ -341,12 +341,18 @@ class MainPanel {
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
         messageDiv.className = `message ${role}${style === 'terminal' ? ' terminal-output' : ''}`;
-        messageDiv.textContent = content;
 
         // Use preformatted text for terminal-style output
         if (style === 'terminal') {
             messageDiv.style.whiteSpace = 'pre-wrap';
             messageDiv.style.fontFamily = 'monospace';
+        }
+
+        // Process content for assistant messages
+        if (role === 'assistant' && content !== '...') {
+            messageDiv.innerHTML = this._renderAssistantContent(content);
+        } else {
+            messageDiv.textContent = content;
         }
 
         messageWrapper.appendChild(messageDiv);
@@ -359,7 +365,7 @@ class MainPanel {
             speakIcon.title = 'Speak this message';
             speakIcon.onclick = (e) => {
                 e.stopPropagation();
-                this.speakText(content);
+                this.speakText(content.replace(/<think>[\s\S]*?<\/think>/g, '').trim());
             };
             messageWrapper.appendChild(speakIcon);
         }
@@ -367,6 +373,70 @@ class MainPanel {
         messagesContainer.appendChild(messageWrapper);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         return messageId;
+    }
+
+    /**
+     * Render assistant content with thinking blocks and image support.
+     */
+    _renderAssistantContent(content) {
+        let html = '';
+
+        // Extract <think>...</think> blocks
+        const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+        let match;
+        let lastIndex = 0;
+        const vis = this._thinkingVisibility || 'show';
+
+        while ((match = thinkRegex.exec(content)) !== null) {
+            const before = content.substring(lastIndex, match.index).trim();
+            if (before) html += this._escapeAndRenderImages(before);
+
+            if (vis === 'show') {
+                html += `<details class="thinking-block" open><summary>\ud83d\udcad Thinking</summary><div class="thinking-content">${this._escapeHtml(match[1].trim())}</div></details>`;
+            } else if (vis === 'min') {
+                html += `<details class="thinking-block"><summary>\ud83d\udcad Thinking...</summary><div class="thinking-content">${this._escapeHtml(match[1].trim())}</div></details>`;
+            }
+            // vis === 'hide' → skip entirely
+            lastIndex = match.index + match[0].length;
+        }
+
+        const remaining = content.substring(lastIndex).trim();
+        if (remaining) html += this._escapeAndRenderImages(remaining);
+
+        return html || this._escapeHtml(content);
+    }
+
+    /**
+     * Escape HTML and render markdown images.
+     */
+    _escapeAndRenderImages(text) {
+        let escaped = this._escapeHtml(text);
+
+        // Render markdown images: ![alt](url)
+        escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
+            return `<img src="${url}" alt="${alt}" class="chat-image" onclick="window.mainPanel._openLightbox('${url}')" title="Click to enlarge">`;
+        });
+
+        return escaped;
+    }
+
+    _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    _openLightbox(src) {
+        // Remove existing lightbox
+        const existing = document.getElementById('image-lightbox');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'image-lightbox';
+        overlay.className = 'image-lightbox';
+        overlay.onclick = () => overlay.remove();
+        overlay.innerHTML = `<img src="${src}" alt="Enlarged image">`;
+        document.body.appendChild(overlay);
     }
 
     // ==================== Command Autocomplete ====================
@@ -424,30 +494,25 @@ class MainPanel {
 
     addMessageWithAttachment(role, content, attachment) {
         const messagesContainer = document.getElementById('messages-container');
+        const messageWrapper = document.createElement('div');
+        messageWrapper.className = `message-wrapper ${role}`;
+
         const messageDiv = document.createElement('div');
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
         messageDiv.className = `message ${role}`;
 
-        // Create attachment icon
-        const attachmentIcon = document.createElement('span');
-        attachmentIcon.className = 'attachment-icon';
-        const icons = {
-            image: '🖼️',
-            audio: '🎵',
-            document: '📄'
-        };
-        attachmentIcon.innerHTML = icons[attachment.type] || '📎';
-        attachmentIcon.title = attachment.name;
+        // For images, show inline preview
+        if (attachment.type === 'image' && attachment.path) {
+            messageDiv.innerHTML = `<img src="file://${attachment.path}" class="chat-image" alt="${attachment.name}" onclick="window.mainPanel._openLightbox('file://${attachment.path}')" title="Click to enlarge"><br><span>${this._escapeHtml(content)}</span>`;
+        } else {
+            // Create attachment icon
+            const icons = { image: '🖼️', audio: '🎵', document: '📄' };
+            messageDiv.innerHTML = `<span class="attachment-icon" title="${this._escapeHtml(attachment.name)}">${icons[attachment.type] || '📎'}</span> <span>${this._escapeHtml(content)}</span>`;
+        }
 
-        // Create text content
-        const textSpan = document.createElement('span');
-        textSpan.textContent = content;
-
-        messageDiv.appendChild(attachmentIcon);
-        messageDiv.appendChild(textSpan);
-
-        messagesContainer.appendChild(messageDiv);
+        messageWrapper.appendChild(messageDiv);
+        messagesContainer.appendChild(messageWrapper);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         return messageId;
     }
@@ -770,6 +835,10 @@ class MainPanel {
         }
     }
 
+    // Context preset mapping: slider index → token value
+    static CONTEXT_PRESETS = [2048, 4096, 8192, 16384, 32768, 65536, 98304, 131072, 163840, 196608, 262144];
+    static CONTEXT_LABELS = ['2K', '4K', '8K', '16K', '32K', '64K', '96K', '128K', '160K', '192K', '256K'];
+
     initContextSettings() {
         const contextSlider = document.getElementById('context-slider');
         const contextDisplay = document.getElementById('context-display');
@@ -784,40 +853,108 @@ class MainPanel {
         // Set initial display
         this.updateContextDisplay(contextSlider.value);
 
-        // Load saved setting
+        // Load saved setting and find matching preset index
         window.electronAPI.getSetting('context_window')
             .then(savedValue => {
                 if (savedValue) {
-                    console.log('✓ Loaded saved value:', savedValue);
-                    contextSlider.value = savedValue;
-                    this.updateContextDisplay(savedValue);
+                    const numVal = parseInt(savedValue);
+                    // Find closest preset index
+                    let bestIdx = 2; // default 8K
+                    let bestDiff = Infinity;
+                    MainPanel.CONTEXT_PRESETS.forEach((preset, idx) => {
+                        const diff = Math.abs(preset - numVal);
+                        if (diff < bestDiff) { bestDiff = diff; bestIdx = idx; }
+                    });
+                    console.log(`✓ Loaded saved value: ${savedValue} → index ${bestIdx}`);
+                    contextSlider.value = bestIdx;
+                    this.updateContextDisplay(bestIdx);
                 }
             })
             .catch(error => {
                 console.error('✗ Error loading setting:', error);
             });
+
+        // Initialize thinking mode settings
+        this._initThinkingSettings();
     }
 
-    async saveContextSize(value) {
+    async _initThinkingSettings() {
         try {
-            console.log('Saving:', value);
-            await window.electronAPI.setContextSetting(parseInt(value));
-            console.log('Saved successfully');
-            this.showNotification(`Saved: ${value} tokens`);
+            const { mode, showThinking } = await window.electronAPI.llm.getThinkingMode();
+            // mode: 'off' | 'think' | 'nothink'
+            // We store visibility separately as show/min/hide
+            const thinkToggle = document.getElementById('thinking-toggle');
+            const visGroup = document.getElementById('thinking-visibility-group');
+            const visRadios = document.querySelectorAll('input[name="think-vis"]');
+
+            // Determine initial visibility setting
+            let savedVis;
+            try {
+                const settings = await window.electronAPI.getSettings();
+                savedVis = settings?.['llm.thinkingVisibility'];
+            } catch (e) { }
+            this._thinkingVisibility = savedVis || (showThinking ? 'show' : 'hide');
+
+            // Set toggle state
+            if (thinkToggle) {
+                thinkToggle.checked = mode === 'think';
+            }
+
+            // Show/hide visibility group based on toggle
+            if (visGroup) {
+                visGroup.style.display = (mode === 'think') ? 'flex' : 'none';
+            }
+
+            // Set the right radio
+            visRadios.forEach(r => {
+                r.checked = r.value === this._thinkingVisibility;
+            });
+
+            // Bind toggle
+            if (thinkToggle) {
+                thinkToggle.addEventListener('change', async (e) => {
+                    const newMode = e.target.checked ? 'think' : 'off';
+                    await window.electronAPI.llm.setThinkingMode(newMode);
+                    if (visGroup) visGroup.style.display = e.target.checked ? 'flex' : 'none';
+                    this.showNotification(`Thinking: ${e.target.checked ? 'ON' : 'OFF'}`);
+                });
+            }
+
+            // Bind radio pills
+            visRadios.forEach(radio => {
+                radio.addEventListener('change', async (e) => {
+                    this._thinkingVisibility = e.target.value;
+                    await window.electronAPI.saveSetting('llm.thinkingVisibility', e.target.value);
+                    // Also update the showThinking flag for backward compat
+                    await window.electronAPI.llm.setShowThinking(e.target.value !== 'hide');
+                });
+            });
+        } catch (error) {
+            console.error('Failed to init thinking settings:', error);
+            this._thinkingVisibility = 'show';
+        }
+    }
+
+    async saveContextSize(index) {
+        try {
+            const value = MainPanel.CONTEXT_PRESETS[parseInt(index)] || 8192;
+            console.log('Saving context:', value);
+            await window.electronAPI.setContextSetting(value);
+            this.showNotification(`Context: ${MainPanel.CONTEXT_LABELS[parseInt(index)] || '8K'}`);
         } catch (error) {
             console.error('Save error:', error);
             this.showNotification(`Save failed: ${error.message}`, 'error');
         }
     }
 
-    updateContextDisplay(value) {
-        const numValue = parseInt(value);
+    updateContextDisplay(index) {
+        const idx = parseInt(index);
         const contextDisplay = document.getElementById('context-display');
         if (!contextDisplay) return;
 
-        const wordEstimate = Math.round(numValue / 1.37);
-        contextDisplay.textContent = `${numValue} tokens (≈${wordEstimate} words)`;
-        console.log('✓ Display updated:', numValue);
+        const tokens = MainPanel.CONTEXT_PRESETS[idx] || 8192;
+        const label = MainPanel.CONTEXT_LABELS[idx] || '8K';
+        contextDisplay.textContent = `${label} (${tokens.toLocaleString()} tokens)`;
     }
 
     async saveSystemPrompt() {
@@ -1409,7 +1546,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (provider && provider !== 'Select a Provider...') {
             await loadModelsForProvider(provider);
         }
+        // Show/hide custom model section for Ollama
+        const customSection = document.getElementById('custom-model-section');
+        if (customSection) {
+            customSection.style.display = (provider === 'ollama') ? 'block' : 'none';
+        }
     });
+
+    // Custom model test button
+    const testModelBtn = document.getElementById('test-custom-model-btn');
+    if (testModelBtn) {
+        testModelBtn.addEventListener('click', async () => {
+            const customInput = document.getElementById('custom-model-input');
+            const statusDiv = document.getElementById('custom-model-status');
+            const modelName = customInput?.value?.trim();
+            if (!modelName) {
+                statusDiv.textContent = 'Please enter a model name';
+                statusDiv.style.color = '#dc3545';
+                return;
+            }
+            testModelBtn.disabled = true;
+            testModelBtn.textContent = 'Testing...';
+            statusDiv.textContent = '';
+            try {
+                const provider = llmProviderSelect.value || 'ollama';
+                const result = await window.electronAPI.llm.testModel(provider, modelName);
+                if (result.success) {
+                    statusDiv.textContent = `✓ Model responds! (${result.model})`;
+                    statusDiv.style.color = '#28a745';
+                    // Add to dropdown if not already there
+                    const exists = Array.from(llmModelSelect.options).some(o => o.value === modelName);
+                    if (!exists) {
+                        const opt = document.createElement('option');
+                        opt.value = modelName;
+                        opt.textContent = modelName;
+                        llmModelSelect.appendChild(opt);
+                    }
+                    llmModelSelect.value = modelName;
+                } else {
+                    statusDiv.textContent = `✗ ${result.error}`;
+                    statusDiv.style.color = '#dc3545';
+                }
+            } catch (err) {
+                statusDiv.textContent = `✗ Test failed: ${err.message}`;
+                statusDiv.style.color = '#dc3545';
+            } finally {
+                testModelBtn.disabled = false;
+                testModelBtn.textContent = 'Test Model';
+            }
+        });
+    }
 
     llmConfigSaveButton.addEventListener('click', async () => {
         const provider = llmProviderSelect.value;

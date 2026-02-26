@@ -42,25 +42,23 @@ function stripToolPatterns(text) {
 }
 
 module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher) {
-  // Ollama model selection handlers
+  // Provider model selection handlers — all go through aiService adapters now
   ipcMain.handle('getProviderModels', async (event, provider) => {
-    if (provider === 'ollama') {
-      try {
-        const models = await ollamaService.getModels();
-        return { status: 'success', models };
-      } catch (error) {
-        return { status: 'error', message: error.message };
-      }
+    try {
+      const models = await aiService.getModels(provider);
+      return { status: 'success', models };
+    } catch (error) {
+      return { status: 'error', message: error.message };
     }
-    return { status: 'error', message: 'Provider not implemented' };
   });
 
   ipcMain.handle('checkProviderStatus', async (event, provider) => {
-    if (provider === 'ollama') {
-      const status = await ollamaService.checkConnection();
-      return { connected: status };
+    try {
+      const models = await aiService.getModels(provider);
+      return { connected: models.length > 0 };
+    } catch (error) {
+      return { connected: false };
     }
-    return { connected: false };
   });
 
   ipcMain.handle('setActiveModel', async (event, provider, model) => {
@@ -70,35 +68,14 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   ipcMain.handle('llm:get-models', async (event, provider) => {
     console.log('llm:get-models called with provider:', provider);
-    if (provider === 'ollama' || provider === 'Ollama') {
-      try {
-        const models = await ollamaService.listModels();
-        console.log('Models from ollama:', models);
-        return models;
-      } catch (error) {
-        console.error('Failed to fetch models from service:', error);
-        return [];
-      }
-    } else if (provider === 'qwen') {
-      try {
-        const models = await aiService.getModels('qwen');
-        console.log('Models from qwen:', models);
-        return models;
-      } catch (error) {
-        console.error('Failed to fetch qwen models:', error);
-        // Return detailed error information to UI
-        return {
-          status: 'error',
-          message: error.message,
-          details: error.response?.data || null
-        };
-      }
-    } else if (provider === 'openrouter') {
-      return [];
-    } else if (provider === 'lmstudio') {
+    try {
+      const models = await aiService.getModels(provider.toLowerCase());
+      console.log(`Models from ${provider}:`, models);
+      return models;
+    } catch (error) {
+      console.error(`Failed to fetch models for ${provider}:`, error);
       return [];
     }
-    return [];
   });
   ipcMain.handle('llm:save-config', async (event, config) => {
     try {
@@ -129,16 +106,14 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       // Update AI service provider
       await aiService.setProvider(config.provider);
 
-      // Refresh Qwen models when saving Qwen configuration
-      if (config.provider === 'qwen') {
-        aiService.getQwenModels(true)
-          .then(models => {
-            console.log(`Refreshed ${models.length} Qwen models`);
-          })
-          .catch(err => {
-            console.error('Background Qwen model refresh failed:', err);
-          });
-      }
+      // Background refresh models for the provider
+      aiService.getModels(config.provider)
+        .then(models => {
+          console.log(`Refreshed ${models.length} models for ${config.provider}`);
+        })
+        .catch(err => {
+          console.error(`Background model refresh failed for ${config.provider}:`, err);
+        });
 
       console.log('Config saved successfully');
       return { success: true };
@@ -399,24 +374,8 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
           return { needsPermission: true, sessionId, ...response.permissionRequest };
         }
       } else {
-        // Fallback to legacy single-step
-        response = await aiService.sendMessage(message, conversationHistory);
-        const toolCalls = mcpServer.parseToolCall(response.content);
-
-        if (toolCalls.length > 0) {
-          const toolResults = await mcpServer.executeToolCalls(response.content);
-          const toolContext = toolResults.map(r =>
-            `Tool ${r.tool} result: ${r.success ? JSON.stringify(r.result) : 'Error: ' + r.error}`
-          ).join('\n');
-
-          const interpretPrompt = `Based on the tool results below, provide a natural response to the user:\n\n${toolContext}`;
-          const interpretedResponse = await aiService.sendMessage(interpretPrompt, conversationHistory);
-
-          const cleanContent = stripToolPatterns(interpretedResponse.content);
-          await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
-          mainWindow.webContents.send('conversation-update', { sessionId });
-          return { ...interpretedResponse, content: cleanContent, sessionId };
-        }
+        // Fallback: route through dispatcher (unified path)
+        response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId });
       }
 
       // Safety check for null response
@@ -503,14 +462,46 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     return await aiService.getModels(provider);
   });
 
-  // Add Qwen model refresh handler
+  // Model refresh handler (works for any provider)
   ipcMain.handle('qwen:refresh-models', async () => {
     try {
-      const models = await aiService.getQwenModels(true); // Force refresh
+      const models = await aiService.getModels('qwen');
       return { success: true, models };
     } catch (error) {
       return { success: false, error: error.message };
     }
+  });
+
+  // Test a custom model (Phase 4: Ollama cloud / custom models)
+  ipcMain.handle('llm:test-model', async (event, { provider, model }) => {
+    try {
+      const adapter = aiService.adapters[provider];
+      if (!adapter) return { success: false, error: `Unknown provider: ${provider}` };
+      const result = await adapter.call(
+        [{ role: 'user', content: 'hello' }],
+        { model, max_tokens: 10 }
+      );
+      return { success: true, model: result.model, content: result.content };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Thinking mode settings
+  ipcMain.handle('llm:set-thinking-mode', async (event, mode) => {
+    await db.saveSetting('llm.thinkingMode', mode);
+    return { success: true, mode };
+  });
+
+  ipcMain.handle('llm:get-thinking-mode', async () => {
+    const mode = await db.getSetting('llm.thinkingMode') || 'off';
+    const show = await db.getSetting('llm.showThinking');
+    return { mode, showThinking: show !== 'false' };
+  });
+
+  ipcMain.handle('llm:set-show-thinking', async (event, show) => {
+    await db.saveSetting('llm.showThinking', show ? 'true' : 'false');
+    return { success: true };
   });
 
   // Qwen API key verification handler
@@ -559,7 +550,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   });
 
   ipcMain.handle('set-ai-model', async (event, model) => {
-    await aiService.setSetting('ai_model', model);
+    await db.saveSetting('llm.model', model);
     return { success: true };
   });
 
@@ -1008,8 +999,8 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     try {
       const numValue = parseInt(value);
       if (isNaN(numValue)) throw new Error('Invalid number');
-      if (numValue < 2048 || numValue > 100000) {
-        throw new Error('Value must be between 2048 and 100000');
+      if (numValue < 2048 || numValue > 262144) {
+        throw new Error('Value must be between 2048 and 262144');
       }
       await db.setSetting('context_window', numValue.toString());
       console.log('Context saved:', numValue);

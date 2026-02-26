@@ -46,6 +46,20 @@ class InferenceDispatcher {
         const includeRules = options.includeRules ?? (mode === 'chat');
         const includeEnv = mode === 'chat' || mode === 'internal';
 
+        // Resolve model once here (not in each adapter)
+        if (!options.model) {
+            const savedModel = await this.db.getSetting('llm.model');
+            if (savedModel) options.model = savedModel;
+        }
+
+        // Read thinking mode settings
+        if (!options.thinkingMode) {
+            const thinkingMode = await this.db.getSetting('llm.thinkingMode');
+            if (thinkingMode && thinkingMode !== 'off') {
+                options.thinkingMode = thinkingMode;
+            }
+        }
+
         // Build system prompt
         const systemPrompt = await this._buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId: options.sessionId });
 
@@ -59,7 +73,7 @@ class InferenceDispatcher {
         // Acquire lock — serializes concurrent calls so they don't race
         await this._acquireLock();
         try {
-            console.log(`[Dispatcher] mode=${mode} tools=${includeTools} rules=${includeRules} historyLen=${history.length}`);
+            console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} historyLen=${history.length}`);
             return await this.aiService.sendMessage(messages, options);
         } finally {
             this._releaseLock();

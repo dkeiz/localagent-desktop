@@ -710,6 +710,145 @@
     animation: fadeIn 0.3s ease;
 }
 
+/* Thinking blocks (collapsible) */
+.thinking-block {
+    margin: 0.5rem 0;
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.thinking-block summary {
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #888);
+    background: var(--card-bg, #f9f9f9);
+    user-select: none;
+}
+
+.thinking-block summary:hover {
+    background: var(--hover-bg, #f0f0f0);
+}
+
+.thinking-content {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #666);
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border-color, #e0e0e0);
+}
+
+/* Chat images (inline in messages) */
+.chat-image {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin: 0.5rem 0;
+    display: block;
+    transition: opacity 0.2s;
+}
+
+.chat-image:hover {
+    opacity: 0.9;
+}
+
+/* Image lightbox overlay */
+.image-lightbox {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.image-lightbox img {
+    max-width: 90vw;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Toggle switch for thinking mode */
+.think-toggle {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    gap: 6px;
+    user-select: none;
+}
+
+.think-toggle input {
+    display: none;
+}
+
+.think-slider {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background: var(--border-color, #ccc);
+    border-radius: 20px;
+    transition: background 0.25s;
+}
+
+.think-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.25s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.think-toggle input:checked+.think-slider {
+    background: var(--primary-color, #007bff);
+}
+
+.think-toggle input:checked+.think-slider::after {
+    transform: translateX(16px);
+}
+
+/* Radio pills (small segmented buttons) */
+.radio-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 12px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.radio-pill:hover {
+    border-color: var(--primary-color, #007bff);
+}
+
+.radio-pill input {
+    display: none;
+}
+
+.radio-pill:has(input:checked) {
+    background: var(--primary-color, #007bff);
+    color: white;
+    border-color: var(--primary-color, #007bff);
+}
+
 /* Tooltip for shortcuts */
 .shortcut-hint {
     position: absolute;

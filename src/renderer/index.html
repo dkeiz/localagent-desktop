@@ -320,9 +320,9 @@
                     <div class="slider-control">
                         <div class="slider-labels">
                             <label for="context-slider" id="context-display-label">Context Size:</label>
-                            <span id="context-display">8192 tokens</span>
+                            <span id="context-display">8K (8192 tokens)</span>
                         </div>
-                        <input type="range" id="context-slider" min="2048" max="32768" step="2048" value="8192"
+                        <input type="range" id="context-slider" min="0" max="10" step="1" value="2"
                             oninput="window.mainPanel && window.mainPanel.updateContextDisplay(this.value)"
                             onchange="window.mainPanel && window.mainPanel.saveContextSize(this.value)">
                     </div>
@@ -339,8 +339,40 @@
                     <label for="llm-model-select">Model</label>
                     <select id="llm-model-select"></select>
 
-                    <!-- Dynamic provider-specific settings -->
+                    <!-- Custom model input (shown for Ollama) -->
+                    <div id="custom-model-section" style="display: none; margin-top: 8px;">
+                        <label for="custom-model-input">Custom Model (e.g. deepseek-v3.2:cloud)</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="custom-model-input" placeholder="Type model name..."
+                                style="flex: 1;">
+                            <button id="test-custom-model-btn" type="button" style="white-space: nowrap;">Test
+                                Model</button>
+                        </div>
+                        <div id="custom-model-status" style="margin-top: 4px; font-size: 0.85em;"></div>
+                    </div>
+
+                    <!-- Dynamic provider-specific settings (API keys, etc.) -->
                     <div id="provider-settings-container"></div>
+
+                    <!-- Thinking Mode -->
+                    <div style="margin-top: 12px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                        <label class="think-toggle" title="Enable/disable thinking">
+                            <input type="checkbox" id="thinking-toggle">
+                            <span class="think-slider"></span>
+                            <span style="margin-left: 4px; font-size: 0.85rem;">Think</span>
+                        </label>
+                        <div id="thinking-visibility-group" style="display: none; gap: 8px; align-items: center;">
+                            <label class="radio-pill" title="Show thinking fully expanded">
+                                <input type="radio" name="think-vis" value="show" checked> Show
+                            </label>
+                            <label class="radio-pill" title="Collapsed by default, click to expand">
+                                <input type="radio" name="think-vis" value="min"> Min
+                            </label>
+                            <label class="radio-pill" title="Hide thinking blocks entirely">
+                                <input type="radio" name="think-vis" value="hide"> Hide
+                            </label>
+                        </div>
+                    </div>
 
                     <button id="llm-config-save-button">Save Configuration</button>
 

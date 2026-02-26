@@ -47,7 +47,11 @@ window.electronAPI = Object.assign(ipcRenderer, {
     getModels: (provider) => ipcRenderer.invoke('llm:get-models', provider),
     saveConfig: (config) => ipcRenderer.invoke('llm:save-config', config),
     getConfig: () => ipcRenderer.invoke('llm:get-config'),
-    fetchQwenOAuth: () => ipcRenderer.invoke('llm:fetch-qwen-oauth')
+    fetchQwenOAuth: () => ipcRenderer.invoke('llm:fetch-qwen-oauth'),
+    testModel: (provider, model) => ipcRenderer.invoke('llm:test-model', { provider, model }),
+    setThinkingMode: (mode) => ipcRenderer.invoke('llm:set-thinking-mode', mode),
+    getThinkingMode: () => ipcRenderer.invoke('llm:get-thinking-mode'),
+    setShowThinking: (show) => ipcRenderer.invoke('llm:set-show-thinking', show)
   },
   // Workflow API
   getWorkflows: () => ipcRenderer.invoke('get-workflows'),
