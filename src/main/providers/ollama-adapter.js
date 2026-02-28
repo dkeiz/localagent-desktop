@@ -46,6 +46,7 @@ class OllamaAdapter extends BaseAdapter {
             return this._normalizeResponse({
                 content: response.data.message.content,
                 model: response.data.model,
+                context_length: contextLength,
                 usage: {
                     prompt_tokens: response.data.prompt_eval_count || 0,
                     completion_tokens: response.data.eval_count || 0,

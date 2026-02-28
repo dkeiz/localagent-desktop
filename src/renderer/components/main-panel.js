@@ -526,7 +526,7 @@ class MainPanel {
         }
     }
 
-    updateContextUsage(response) {
+    async updateContextUsage(response) {
         const contextDiv = document.getElementById('context-usage');
         if (!contextDiv) return;
 
@@ -536,7 +536,16 @@ class MainPanel {
         }
 
         const { prompt_tokens, total_tokens } = response.usage;
-        const contextLength = response.context_length || 4096;
+        // Use response context_length first, then saved setting, then default
+        let contextLength = response.context_length;
+        if (!contextLength) {
+            try {
+                const saved = await window.electronAPI.getSetting('context_window');
+                contextLength = saved ? parseInt(saved) : 8192;
+            } catch (e) {
+                contextLength = 8192;
+            }
+        }
 
         // Store for later use
         this.lastContextUsage = { prompt_tokens, total_tokens, contextLength };
@@ -890,8 +899,7 @@ class MainPanel {
             // Determine initial visibility setting
             let savedVis;
             try {
-                const settings = await window.electronAPI.getSettings();
-                savedVis = settings?.['llm.thinkingVisibility'];
+                savedVis = await window.electronAPI.getSettingValue('llm.thinkingVisibility');
             } catch (e) { }
             this._thinkingVisibility = savedVis || (showThinking ? 'show' : 'hide');
 

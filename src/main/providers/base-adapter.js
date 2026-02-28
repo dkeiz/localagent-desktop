@@ -66,8 +66,8 @@ class BaseAdapter {
     /**
      * Normalize response to standard shape.
      */
-    _normalizeResponse({ content, model, usage, stopped = false }) {
-        return {
+    _normalizeResponse({ content, model, usage, stopped = false, context_length }) {
+        const result = {
             content: content || '',
             model: model || this.name,
             usage: {
@@ -77,6 +77,8 @@ class BaseAdapter {
             },
             stopped
         };
+        if (context_length) result.context_length = context_length;
+        return result;
     }
 }
 
