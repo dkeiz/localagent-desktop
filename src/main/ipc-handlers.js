@@ -1011,17 +1011,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     }
   });
 
-  // Generic setting handlers for UI persistence (thinking visibility, etc.)
-  ipcMain.handle('save-setting', async (_, key, value) => {
-    try {
-      await db.setSetting(key, value);
-      return { success: true };
-    } catch (error) {
-      console.error(`Error saving setting ${key}:`, error);
-      throw error;
-    }
-  });
-
+  // Generic get-setting-value for UI persistence (thinking visibility, etc.)
   ipcMain.handle('get-setting-value', async (_, key) => {
     try {
       return await db.getSetting(key);
