@@ -41,7 +41,8 @@ class DatabaseWrapper {
             'ALTER TABLE conversations ADD COLUMN session_id INTEGER',
             'ALTER TABLE conversations ADD COLUMN metadata TEXT',
             'ALTER TABLE workflows ADD COLUMN visual_data TEXT',
-            'ALTER TABLE workflows ADD COLUMN execution_count INTEGER DEFAULT 0'
+            'ALTER TABLE workflows ADD COLUMN execution_count INTEGER DEFAULT 0',
+            'ALTER TABLE chat_sessions ADD COLUMN agent_id INTEGER'
         ];
 
         for (const migration of migrations) {
@@ -143,6 +144,20 @@ class DatabaseWrapper {
                 failure_count INTEGER DEFAULT 0,
                 last_used DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+
+            `CREATE TABLE IF NOT EXISTS agents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                type TEXT NOT NULL DEFAULT 'pro',
+                icon TEXT DEFAULT '🤖',
+                system_prompt TEXT,
+                description TEXT,
+                status TEXT DEFAULT 'idle',
+                config TEXT,
+                folder_path TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`
         ];
 
@@ -325,26 +340,27 @@ class DatabaseWrapper {
 
     async getChatSessions(date = null, limit = 6) {
         if (date) {
-            // Get sessions for specific date
+            // Get sessions for specific date (exclude agent sessions)
             return this.all(`
                 SELECT cs.*, 
                        COUNT(c.id) as message_count,
                        (SELECT content FROM conversations WHERE session_id = cs.id AND role = 'user' ORDER BY timestamp LIMIT 1) as first_message
                 FROM chat_sessions cs
                 LEFT JOIN conversations c ON cs.id = c.session_id
-                WHERE DATE(cs.created_at) = DATE(?)
+                WHERE DATE(cs.created_at) = DATE(?) AND cs.agent_id IS NULL
                 GROUP BY cs.id
                 HAVING message_count > 0
                 ORDER BY cs.last_message_at DESC
             `, [date]);
         }
-        // Get last N sessions with messages
+        // Get last N sessions with messages (exclude agent sessions)
         return this.all(`
             SELECT cs.*, 
                    COUNT(c.id) as message_count,
                    (SELECT content FROM conversations WHERE session_id = cs.id AND role = 'user' ORDER BY timestamp LIMIT 1) as first_message
             FROM chat_sessions cs
             LEFT JOIN conversations c ON cs.id = c.session_id
+            WHERE cs.agent_id IS NULL
             GROUP BY cs.id
             HAVING message_count > 0
             ORDER BY cs.last_message_at DESC
@@ -373,10 +389,11 @@ class DatabaseWrapper {
             }
         }
 
-        // Otherwise get most recent with messages
+        // Otherwise get most recent non-agent session with messages
         const session = this.get(`
             SELECT cs.* FROM chat_sessions cs
             INNER JOIN conversations c ON cs.id = c.session_id
+            WHERE cs.agent_id IS NULL
             GROUP BY cs.id
             ORDER BY cs.last_message_at DESC
             LIMIT 1
@@ -546,6 +563,67 @@ class DatabaseWrapper {
     async updateWorkflowEmbedding(id, embedding) {
         this.run('UPDATE workflows SET embedding = ? WHERE id = ?', [JSON.stringify(embedding), id]);
         return { id, embedding };
+    }
+
+    // Agent methods
+    async getAgents(type = null) {
+        if (type) {
+            return this.all('SELECT * FROM agents WHERE type = ? ORDER BY name', [type]);
+        }
+        return this.all('SELECT * FROM agents ORDER BY type, name');
+    }
+
+    async getAgent(id) {
+        return this.get('SELECT * FROM agents WHERE id = ?', [id]);
+    }
+
+    async addAgent(agent) {
+        const { name, type = 'pro', icon = '🤖', system_prompt, description, config, folder_path } = agent;
+        const result = this.run(
+            'INSERT INTO agents (name, type, icon, system_prompt, description, config, folder_path) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [name, type, icon, system_prompt || '', description || '', config ? JSON.stringify(config) : null, folder_path || '']
+        );
+        return { ...agent, id: result.id, status: 'idle' };
+    }
+
+    async updateAgent(id, data) {
+        const fields = [];
+        const values = [];
+        for (const [key, value] of Object.entries(data)) {
+            if (['name', 'type', 'icon', 'system_prompt', 'description', 'status', 'config', 'folder_path'].includes(key)) {
+                fields.push(`${key} = ?`);
+                values.push(key === 'config' && typeof value === 'object' ? JSON.stringify(value) : value);
+            }
+        }
+        if (fields.length === 0) return { id };
+        fields.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(id);
+        this.run(`UPDATE agents SET ${fields.join(', ')} WHERE id = ?`, values);
+        return { id, ...data };
+    }
+
+    async deleteAgent(id) {
+        this.run('DELETE FROM agents WHERE id = ?', [id]);
+        return { id };
+    }
+
+    async getAgentSession(agentId) {
+        return this.get(`
+            SELECT cs.* FROM chat_sessions cs
+            WHERE cs.agent_id = ?
+            ORDER BY cs.last_message_at DESC
+            LIMIT 1
+        `, [agentId]);
+    }
+
+    async createAgentSession(agentId, title = null) {
+        const agent = await this.getAgent(agentId);
+        const sessionTitle = title || (agent ? `${agent.name}` : `Agent Chat`);
+        const result = this.run(
+            'INSERT INTO chat_sessions (title, agent_id) VALUES (?, ?)',
+            [sessionTitle, agentId]
+        );
+        return { id: result.id, title: sessionTitle, agent_id: agentId };
     }
 }
 

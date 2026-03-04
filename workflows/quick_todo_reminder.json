@@ -1,0 +1,15 @@
+{
+  "name": "Quick Task Reminder",
+  "description": "Auto-generates todos from calendar events",
+  "tools": [
+    "list_calendar_events",
+    "todo_list",
+    "write_file"
+  ],
+  "trigger": "on idle for 30 seconds",
+  "actions": [
+    "Fetch calendar events",
+    "Create todo items for upcoming events",
+    "Save to memory as 'daily' log"
+  ]
+}

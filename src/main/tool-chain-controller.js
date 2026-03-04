@@ -83,7 +83,7 @@ class ToolChainController {
 
             // Send message to LLM via dispatcher (mode=chat includes tools + rules)
             // On continuation steps, currentMessage is null — tool results are in workingHistory
-            const response = await this.dispatcher.dispatch(currentMessage, workingHistory, { mode: 'chat', sessionId: options.sessionId });
+            const response = await this.dispatcher.dispatch(currentMessage, workingHistory, { mode: 'chat', sessionId: options.sessionId, agentId: options.agentId });
             lastLLMResponse = response;
 
             // Parse tool calls from response

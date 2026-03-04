@@ -41,7 +41,7 @@ function stripToolPatterns(text) {
   return result.trim();
 }
 
-module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher) {
+module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager) {
   // Provider model selection handlers — all go through aiService adapters now
   ipcMain.handle('getProviderModels', async (event, provider) => {
     try {
@@ -364,10 +364,14 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
       let response;
 
+      // Check if this session belongs to an agent
+      const sessionRow = sessionId ? db.get('SELECT agent_id FROM chat_sessions WHERE id = ?', [sessionId]) : null;
+      const agentId = sessionRow ? sessionRow.agent_id : null;
+
       // Use chain controller if available and enabled
       if (chainController && useChaining) {
         console.log('[IPC] Using tool chain controller');
-        response = await chainController.executeWithChaining(message, conversationHistory, { sessionId });
+        response = await chainController.executeWithChaining(message, conversationHistory, { sessionId, agentId });
 
         if (response && response.needsPermission) {
           mainWindow.webContents.send('tool-permission-request', { ...response.permissionRequest, sessionId });
@@ -375,7 +379,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
         }
       } else {
         // Fallback: route through dispatcher (unified path)
-        response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId });
+        response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId, agentId });
       }
 
       // Safety check for null response
@@ -1187,6 +1191,59 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     const filePath = path.join(__dirname, '../../agentin/connectors', `${name}.js`);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     return { success: true, name };
+  });
+
+  // ==================== Agent Management ====================
+
+  ipcMain.handle('get-agents', async (event, type = null) => {
+    if (!agentManager) return [];
+    return await agentManager.getAgents(type);
+  });
+
+  ipcMain.handle('get-agent', async (event, id) => {
+    if (!agentManager) return null;
+    return await agentManager.getAgent(id);
+  });
+
+  ipcMain.handle('create-agent', async (event, data) => {
+    if (!agentManager) throw new Error('AgentManager not initialized');
+    const result = await agentManager.createAgent(data);
+    mainWindow.webContents.send('agent-update');
+    return result;
+  });
+
+  ipcMain.handle('update-agent', async (event, id, data) => {
+    if (!agentManager) throw new Error('AgentManager not initialized');
+    const result = await agentManager.updateAgent(id, data);
+    mainWindow.webContents.send('agent-update');
+    return result;
+  });
+
+  ipcMain.handle('delete-agent', async (event, id) => {
+    if (!agentManager) throw new Error('AgentManager not initialized');
+    const result = await agentManager.deleteAgent(id);
+    mainWindow.webContents.send('agent-update');
+    return result;
+  });
+
+  ipcMain.handle('activate-agent', async (event, id) => {
+    if (!agentManager) throw new Error('AgentManager not initialized');
+    const result = await agentManager.activateAgent(id);
+    mainWindow.webContents.send('agent-update');
+    return result;
+  });
+
+  ipcMain.handle('deactivate-agent', async (event, id) => {
+    if (!agentManager) throw new Error('AgentManager not initialized');
+    await agentManager.deactivateAgent(id);
+    mainWindow.webContents.send('agent-update');
+    return { success: true };
+  });
+
+  ipcMain.handle('compact-agent', async (event, id) => {
+    if (!agentManager) throw new Error('AgentManager not initialized');
+    await agentManager.compactAgent(id);
+    return { success: true };
   });
 
   // Initialize AI service

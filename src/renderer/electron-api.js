@@ -96,5 +96,17 @@ window.electronAPI = Object.assign(ipcRenderer, {
     list: (type) => ipcRenderer.invoke('agent-memory:list', type),
     stats: () => ipcRenderer.invoke('agent-memory:stats'),
     saveImage: (imageBuffer, name) => ipcRenderer.invoke('agent-memory:save-image', imageBuffer, name)
-  }
+  },
+  // Agent Management API
+  agents: {
+    list: (type) => ipcRenderer.invoke('get-agents', type),
+    get: (id) => ipcRenderer.invoke('get-agent', id),
+    create: (data) => ipcRenderer.invoke('create-agent', data),
+    update: (id, data) => ipcRenderer.invoke('update-agent', id, data),
+    delete: (id) => ipcRenderer.invoke('delete-agent', id),
+    activate: (id) => ipcRenderer.invoke('activate-agent', id),
+    deactivate: (id) => ipcRenderer.invoke('deactivate-agent', id),
+    compact: (id) => ipcRenderer.invoke('compact-agent', id),
+  },
+  onAgentUpdate: (callback) => ipcRenderer.on('agent-update', callback),
 });

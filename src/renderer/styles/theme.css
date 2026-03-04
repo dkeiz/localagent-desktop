@@ -396,13 +396,13 @@ select:focus {
 
 @media (max-width: 1200px) {
   .app-container {
-    grid-template-columns: 18% 57% 25%;
+    grid-template-columns: 18% 64.5% 17.5%;
   }
 }
 
 @media (max-width: 900px) {
   .app-container {
-    grid-template-columns: 20% 55% 25%;
+    grid-template-columns: 20% 62.5% 17.5%;
   }
 }
 

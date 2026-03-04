@@ -1,7 +1,7 @@
 /* Three-column layout system */
 .app-container {
     display: grid;
-    grid-template-columns: 14% 61% 25%;
+    grid-template-columns: 14% 68.5% 17.5%;
     grid-template-rows: 1fr;
     height: 100vh;
     overflow: hidden;
@@ -351,7 +351,21 @@
     min-height: 280px;
 }
 
-.todo-widget {
+.calendar-todos {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.calendar-todos-header {
+    margin: 0 0 0.3rem 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+/* Agent Picker Widget */
+.agent-picker-widget {
     background-color: var(--main-bg);
     border-radius: var(--border-radius);
     padding: 0.5rem;
@@ -359,7 +373,206 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    max-height: 200px;
+}
+
+.agent-picker-widget h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 4px;
+    margin-bottom: 0.4rem;
+}
+
+.agent-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.35rem 0.2rem;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    position: relative;
+    gap: 2px;
+}
+
+.agent-item:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--border-color);
+}
+
+.agent-item.active {
+    background-color: var(--active-bg);
+    border-color: var(--primary-color);
+}
+
+.agent-icon {
+    font-size: 1.3rem;
+    line-height: 1;
+}
+
+.agent-name {
+    font-size: 0.6rem;
+    text-align: center;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.agent-item.active .agent-name {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.agent-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--border-color);
+    position: absolute;
+    top: 3px;
+    right: 3px;
+}
+
+.agent-status-dot.active {
+    background-color: #4CAF50;
+}
+
+.agent-status-dot.busy {
+    background-color: #FF9800;
+}
+
+.agent-section-label {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    margin: 0.3rem 0 0.15rem 0;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.no-agents {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 0.5rem;
+}
+
+/* Agent Config Modal */
+.agent-config-modal label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.agent-config-modal input[type="text"],
+.agent-config-modal select,
+.agent-config-modal textarea {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+}
+
+.agent-config-modal textarea {
+    resize: vertical;
+    min-height: 100px;
+    font-family: monospace;
+    font-size: 0.8rem;
+}
+
+.icon-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0.3rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+}
+
+.icon-option {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.15s;
+}
+
+.icon-option:hover {
+    background: var(--hover-bg);
+}
+
+.icon-option.selected {
+    background: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--primary-color);
+}
+
+.modal-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.primary-btn,
+.secondary-btn,
+.danger-btn {
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+}
+
+.primary-btn {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.primary-btn:hover {
+    opacity: 0.9;
+}
+
+.secondary-btn {
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
+.secondary-btn:hover {
+    background: var(--hover-bg);
+}
+
+.danger-btn {
+    background: #dc3545;
+    color: white;
+    border-color: #dc3545;
+}
+
+.danger-btn:hover {
+    background: #c82333;
 }
 
 /* Workflows Widget (collapsible) */
@@ -412,7 +625,7 @@
 
 
 .calendar-widget h3,
-.todo-widget h3 {
+.agent-picker-widget h3 {
     margin: 0 0 0.5rem 0;
     color: var(--text-primary);
     font-size: 0.9rem;
@@ -2135,7 +2348,7 @@
 /* Update grid for collapsible panels */
 .app-container {
     display: grid;
-    grid-template-columns: var(--sidebar-width, 15%) 1fr var(--widget-width, 25%);
+    grid-template-columns: var(--sidebar-width, 15%) 1fr var(--widget-width, 17.5%);
     grid-template-rows: 1fr;
     height: 100vh;
     overflow: hidden;
@@ -2213,7 +2426,7 @@
 }
 
 .widget-panel.collapsed .calendar-widget,
-.widget-panel.collapsed .todo-widget,
+.widget-panel.collapsed .agent-picker-widget,
 .widget-panel.collapsed .workflows-widget,
 .widget-panel.collapsed .theme-picker {
     display: none;

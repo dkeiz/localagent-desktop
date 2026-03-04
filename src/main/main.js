@@ -15,6 +15,7 @@ const AgentLoop = require('./agent-loop');
 const ConnectorRuntime = require('./connector-runtime');
 const InferenceDispatcher = require('./inference-dispatcher');
 const SessionWorkspace = require('./session-workspace');
+const AgentManager = require('./agent-manager');
 const ollamaService = require('./ollama-service');
 
 let mainWindow;
@@ -33,6 +34,7 @@ let agentLoop;
 let connectorRuntime;
 let dispatcher;
 let sessionWorkspace;
+let agentManager;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -111,10 +113,15 @@ app.whenReady().then(async () => {
     connectorRuntime = new ConnectorRuntime(dispatcher, db);
     mcpServer.setConnectorRuntime(connectorRuntime);
 
+    // Create Agent Manager for multi-agent system
+    agentManager = new AgentManager(db, dispatcher, agentLoop, agentMemory);
+    await agentManager.initialize();
+    dispatcher.setAgentManager(agentManager);
+
     createWindow();
 
     // Setup IPC handlers (pass all services)
-    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher);
+    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -137,6 +144,10 @@ app.on('before-quit', async () => {
   // Save all agent loop sessions on quit
   if (agentLoop) {
     await agentLoop.onAppQuit();
+  }
+  // Deactivate all agents
+  if (agentManager) {
+    await agentManager.onAppQuit();
   }
   // Stop all connectors
   if (connectorRuntime) {

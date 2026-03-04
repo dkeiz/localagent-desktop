@@ -666,6 +666,49 @@ class MainPanel {
         }
     }
 
+    /**
+     * Open or switch to an agent's dedicated chat tab.
+     * @param {number} agentId - Agent database ID
+     * @param {number} sessionId - Chat session ID for this agent
+     * @param {Object} agent - Agent object with name, icon, etc.
+     */
+    async openAgentChat(agentId, sessionId, agent) {
+        try {
+            // Check if tab already open for this session
+            if (this.chatTabs.has(sessionId)) {
+                await this.switchTab(sessionId);
+                return;
+            }
+
+            // Save current tab's messages
+            this.saveCurrentTabMessages();
+
+            // Create tab with agent metadata
+            this.chatTabs.set(sessionId, {
+                title: agent ? agent.name : `Agent ${agentId}`,
+                agentId: agentId,
+                agentIcon: agent ? agent.icon : '🤖',
+                messagesHTML: '',
+                isSending: false,
+                loadingId: null
+            });
+
+            this.activeTabId = sessionId;
+
+            // Load existing conversations for this agent session
+            await this.loadTabConversations(sessionId);
+
+            this.renderTabs();
+            this.saveOpenTabIds();
+
+            // Switch backend to this session
+            await window.electronAPI.switchChatSession(sessionId);
+            await this.calculateContextUsage();
+        } catch (error) {
+            console.error('Error opening agent chat:', error);
+        }
+    }
+
     openNewWindow() {
         // Ask main process to open a second app window
         window.electronAPI.invoke('open-new-window').catch(err => {
@@ -694,8 +737,22 @@ class MainPanel {
                 }
             }
 
-            for (let i = 0; i < tabIds.length; i++) {
-                const sid = tabIds[i];
+            // Filter out agent sessions — they should only be opened via agent picker
+            const regularTabIds = [];
+            for (const sid of tabIds) {
+                const conversations = await window.electronAPI.loadChatSession(sid);
+                // Check if session exists by trying to load it
+                // We can't easily check agent_id from renderer, so just restore all non-empty ones
+                regularTabIds.push(sid);
+            }
+
+            if (regularTabIds.length === 0) {
+                const session = await window.electronAPI.invoke('create-chat-session');
+                regularTabIds.push(session.id);
+            }
+
+            for (let i = 0; i < regularTabIds.length; i++) {
+                const sid = regularTabIds[i];
                 this.chatTabs.set(sid, {
                     title: `Chat ${i + 1}`,
                     messagesHTML: '',
@@ -705,12 +762,12 @@ class MainPanel {
             }
 
             const activeId = activeRaw ? parseInt(activeRaw) : null;
-            this.activeTabId = (activeId && this.chatTabs.has(activeId)) ? activeId : tabIds[0];
+            this.activeTabId = (activeId && this.chatTabs.has(activeId)) ? activeId : regularTabIds[0];
 
             await this.loadTabConversations(this.activeTabId);
             await window.electronAPI.switchChatSession(this.activeTabId);
 
-            for (const sid of tabIds) {
+            for (const sid of regularTabIds) {
                 await this.autoTitleTab(sid);
             }
 
@@ -813,7 +870,9 @@ class MainPanel {
 
             const label = document.createElement('span');
             label.className = 'chat-tab-label';
-            label.textContent = tab.title || `Chat ${sessionId}`;
+            // Show agent icon before label if this is an agent tab
+            const agentPrefix = tab.agentIcon ? `${tab.agentIcon} ` : '';
+            label.textContent = agentPrefix + (tab.title || `Chat ${sessionId}`);
 
             const closeBtn = document.createElement('button');
             closeBtn.className = 'chat-tab-close';

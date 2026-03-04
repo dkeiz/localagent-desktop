@@ -410,15 +410,20 @@
                 <div id="calendar-weekdays"></div>
                 <div id="calendar-days"></div>
                 <button id="add-event-btn" class="compact-btn">+ Event</button>
+                <div class="calendar-todos">
+                    <h4 class="calendar-todos-header">Tasks</h4>
+                    <div id="todo-list"></div>
+                    <div class="todo-input">
+                        <input type="text" id="new-todo-input" placeholder="Add task...">
+                        <button id="add-todo-btn" class="compact-btn">+</button>
+                    </div>
+                </div>
             </div>
 
-            <div class="todo-widget">
-                <h3>Todos</h3>
-                <div id="todo-list"></div>
-                <div class="todo-input">
-                    <input type="text" id="new-todo-input" placeholder="Add task...">
-                    <button id="add-todo-btn" class="compact-btn">+</button>
-                </div>
+            <div class="agent-picker-widget">
+                <h3>Agents</h3>
+                <div id="agent-list" class="agent-list"></div>
+                <button id="add-agent-btn" class="compact-btn" title="Configure Agents">+ Agent</button>
             </div>
 
             <div class="workflows-widget collapsible-widget">
@@ -439,6 +444,7 @@
     <script src="components/main-panel.js?v=8"></script>
     <script src="components/calendar.js?v=7"></script>
     <script src="components/todos.js?v=7"></script>
+    <script src="components/agent-picker.js?v=1"></script>
     <script src="components/shortcuts.js?v=7"></script>
     <script src="components/rule-manager.js?v=7"></script>
     <script src="components/message-formatter.js?v=7"></script>

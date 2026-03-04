@@ -18,9 +18,14 @@ class InferenceDispatcher {
         this.aiService = aiService;
         this.db = db;
         this.mcpServer = mcpServer;
+        this.agentManager = null;
 
         // Simple mutex to prevent concurrent inference calls from racing
         this._lock = null;
+    }
+
+    setAgentManager(agentManager) {
+        this.agentManager = agentManager;
     }
 
     // ------- public API -------
@@ -60,8 +65,9 @@ class InferenceDispatcher {
             }
         }
 
-        // Build system prompt
-        const systemPrompt = await this._buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId: options.sessionId });
+        // Build system prompt (with optional agent override)
+        const agentId = options.agentId || null;
+        const systemPrompt = await this._buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId: options.sessionId, agentId });
 
         // Assemble messages array
         const messages = [
@@ -82,8 +88,29 @@ class InferenceDispatcher {
 
     // ------- system prompt construction -------
 
-    async _buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId }) {
-        let prompt = this.aiService.systemPrompt;
+    async _buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId, agentId }) {
+        let prompt;
+
+        // If dispatching for a specific agent, use agent's system prompt
+        if (agentId && this.agentManager) {
+            const agent = await this.agentManager.getAgent(agentId);
+            if (agent) {
+                prompt = this.agentManager.getAgentSystemPrompt(agent);
+                // Prepend compact memory if available
+                const memory = this.agentManager.getAgentMemory(agent);
+                if (memory) {
+                    prompt = `<agent_memory>
+${memory}
+</agent_memory>
+
+${prompt}`;
+                }
+            } else {
+                prompt = this.aiService.systemPrompt;
+            }
+        } else {
+            prompt = this.aiService.systemPrompt;
+        }
 
         // Environment paths (useful for chat + internal modes)
         if (includeEnv) {

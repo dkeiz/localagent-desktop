@@ -759,42 +759,39 @@ class Sidebar {
 
     async loadSession(sessionId) {
         try {
-            // Switch to this session in the database
-            await window.electronAPI.switchChatSession(sessionId);
+            // Route through MainPanel's tab system for proper tab management
+            if (window.app && window.app.mainPanel) {
+                const mainPanel = window.app.mainPanel;
 
-            // Load conversations for this session
-            const conversations = await window.electronAPI.loadChatSession(sessionId);
-            this.currentSessionId = sessionId;
+                // Check if this tab is already open — just switch to it
+                if (mainPanel.chatTabs.has(sessionId)) {
+                    await mainPanel.switchTab(sessionId);
+                    this.switchTab('chat');
+                    return;
+                }
 
-            // Clear and load messages
-            const messagesContainer = document.getElementById('messages-container');
-            if (!messagesContainer) return;
+                // Save current tab messages before switching
+                mainPanel.saveCurrentTabMessages();
 
-            messagesContainer.innerHTML = '';
-
-            if (!conversations || conversations.length === 0) {
-                const emptyDiv = document.createElement('div');
-                emptyDiv.className = 'no-messages';
-                emptyDiv.textContent = 'No messages in this chat';
-                emptyDiv.style.cssText = 'text-align: center; padding: 2rem; color: #999;';
-                messagesContainer.appendChild(emptyDiv);
-            } else {
-                // Add all messages from this session
-                conversations.forEach(conv => {
-                    const messageDiv = document.createElement('div');
-                    messageDiv.className = `message ${conv.role} `;
-                    messageDiv.textContent = conv.content;
-                    messagesContainer.appendChild(messageDiv);
+                // Create a new tab for this session
+                mainPanel.chatTabs.set(sessionId, {
+                    title: `Chat`,
+                    messagesHTML: '',
+                    isSending: false,
+                    loadingId: null
                 });
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+                mainPanel.activeTabId = sessionId;
+                await mainPanel.loadTabConversations(sessionId);
+                await mainPanel.autoTitleTab(sessionId);
+                mainPanel.renderTabs();
+                mainPanel.saveOpenTabIds();
+
+                await window.electronAPI.switchChatSession(sessionId);
+                await mainPanel.calculateContextUsage();
             }
 
-            // Calculate and show context usage
-            if (window.mainPanel && window.mainPanel.calculateContextUsage) {
-                await window.mainPanel.calculateContextUsage();
-            }
-
-            // Switch to chat tab
+            // Switch to chat tab in sidebar
             this.switchTab('chat');
         } catch (error) {
             console.error('Error loading session:', error);
