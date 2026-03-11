@@ -121,15 +121,6 @@ class Sidebar {
             if (!container) return;
 
             container.innerHTML = '';
-            if (toolSelect) {
-                toolSelect.innerHTML = '<option value="">Select a tool...</option>';
-                tools.forEach(tool => {
-                    const option = document.createElement('option');
-                    option.value = tool.name;
-                    option.textContent = tool.name;
-                    toolSelect.appendChild(option);
-                });
-            }
 
             // Get DB tool activation states
             let toolStates = {};
