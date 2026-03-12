@@ -140,6 +140,7 @@ Read these files (use read_file tool):
 2. ${path.join(appDir, 'agentin', 'userabout', 'memoryaboutuser.md')} — what you know about the user
 3. ${path.join(appDir, 'agentin', 'memory', 'global', 'preferences.md')} — permanent preferences
 4. ${path.join(appDir, 'agentin', 'memory', 'daily')} — use list_directory then read today's log
+5. ${path.join(appDir, 'agentin', 'workflows', 'workflow.md')} — workflow system reference
 
 Do this silently as part of your first response. You must still answer the user's question in the same turn — chain the file reads then respond naturally.
 </memory_on_start>`;

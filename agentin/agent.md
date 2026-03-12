@@ -65,16 +65,30 @@ Tools are organized in groups toggled via the capability panel. Check `tool-clas
 
 ## Workflow System
 
-### Auto-Capture
-Successful multi-tool chains are captured as workflows with:
-- Trigger pattern (first 5 words of user message)
-- Tool sequence with params
-- Name (auto-generated or user-provided)
+### Overview
+Workflows are reusable multi-tool sequences stored in the database. They automate repetitive tasks.
 
 ### Tools
-- Workflows are stored in DB with execution stats
-- `findMatchingWorkflows(query)` — keyword search
-- `executeWorkflow(id)` — replay with optional param overrides
+- `list_workflows` — list all saved workflows with stats
+- `create_workflow` — create from name + tool chain array
+- `execute_workflow` — run by ID with optional param overrides
+- `copy_workflow` — clone a workflow as a base for a new one
+- `delete_workflow` — remove by ID
+
+### Auto-Capture
+Successful multi-tool chains can be auto-captured as workflows (when enabled via settings). Captured workflows include:
+- Trigger pattern (from user message)
+- Tool sequence with params
+- Auto-generated name
+
+### Copy Pattern
+Use `copy_workflow` to clone a proven workflow, then modify it for a different purpose. This is the recommended way to create variations.
+
+### Visual Editor
+Users can also build workflows in the Workflows tab using a drag-and-drop node editor with tool connections.
+
+### Reference
+Full documentation: `agentin/workflows/workflow.md`
 
 ---
 

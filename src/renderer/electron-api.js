@@ -27,11 +27,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   activateToolGroup: (groupId) => ipcRenderer.invoke('activate-tool-group', groupId),
   deactivateToolGroup: (groupId) => ipcRenderer.invoke('deactivate-tool-group', groupId),
   getActiveTools: () => ipcRenderer.invoke('get-active-tools'),
-  // Workflows
-  getWorkflows: () => ipcRenderer.invoke('get-workflows'),
-  saveWorkflow: (workflow) => ipcRenderer.invoke('save-workflow', workflow),
-  runWorkflow: (workflowId) => ipcRenderer.invoke('run-workflow', workflowId),
-  deleteWorkflow: (workflowId) => ipcRenderer.invoke('delete-workflow', workflowId),
+
   getChatSessions: (date, limit) => ipcRenderer.invoke('get-chat-sessions', date, limit),
   loadChatSession: (sessionId) => ipcRenderer.invoke('load-chat-session', sessionId),
   switchChatSession: (sessionId) => ipcRenderer.invoke('switch-chat-session', sessionId),
@@ -57,10 +53,14 @@ window.electronAPI = Object.assign(ipcRenderer, {
   },
   // Workflow API
   getWorkflows: () => ipcRenderer.invoke('get-workflows'),
+  saveWorkflow: (workflow) => ipcRenderer.invoke('save-workflow', workflow),
+  runWorkflow: (workflowId) => ipcRenderer.invoke('run-workflow', workflowId),
   executeWorkflow: (workflowId, paramOverrides) => ipcRenderer.invoke('execute-workflow', workflowId, paramOverrides),
   captureWorkflow: (trigger, toolChain, name) => ipcRenderer.invoke('capture-workflow', trigger, toolChain, name),
-  searchWorkflows: (query, topK) => ipcRenderer.invoke('search-workflows', query, topK),
+  searchWorkflows: (query) => ipcRenderer.invoke('search-workflows', query),
   deleteWorkflow: (workflowId) => ipcRenderer.invoke('delete-workflow', workflowId),
+  copyWorkflow: (workflowId, newName) => ipcRenderer.invoke('copy-workflow', workflowId, newName),
+  updateWorkflow: (workflowId, data) => ipcRenderer.invoke('update-workflow', workflowId, data),
   interpretToolResult: (toolName, params, result) => ipcRenderer.invoke('interpret-tool-result', toolName, params, result),
   // Generation control
   stopGeneration: () => ipcRenderer.invoke('stop-generation'),

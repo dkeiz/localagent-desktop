@@ -36,6 +36,11 @@ class WorkflowEditor {
         this.setupEventListeners();
         this.renderNodePalette();
         await this.loadSavedWorkflows();
+
+        // Listen for workflow updates from backend (copy, create, delete via IPC or LLM)
+        window.electronAPI?.on?.('workflow-update', () => {
+            this.loadSavedWorkflows();
+        });
     }
 
     async loadTools() {
@@ -74,9 +79,18 @@ class WorkflowEditor {
         document.getElementById('zoom-in-btn')?.addEventListener('click', () => this.setZoom(this.zoom + 0.1));
         document.getElementById('zoom-out-btn')?.addEventListener('click', () => this.setZoom(this.zoom - 0.1));
 
-        // Toggle saved workflows panel
-        document.getElementById('toggle-saved-workflows')?.addEventListener('click', () => {
-            document.getElementById('saved-workflows-panel')?.classList.toggle('collapsed');
+        // Saved workflows panel controls
+        document.getElementById('collapse-workflows-btn')?.addEventListener('click', () => {
+            const panel = document.getElementById('saved-workflows-panel');
+            const btn = document.getElementById('collapse-workflows-btn');
+            panel?.classList.toggle('collapsed');
+            if (btn) btn.textContent = panel?.classList.contains('collapsed') ? '▼' : '▲';
+        });
+        document.getElementById('compact-workflows-btn')?.addEventListener('click', () => {
+            const panel = document.getElementById('saved-workflows-panel');
+            const btn = document.getElementById('compact-workflows-btn');
+            panel?.classList.toggle('compact');
+            if (btn) btn.textContent = panel?.classList.contains('compact') ? '▦' : '▤';
         });
 
         // Canvas events for dragging and connecting
@@ -134,22 +148,32 @@ class WorkflowEditor {
         });
     }
 
-    addNode(toolName, x = null, y = null) {
+    addNode(toolName, x = null, y = null, presetParams = null) {
         const tool = this.tools.find(t => t.name === toolName);
-        if (!tool) return;
 
         const id = `node-${++this.nodeIdCounter}`;
         const nodeX = x ?? 100 + (this.nodes.size * 220);
         const nodeY = y ?? 150;
+
+        // Build schema from tool definition OR from preset params
+        let inputSchema = tool?.inputSchema || null;
+        if (!inputSchema && presetParams && Object.keys(presetParams).length > 0) {
+            inputSchema = {
+                type: 'object',
+                properties: Object.fromEntries(
+                    Object.keys(presetParams).map(k => [k, { type: 'string', description: k }])
+                )
+            };
+        }
 
         const node = {
             id,
             tool: toolName,
             x: nodeX,
             y: nodeY,
-            params: {},
-            inputSchema: tool.inputSchema,
-            description: tool.description
+            params: presetParams ? { ...presetParams } : {},
+            inputSchema,
+            description: tool?.description || toolName
         };
 
         this.nodes.set(id, node);
@@ -423,7 +447,7 @@ class WorkflowEditor {
     async runWorkflow() {
         const toolChain = this.getExecutionOrder().map(nodeId => {
             const node = this.nodes.get(nodeId);
-            return { tool: node.tool, params: node.params };
+            return { tool: node.tool, params: node.params, nodeId: nodeId };
         });
 
         if (toolChain.length === 0) {
@@ -431,71 +455,180 @@ class WorkflowEditor {
             return;
         }
 
-        window.mainPanel?.showNotification(`Running workflow with ${toolChain.length} nodes...`);
+        // Switch to chat tab and post workflow start
+        window.sidebar?.switchTab?.('chat');
+        const workflowName = document.getElementById('workflow-name-input')?.value || 'Unnamed Workflow';
+        window.mainPanel?.addMessage('system', `▶️ **Running workflow: ${workflowName}** (${toolChain.length} tools)`);
 
-        // Execute each tool in order
+        let allSuccess = true;
+
         for (const step of toolChain) {
             try {
-                const nodeEl = this.canvas.querySelector(`[id^="node-"][data-tool="${step.tool}"]`) ||
-                    Array.from(this.canvas.querySelectorAll('.workflow-node')).find(el =>
-                        el.querySelector('.node-title')?.textContent === step.tool);
+                // Highlight executing node on canvas
+                const nodeEl = document.getElementById(step.nodeId);
                 if (nodeEl) nodeEl.classList.add('executing');
 
-                await window.electronAPI.executeTool(step.tool, step.params);
+                const result = await window.electronAPI.executeMCPTool(step.tool, step.params);
 
                 if (nodeEl) {
                     nodeEl.classList.remove('executing');
                     nodeEl.classList.add('executed');
-                    setTimeout(() => nodeEl.classList.remove('executed'), 2000);
+                    setTimeout(() => nodeEl.classList.remove('executed'), 3000);
                 }
+
+                // Post result to chat
+                const preview = typeof result === 'object' ? JSON.stringify(result, null, 2).slice(0, 500) : String(result).slice(0, 500);
+                window.mainPanel?.addMessage('system', `✅ **${step.tool}**\n\`\`\`\n${preview}\n\`\`\``);
             } catch (error) {
-                console.error(`Tool ${step.tool} failed:`, error);
-                window.mainPanel?.showNotification(`Tool ${step.tool} failed`, 'error');
+                allSuccess = false;
+                const nodeEl = document.getElementById(step.nodeId);
+                if (nodeEl) {
+                    nodeEl.classList.remove('executing');
+                    nodeEl.classList.add('error');
+                }
+                window.mainPanel?.addMessage('system', `❌ **${step.tool}** failed: ${error.message}`);
                 break;
             }
         }
 
-        window.mainPanel?.showNotification('Workflow completed!');
+        window.mainPanel?.addMessage('system', allSuccess
+            ? `🎉 **Workflow "${workflowName}" completed successfully!**`
+            : `⚠️ **Workflow "${workflowName}" stopped due to error**`);
     }
 
     async loadSavedWorkflows() {
         try {
             const workflows = await window.electronAPI.getWorkflows?.() || [];
-            const listEl = document.getElementById('workflows-list');
-            if (!listEl) return;
 
-            if (workflows.length === 0) {
-                listEl.innerHTML = '<div class="no-workflows">No saved workflows</div>';
-                return;
+            // 1) Workflow Tab panel — all workflows, full controls
+            const tabListEl = document.getElementById('workflows-list');
+            if (tabListEl) {
+                if (workflows.length === 0) {
+                    tabListEl.innerHTML = '<div class="no-workflows">No saved workflows yet.<br><small>Create one using the canvas above, or ask the AI to create one.</small></div>';
+                } else {
+                    this._renderWorkflowList(tabListEl, workflows, true);
+                }
             }
 
-            listEl.innerHTML = workflows.map(w => `
-                <div class="saved-workflow-item" data-id="${w.id}">
-                    <span class="workflow-item-name">🔄 ${w.name}</span>
-                    <div class="workflow-item-actions">
-                        <button class="load-workflow-btn icon-btn" data-id="${w.id}" title="Load">📂</button>
-                        <button class="delete-workflow-btn icon-btn" data-id="${w.id}" title="Delete">🗑️</button>
-                    </div>
-                </div>
-            `).join('');
+            // 2) Right sidebar widget — only recently-used workflows (compact)
+            const sidebarListEl = document.getElementById('saved-workflows-list');
+            if (sidebarListEl) {
+                const recentWorkflows = workflows
+                    .filter(w => w.last_used || (w.success_count || 0) + (w.failure_count || 0) > 0)
+                    .slice(0, 5);
 
-            // Load workflow handler
-            listEl.querySelectorAll('.load-workflow-btn').forEach(btn => {
+                if (recentWorkflows.length === 0) {
+                    sidebarListEl.innerHTML = '<div class="no-workflows" style="font-size:0.75rem;padding:0.5rem;">No active workflows</div>';
+                } else {
+                    this._renderWorkflowList(sidebarListEl, recentWorkflows, false);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load workflows:', error);
+        }
+    }
+
+    /**
+     * Render workflow items into a container
+     * @param {HTMLElement} container - target element
+     * @param {Array} workflows - workflow objects
+     * @param {boolean} fullControls - show all buttons (tab panel) vs compact (sidebar)
+     */
+    _renderWorkflowList(container, workflows, fullControls) {
+        container.innerHTML = workflows.map(w => {
+            let tools = [];
+            try { tools = typeof w.tool_chain === 'string' ? JSON.parse(w.tool_chain) : (w.tool_chain || []); } catch(e) {}
+            const toolNames = tools.map(s => s.tool).join(' → ');
+            const stats = (w.success_count || 0) + (w.failure_count || 0);
+            const successRate = stats > 0 ? Math.round(((w.success_count || 0) / stats) * 100) : null;
+
+            const actionBtns = fullControls
+                ? `<button class="load-workflow-btn icon-btn" data-id="${w.id}" title="Load into editor">📂</button>
+                   <button class="copy-workflow-btn icon-btn" data-id="${w.id}" title="Copy workflow">📋</button>
+                   <button class="run-saved-workflow-btn icon-btn" data-id="${w.id}" title="Run workflow">▶️</button>
+                   <button class="delete-workflow-btn icon-btn" data-id="${w.id}" title="Delete">🗑️</button>`
+                : `<button class="run-saved-workflow-btn icon-btn" data-id="${w.id}" title="Run workflow">▶️</button>`;
+
+            return `
+            <div class="saved-workflow-item" data-id="${w.id}" title="${w.description || ''}">
+                <div class="workflow-item-info">
+                    <span class="workflow-item-name">🔄 ${w.name}</span>
+                    <span class="workflow-item-tools">${toolNames || 'No tools'}</span>
+                    ${stats > 0 ? `<span class="workflow-item-stats">${stats} runs${successRate !== null ? ` • ${successRate}% success` : ''}</span>` : ''}
+                </div>
+                <div class="workflow-item-actions">
+                    ${actionBtns}
+                </div>
+            </div>
+        `}).join('');
+
+        // Wire event handlers
+        if (fullControls) {
+            container.querySelectorAll('.load-workflow-btn').forEach(btn => {
                 btn.addEventListener('click', () => this.loadWorkflow(btn.dataset.id));
             });
-
-            // Delete workflow handler  
-            listEl.querySelectorAll('.delete-workflow-btn').forEach(btn => {
+            container.querySelectorAll('.copy-workflow-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    try {
+                        await window.electronAPI.copyWorkflow(parseInt(btn.dataset.id));
+                        window.mainPanel?.showNotification('Workflow copied!');
+                        await this.loadSavedWorkflows();
+                    } catch (error) {
+                        console.error('Failed to copy workflow:', error);
+                        window.mainPanel?.showNotification('Failed to copy workflow', 'error');
+                    }
+                });
+            });
+            container.querySelectorAll('.delete-workflow-btn').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     if (confirm('Delete this workflow?')) {
-                        await window.electronAPI.deleteWorkflow(btn.dataset.id);
+                        await window.electronAPI.deleteWorkflow(parseInt(btn.dataset.id));
                         await this.loadSavedWorkflows();
                     }
                 });
             });
-        } catch (error) {
-            console.error('Failed to load workflows:', error);
         }
+
+        // Run button — available in both views
+        container.querySelectorAll('.run-saved-workflow-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                try {
+                    btn.textContent = '⏳';
+                    const wfId = parseInt(btn.dataset.id);
+
+                    // Switch to chat and post start
+                    window.sidebar?.switchTab?.('chat');
+                    const wfItem = btn.closest('.saved-workflow-item');
+                    const wfName = wfItem?.querySelector('.workflow-item-name')?.textContent?.replace('🔄 ', '') || `Workflow #${wfId}`;
+                    window.mainPanel?.addMessage('system', `▶️ **Running workflow: ${wfName}**`);
+
+                    const result = await window.electronAPI.runWorkflow(wfId);
+                    btn.textContent = '▶️';
+
+                    // Post each tool result to chat
+                    if (result.results) {
+                        for (const r of result.results) {
+                            if (r.success) {
+                                const preview = typeof r.result === 'object' ? JSON.stringify(r.result, null, 2).slice(0, 500) : String(r.result || '').slice(0, 500);
+                                window.mainPanel?.addMessage('system', `✅ **${r.tool}**\n\`\`\`\n${preview}\n\`\`\``);
+                            } else {
+                                window.mainPanel?.addMessage('system', `❌ **${r.tool}** failed: ${r.error}`);
+                            }
+                        }
+                    }
+
+                    window.mainPanel?.addMessage('system', result.success
+                        ? `🎉 **Workflow "${wfName}" completed!**`
+                        : `⚠️ **Workflow "${wfName}" failed**`);
+
+                    await this.loadSavedWorkflows();
+                } catch (error) {
+                    btn.textContent = '▶️';
+                    console.error('Failed to run workflow:', error);
+                    window.mainPanel?.addMessage('system', `❌ Workflow execution error: ${error.message}`);
+                }
+            });
+        });
     }
 
     async loadWorkflow(workflowId) {
@@ -529,10 +662,7 @@ class WorkflowEditor {
                     : workflow.tool_chain;
 
                 toolChain.forEach((step, idx) => {
-                    const node = this.addNode(step.tool, 100 + idx * 220, 150);
-                    if (node && step.params) {
-                        node.params = step.params;
-                    }
+                    const node = this.addNode(step.tool, 100 + idx * 220, 150, step.params || {});
                 });
 
                 // Auto-connect in sequence

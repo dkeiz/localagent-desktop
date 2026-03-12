@@ -730,6 +730,119 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     }
   });
 
+  // ==================== Workflow Management ====================
+
+  // Get all saved workflows
+  ipcMain.handle('get-workflows', async () => {
+    try {
+      if (workflowManager) {
+        return await workflowManager.getWorkflows();
+      }
+      return await db.getWorkflows();
+    } catch (error) {
+      console.error('[IPC] get-workflows error:', error);
+      return [];
+    }
+  });
+
+  // Save a new workflow (from visual editor or programmatic creation)
+  ipcMain.handle('save-workflow', async (event, workflow) => {
+    try {
+      const result = await workflowManager.captureWorkflow(
+        workflow.name || 'unnamed',
+        (workflow.tool_chain || []).map(s => ({ tool: s.tool, params: s.params || {} })),
+        workflow.name
+      );
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('[IPC] save-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Delete a workflow
+  ipcMain.handle('delete-workflow', async (event, workflowId) => {
+    try {
+      await workflowManager.deleteWorkflow(workflowId);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] delete-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Run a workflow (simple — used by visual editor)
+  ipcMain.handle('run-workflow', async (event, workflowId) => {
+    try {
+      const result = await workflowManager.executeWorkflow(workflowId);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('[IPC] run-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Execute a workflow with optional parameter overrides
+  ipcMain.handle('execute-workflow', async (event, workflowId, paramOverrides = {}) => {
+    try {
+      const result = await workflowManager.executeWorkflow(workflowId, paramOverrides);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('[IPC] execute-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Capture a successful tool chain as a workflow
+  ipcMain.handle('capture-workflow', async (event, trigger, toolChain, name = null) => {
+    try {
+      const result = await workflowManager.captureWorkflow(trigger, toolChain, name);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('[IPC] capture-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Search workflows by keyword
+  ipcMain.handle('search-workflows', async (event, query) => {
+    try {
+      return await workflowManager.findMatchingWorkflows(query);
+    } catch (error) {
+      console.error('[IPC] search-workflows error:', error);
+      return [];
+    }
+  });
+
+  // Copy/clone a workflow
+  ipcMain.handle('copy-workflow', async (event, workflowId, newName = null) => {
+    try {
+      const result = await workflowManager.copyWorkflow(workflowId, newName);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('[IPC] copy-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Update an existing workflow
+  ipcMain.handle('update-workflow', async (event, workflowId, data) => {
+    try {
+      const result = await workflowManager.updateWorkflow(workflowId, data);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('[IPC] update-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Settings operations
   ipcMain.handle('get-settings', async () => {
     const settings = await db.getAllSettings();
@@ -1022,86 +1135,6 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     } catch (error) {
       console.error(`Error getting setting ${key}:`, error);
       return null;
-    }
-  });
-
-  // Workflow operations
-  ipcMain.handle('get-workflows', async () => {
-    try {
-      return await workflowManager.getWorkflows();
-    } catch (error) {
-      console.error('Failed to get workflows:', error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('execute-workflow', async (event, workflowId, paramOverrides = {}) => {
-    try {
-      const result = await workflowManager.executeWorkflow(workflowId, paramOverrides);
-      return { success: true, ...result };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('capture-workflow', async (event, trigger, toolChain, name = null) => {
-    try {
-      const workflow = await workflowManager.captureWorkflow(trigger, toolChain, name);
-      // Index for vector search
-      if (vectorStore) {
-        const text = [workflow.name, workflow.description, trigger].join(' ');
-        await vectorStore.indexWorkflow(workflow, text);
-      }
-      return { success: true, workflow };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('search-workflows', async (event, query, topK = 5) => {
-    try {
-      if (vectorStore) {
-        return await vectorStore.search(query, topK);
-      }
-      return await workflowManager.findMatchingWorkflows(query);
-    } catch (error) {
-      console.error('Workflow search failed:', error);
-      return [];
-    }
-  });
-
-  ipcMain.handle('save-workflow', async (event, workflow) => {
-    try {
-      const result = await db.addWorkflow({
-        name: workflow.name,
-        description: workflow.description || '',
-        trigger_pattern: workflow.name.toLowerCase(),
-        tool_chain: workflow.tool_chain,
-        visual_data: workflow.visual_data || null
-      });
-      return { success: true, workflow: result };
-    } catch (error) {
-      console.error('Failed to save workflow:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('run-workflow', async (event, workflowId) => {
-    try {
-      const result = await workflowManager.executeWorkflow(workflowId);
-      return result;
-    } catch (error) {
-      console.error('Failed to run workflow:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('delete-workflow', async (event, workflowId) => {
-    try {
-      await workflowManager.deleteWorkflow(workflowId);
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
     }
   });
 

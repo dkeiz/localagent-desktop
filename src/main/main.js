@@ -82,6 +82,8 @@ app.whenReady().then(async () => {
 
     // Create workflow manager for learning tool chains
     workflowManager = new WorkflowManager(db, mcpServer);
+    chainController.setWorkflowManager(workflowManager);
+    mcpServer.setWorkflowManager(workflowManager);
 
     // Create embedding service and vector store for semantic search
     embeddingService = new EmbeddingService();
@@ -122,6 +124,24 @@ app.whenReady().then(async () => {
 
     // Setup IPC handlers (pass all services)
     require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager);
+
+    // CLI: --seed <script.js> — run a seed script with live DB after init
+    const seedIdx = process.argv.indexOf('--seed');
+    if (seedIdx !== -1 && process.argv[seedIdx + 1]) {
+      const seedPath = require('path').resolve(process.argv[seedIdx + 1]);
+      console.log(`[Seed] Running seed script: ${seedPath}`);
+      try {
+        const seedFn = require(seedPath);
+        if (typeof seedFn === 'function') {
+          await seedFn({ db, workflowManager, mcpServer });
+          console.log('[Seed] Seed script completed successfully');
+        } else {
+          console.error('[Seed] Seed script must export a function: module.exports = async ({ db, workflowManager }) => { ... }');
+        }
+      } catch (err) {
+        console.error('[Seed] Seed script failed:', err);
+      }
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

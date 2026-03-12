@@ -32,6 +32,10 @@ class MCPServer extends EventEmitter {
     this._sessionWorkspace = sessionWorkspace;
   }
 
+  setWorkflowManager(workflowManager) {
+    this._workflowManager = workflowManager;
+  }
+
   initializeBuiltInTools() {
     // System tools
     this.registerTool('current_time', {
@@ -760,6 +764,131 @@ ${params.content || ''}`;
       } else {
         return await this._connectorRuntime.getConfig(params.name);
       }
+    });
+
+    // ============================================
+    // WORKFLOW GROUP - Workflow management tools
+    // ============================================
+
+    this.registerTool('list_workflows', {
+      name: 'list_workflows',
+      description: 'List all saved workflows with their names, descriptions, tool chains, and execution stats. Use this to discover available workflows before executing them.',
+      userDescription: 'List all saved automation workflows',
+      example: 'TOOL:list_workflows{}',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      if (!this._workflowManager) return { error: 'Workflow manager not initialized' };
+      const workflows = await this._workflowManager.getWorkflows();
+      return workflows.map(w => {
+        let tools = [];
+        try {
+          const chain = typeof w.tool_chain === 'string' ? JSON.parse(w.tool_chain) : (w.tool_chain || []);
+          tools = chain.map(s => s.tool);
+        } catch (e) { /* ignore parse errors */ }
+        return {
+          id: w.id,
+          name: w.name,
+          description: w.description,
+          tools,
+          success_count: w.success_count || 0,
+          failure_count: w.failure_count || 0,
+          last_used: w.last_used,
+          created_at: w.created_at
+        };
+      });
+    });
+
+    this.registerTool('execute_workflow', {
+      name: 'execute_workflow',
+      description: 'Execute a saved workflow by its ID. Optionally override parameters for specific tools. The workflow runs each tool in sequence and returns all results.',
+      userDescription: 'Run a saved workflow with optional parameter overrides',
+      example: 'TOOL:execute_workflow{"id":1}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: 'Workflow ID to execute' },
+          param_overrides: {
+            type: 'object',
+            description: 'Optional parameter overrides keyed by tool name, e.g. {"search_web": {"query": "new query"}}',
+            default: {}
+          }
+        },
+        required: ['id']
+      }
+    }, async (params) => {
+      if (!this._workflowManager) return { error: 'Workflow manager not initialized' };
+      return await this._workflowManager.executeWorkflow(params.id, params.param_overrides || {});
+    });
+
+    this.registerTool('create_workflow', {
+      name: 'create_workflow',
+      description: 'Create a new workflow from a name, description, and tool chain. The tool_chain is an array of steps, each with a tool name and its parameters.',
+      userDescription: 'Create a new automation workflow',
+      example: 'TOOL:create_workflow{"name":"System Health Check","description":"Checks memory and disk","tool_chain":[{"tool":"get_memory_usage","params":{}},{"tool":"get_disk_space","params":{}}]}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Workflow name' },
+          description: { type: 'string', description: 'What this workflow does' },
+          tool_chain: {
+            type: 'array',
+            description: 'Array of tool steps: [{"tool": "tool_name", "params": {...}}, ...]',
+            items: {
+              type: 'object',
+              properties: {
+                tool: { type: 'string', description: 'Tool name' },
+                params: { type: 'object', description: 'Tool parameters', default: {} }
+              },
+              required: ['tool']
+            }
+          }
+        },
+        required: ['name', 'tool_chain']
+      }
+    }, async (params) => {
+      if (!this._workflowManager) return { error: 'Workflow manager not initialized' };
+      const result = await this._workflowManager.captureWorkflow(
+        params.name, // use name as trigger
+        params.tool_chain.map(s => ({ tool: s.tool, params: s.params || {} })),
+        params.name
+      );
+      return { success: true, id: result.id, name: params.name, tools: params.tool_chain.map(s => s.tool) };
+    });
+
+    this.registerTool('copy_workflow', {
+      name: 'copy_workflow',
+      description: 'Clone an existing workflow to create a new one based on it. Useful for creating variations of proven workflows.',
+      userDescription: 'Copy/clone a workflow as a starting point for a new one',
+      example: 'TOOL:copy_workflow{"source_id":1,"new_name":"Extended System Check"}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          source_id: { type: 'number', description: 'ID of the workflow to copy' },
+          new_name: { type: 'string', description: 'Name for the copy (defaults to "Original (copy)")' }
+        },
+        required: ['source_id']
+      }
+    }, async (params) => {
+      if (!this._workflowManager) return { error: 'Workflow manager not initialized' };
+      return await this._workflowManager.copyWorkflow(params.source_id, params.new_name);
+    });
+
+    this.registerTool('delete_workflow', {
+      name: 'delete_workflow',
+      description: 'Delete a saved workflow by its ID.',
+      userDescription: 'Delete a saved workflow',
+      example: 'TOOL:delete_workflow{"id":1}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: 'Workflow ID to delete' }
+        },
+        required: ['id']
+      }
+    }, async (params) => {
+      if (!this._workflowManager) return { error: 'Workflow manager not initialized' };
+      await this._workflowManager.deleteWorkflow(params.id);
+      return { success: true, deleted_id: params.id };
     });
 
     // ============================================

@@ -24,7 +24,7 @@ Use memory tools to read/write. On session start, review today's daily memory an
 | 🔴 Unsafe | create_tool, modify_system_prompt, manage_rule |
 | 🔌 Connectors | create_connector, start_connector, stop_connector, list_connectors, connector_config |
 
-**Workflows** — successful multi-tool chains are auto-captured as reusable workflows. You can replay them.
+**Workflows** — reusable multi-tool chains. Tools: `list_workflows`, `execute_workflow`, `create_workflow`, `copy_workflow`, `delete_workflow`. Before multi-tool tasks, check for existing workflows. After successful chains, suggest saving as a workflow. Use `copy_workflow` to create variations. Full reference: `agentin/workflows/workflow.md`.
 
 **Rules** — dynamic behavioral rules in `agentin/prompts/rules/` (YAML frontmatter). Active rules are injected into your context each turn.
 

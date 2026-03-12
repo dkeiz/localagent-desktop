@@ -1,40 +1,164 @@
 /**
- * Workflow Manager
+ * Workflow Manager — File-First Architecture
  * 
- * Captures successful tool chains as reusable workflows.
- * Manages workflow storage, retrieval, and execution.
+ * Workflows live as JSON files in agentin/workflows/*.json (source of truth).
+ * The database logs execution stats (success/failure counts, last_used).
+ * On any read, files are synced to DB. On any write, a file is created first.
  */
+const fs = require('fs');
+const path = require('path');
 
 class WorkflowManager {
     constructor(db, mcpServer) {
         this.db = db;
         this.mcpServer = mcpServer;
+        this.workflowsDir = path.join(process.cwd(), 'agentin', 'workflows');
+        this._ensureDir();
+    }
+
+    _ensureDir() {
+        if (!fs.existsSync(this.workflowsDir)) {
+            fs.mkdirSync(this.workflowsDir, { recursive: true });
+        }
     }
 
     /**
-     * Capture a successful tool chain as a workflow
-     * @param {string} trigger - The user message that triggered this chain
-     * @param {Array} toolChain - Array of tool calls with params and results
-     * @param {string} [name] - Optional workflow name
-     * @returns {Object} Created workflow
+     * Generate a safe filename from a workflow name
+     */
+    _toFilename(name) {
+        return name.toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            + '.json';
+    }
+
+    /**
+     * Scan agentin/workflows/*.json and sync to DB.
+     * - New files → inserted into DB
+     * - Existing files → updated if content changed
+     * - DB entries without files → kept (auto-captured or visual-only workflows)
+     */
+    async syncFromFiles() {
+        const files = fs.readdirSync(this.workflowsDir)
+            .filter(f => f.endsWith('.json'));
+
+        const dbWorkflows = await this.db.getWorkflows();
+        const dbByName = new Map(dbWorkflows.map(w => [w.name, w]));
+
+        let synced = 0;
+
+        for (const file of files) {
+            try {
+                const filePath = path.join(this.workflowsDir, file);
+                const content = fs.readFileSync(filePath, 'utf-8');
+                const wf = JSON.parse(content);
+
+                if (!wf.name || !wf.tool_chain) {
+                    console.log(`[WorkflowManager] Skipping ${file}: missing name or tool_chain`);
+                    continue;
+                }
+
+                const existing = dbByName.get(wf.name);
+
+                if (!existing) {
+                    // New file → insert into DB
+                    await this.db.addWorkflow({
+                        name: wf.name,
+                        description: wf.description || '',
+                        trigger_pattern: wf.trigger_pattern || wf.name.toLowerCase(),
+                        tool_chain: wf.tool_chain,
+                        visual_data: wf.visual_data || null
+                    });
+                    synced++;
+                    console.log(`[WorkflowManager] Synced new workflow from file: ${wf.name}`);
+                } else {
+                    // Existing → check if file content differs from DB
+                    const dbChain = typeof existing.tool_chain === 'string'
+                        ? existing.tool_chain
+                        : JSON.stringify(existing.tool_chain);
+                    const fileChain = JSON.stringify(wf.tool_chain);
+
+                    if (dbChain !== fileChain || existing.description !== (wf.description || '')) {
+                        this.db.run(
+                            'UPDATE workflows SET description = ?, trigger_pattern = ?, tool_chain = ? WHERE id = ?',
+                            [wf.description || '', wf.trigger_pattern || wf.name.toLowerCase(), fileChain, existing.id]
+                        );
+                        console.log(`[WorkflowManager] Updated workflow from file: ${wf.name}`);
+                        synced++;
+                    }
+                }
+            } catch (err) {
+                console.error(`[WorkflowManager] Error reading ${file}:`, err.message);
+            }
+        }
+
+        if (synced > 0) {
+            console.log(`[WorkflowManager] Synced ${synced} workflows from files`);
+        }
+    }
+
+    /**
+     * Write a workflow to a JSON file
+     */
+    _writeFile(workflow) {
+        const filename = this._toFilename(workflow.name);
+        const filePath = path.join(this.workflowsDir, filename);
+        const data = {
+            name: workflow.name,
+            description: workflow.description || '',
+            trigger_pattern: workflow.trigger_pattern || workflow.name.toLowerCase(),
+            tool_chain: Array.isArray(workflow.tool_chain) ? workflow.tool_chain : JSON.parse(workflow.tool_chain)
+        };
+        if (workflow.visual_data) {
+            data.visual_data = typeof workflow.visual_data === 'string'
+                ? JSON.parse(workflow.visual_data)
+                : workflow.visual_data;
+        }
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+        console.log(`[WorkflowManager] Wrote file: ${filename}`);
+        return filePath;
+    }
+
+    /**
+     * Delete the JSON file for a workflow
+     */
+    _deleteFile(name) {
+        const filename = this._toFilename(name);
+        const filePath = path.join(this.workflowsDir, filename);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`[WorkflowManager] Deleted file: ${filename}`);
+        }
+    }
+
+    /**
+     * Get all workflows — syncs from files first, then returns from DB
+     */
+    async getWorkflows() {
+        await this.syncFromFiles();
+        const workflows = await this.db.getWorkflows();
+        return workflows.map(w => ({
+            ...w,
+            tool_chain: typeof w.tool_chain === 'string' ? JSON.parse(w.tool_chain) : w.tool_chain,
+            embedding: w.embedding ? JSON.parse(w.embedding) : null
+        }));
+    }
+
+    /**
+     * Capture a successful tool chain as a workflow (writes file + DB)
      */
     async captureWorkflow(trigger, toolChain, name = null) {
         if (!toolChain || toolChain.length === 0) {
             throw new Error('Cannot capture empty tool chain');
         }
 
-        // Generate a name if not provided
         const workflowName = name || this.generateWorkflowName(toolChain);
-
-        // Extract tool sequence for storage (remove results for cleaner storage)
         const cleanChain = toolChain.map(step => ({
             tool: step.tool,
             params: step.params
         }));
 
-        // Create description from the tools used
         const description = `Workflow using: ${cleanChain.map(s => s.tool).join(' → ')}`;
-
         const workflow = {
             name: workflowName,
             description,
@@ -42,15 +166,14 @@ class WorkflowManager {
             tool_chain: cleanChain
         };
 
+        // Write file first, then DB
+        this._writeFile(workflow);
         console.log(`[WorkflowManager] Capturing workflow: ${workflowName}`);
         return await this.db.addWorkflow(workflow);
     }
 
     /**
      * Execute a saved workflow
-     * @param {number} workflowId - ID of the workflow to execute
-     * @param {Object} [paramOverrides] - Optional parameter overrides for tools
-     * @returns {Object} Execution result
      */
     async executeWorkflow(workflowId, paramOverrides = {}) {
         const workflow = await this.db.getWorkflowById(workflowId);
@@ -58,7 +181,9 @@ class WorkflowManager {
             throw new Error(`Workflow not found: ${workflowId}`);
         }
 
-        const toolChain = JSON.parse(workflow.tool_chain);
+        const toolChain = typeof workflow.tool_chain === 'string'
+            ? JSON.parse(workflow.tool_chain)
+            : workflow.tool_chain;
         const results = [];
         let success = true;
 
@@ -66,56 +191,32 @@ class WorkflowManager {
 
         for (const step of toolChain) {
             try {
-                // Apply any parameter overrides
                 const params = { ...step.params, ...(paramOverrides[step.tool] || {}) };
-
                 const result = await this.mcpServer.executeTool(step.tool, params);
 
-                // Check for permission requirement
                 if (result && result.needsPermission) {
                     success = false;
-                    results.push({
-                        tool: step.tool,
-                        success: false,
-                        needsPermission: true,
-                        error: 'Permission required'
-                    });
+                    results.push({ tool: step.tool, success: false, needsPermission: true, error: 'Permission required' });
                     break;
                 }
 
-                results.push({
-                    tool: step.tool,
-                    success: true,
-                    result
-                });
+                results.push({ tool: step.tool, success: true, result });
             } catch (error) {
                 success = false;
-                results.push({
-                    tool: step.tool,
-                    success: false,
-                    error: error.message
-                });
+                results.push({ tool: step.tool, success: false, error: error.message });
                 break;
             }
         }
 
-        // Update workflow stats
         await this.db.updateWorkflowStats(workflowId, success);
-
-        return {
-            workflow: workflow.name,
-            success,
-            results
-        };
+        return { workflow: workflow.name, success, results };
     }
 
     /**
      * Find workflows matching a user query
-     * @param {string} query - User query to match against
-     * @returns {Array} Matching workflows
      */
     async findMatchingWorkflows(query) {
-        // Simple keyword matching - will be enhanced with vector search in Phase 4
+        await this.syncFromFiles();
         const workflows = await this.db.getWorkflows();
         const queryLower = query.toLowerCase();
 
@@ -128,40 +229,91 @@ class WorkflowManager {
     }
 
     /**
-     * Generate a workflow name from the tool chain
+     * Delete a workflow (removes file + DB entry)
      */
+    async deleteWorkflow(id) {
+        const workflow = await this.db.getWorkflowById(id);
+        if (workflow) {
+            this._deleteFile(workflow.name);
+        }
+        return await this.db.deleteWorkflow(id);
+    }
+
+    /**
+     * Copy/clone a workflow (writes new file + DB entry)
+     */
+    async copyWorkflow(id, newName = null) {
+        const source = await this.db.getWorkflowById(id);
+        if (!source) {
+            throw new Error(`Workflow not found: ${id}`);
+        }
+
+        const toolChain = typeof source.tool_chain === 'string'
+            ? JSON.parse(source.tool_chain)
+            : source.tool_chain;
+
+        const visualData = source.visual_data
+            ? (typeof source.visual_data === 'string' ? JSON.parse(source.visual_data) : source.visual_data)
+            : null;
+
+        const copy = {
+            name: newName || `${source.name} (copy)`,
+            description: source.description,
+            trigger_pattern: source.trigger_pattern,
+            tool_chain: toolChain,
+            visual_data: visualData
+        };
+
+        // Write file first, then DB
+        this._writeFile(copy);
+        console.log(`[WorkflowManager] Copying workflow "${source.name}" → "${copy.name}"`);
+        return await this.db.addWorkflow(copy);
+    }
+
+    /**
+     * Update an existing workflow (updates file + DB)
+     */
+    async updateWorkflow(id, data) {
+        const workflow = await this.db.getWorkflowById(id);
+        if (!workflow) {
+            throw new Error(`Workflow not found: ${id}`);
+        }
+
+        // If name changed, delete old file
+        if (data.name && data.name !== workflow.name) {
+            this._deleteFile(workflow.name);
+        }
+
+        const updates = {};
+        if (data.name !== undefined) updates.name = data.name;
+        if (data.description !== undefined) updates.description = data.description;
+        if (data.trigger_pattern !== undefined) updates.trigger_pattern = data.trigger_pattern;
+        if (data.tool_chain !== undefined) updates.tool_chain = JSON.stringify(data.tool_chain);
+        if (data.visual_data !== undefined) updates.visual_data = JSON.stringify(data.visual_data);
+
+        if (Object.keys(updates).length === 0) return workflow;
+
+        const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+        const values = [...Object.values(updates), id];
+        this.db.run(`UPDATE workflows SET ${setClauses} WHERE id = ?`, values);
+
+        // Write updated file
+        const updated = await this.db.getWorkflowById(id);
+        this._writeFile(updated);
+
+        console.log(`[WorkflowManager] Updated workflow ${id}`);
+        return updated;
+    }
+
     generateWorkflowName(toolChain) {
         const tools = toolChain.map(s => s.tool);
         const timestamp = Date.now();
         return `${tools[0]}_chain_${timestamp}`;
     }
 
-    /**
-     * Extract key patterns from a trigger message
-     */
     extractTriggerPattern(trigger) {
-        // Simple extraction - get first few words as pattern
         const words = trigger.toLowerCase().split(/\s+/).slice(0, 5);
         return words.join(' ');
-    }
-
-    /**
-     * Get all workflows
-     */
-    async getWorkflows() {
-        const workflows = await this.db.getWorkflows();
-        return workflows.map(w => ({
-            ...w,
-            tool_chain: JSON.parse(w.tool_chain),
-            embedding: w.embedding ? JSON.parse(w.embedding) : null
-        }));
-    }
-
-    /**
-     * Delete a workflow
-     */
-    async deleteWorkflow(id) {
-        return await this.db.deleteWorkflow(id);
     }
 }
 

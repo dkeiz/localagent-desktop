@@ -14,6 +14,23 @@ class ToolChainController {
         this.maxChainSteps = 10; // Prevent infinite loops
         this.currentChain = []; // Track current tool chain for workflow learning
         this.stopped = false; // For aborting chains
+        this.workflowManager = null; // Set via setWorkflowManager()
+        this.autoCapture = false; // Toggle via setAutoCapture()
+    }
+
+    /**
+     * Set the workflow manager for auto-capture
+     */
+    setWorkflowManager(wm) {
+        this.workflowManager = wm;
+    }
+
+    /**
+     * Toggle auto-capture of successful tool chains as workflows
+     */
+    setAutoCapture(enabled) {
+        this.autoCapture = enabled;
+        console.log(`[Chain] Auto-capture ${enabled ? 'enabled' : 'disabled'}`);
     }
 
     /**
@@ -241,6 +258,17 @@ Error: ${r.error}`;
             steps: stepCount,
             tools: this.currentChain.map(c => c.tool)
         };
+
+        // Auto-capture successful chains as workflows (2+ unique tools)
+        if (this.autoCapture && this.workflowManager && this.currentChain.length >= 2 && !finalResponse.chainExhausted) {
+            try {
+                const originalMsg = options._originalMessage || message || '';
+                await this.workflowManager.captureWorkflow(originalMsg, this.currentChain);
+                console.log(`[Chain] Auto-captured workflow from ${this.currentChain.length}-step chain`);
+            } catch (err) {
+                console.error('[Chain] Auto-capture failed:', err.message);
+            }
+        }
 
         return finalResponse;
     }

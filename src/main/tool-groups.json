@@ -54,7 +54,7 @@
         },
         "agent": {
             "name": "Agent",
-            "description": "Conversations, rules, calendar, todos",
+            "description": "Conversations, rules, calendar, todos, workflows",
             "icon": "🤖",
             "tools": [
                 "conversation_history",
@@ -69,7 +69,12 @@
                 "todo_create",
                 "todo_list",
                 "todo_complete",
-                "automemory"
+                "automemory",
+                "list_workflows",
+                "execute_workflow",
+                "create_workflow",
+                "copy_workflow",
+                "delete_workflow"
             ],
             "defaultActive": true
         },
