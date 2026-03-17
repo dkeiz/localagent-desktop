@@ -1,3 +1,4 @@
+const axios = require('axios');
 // Remove this line - we'll get ollamaService from main.js
 
 /**
@@ -66,10 +67,10 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     return { success: true };
   });
 
-  ipcMain.handle('llm:get-models', async (event, provider) => {
-    console.log('llm:get-models called with provider:', provider);
+  ipcMain.handle('llm:get-models', async (event, provider, forceRefresh = false) => {
+    console.log('llm:get-models called with provider:', provider, 'forceRefresh:', forceRefresh);
     try {
-      const models = await aiService.getModels(provider.toLowerCase());
+      const models = await aiService.getModels(provider.toLowerCase(), forceRefresh);
       console.log(`Models from ${provider}:`, models);
       return models;
     } catch (error) {
@@ -99,7 +100,18 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       if (config.url) {
         await db.saveSetting(`llm.${config.provider}.url`, config.url);
       }
-      if (config.useOAuth) {
+
+      // Provider-specific mode/auth settings
+      if (config.provider === 'qwen') {
+        const existingMode = await db.getSetting('llm.qwen.mode');
+        const existingUseOAuth = (await db.getSetting('llm.qwen.useOAuth')) === 'true';
+        const mode = config.mode || existingMode || 'cli';
+        const useOAuth = config.useOAuth !== undefined
+          ? config.useOAuth === true
+          : (mode === 'oauth' || existingUseOAuth);
+        await db.saveSetting('llm.qwen.mode', mode);
+        await db.saveSetting('llm.qwen.useOAuth', useOAuth ? 'true' : 'false');
+      } else if (config.useOAuth) {
         await db.saveSetting(`llm.${config.provider}.useOAuth`, 'true');
       }
 
@@ -135,6 +147,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
         const creds = JSON.parse(oauthData);
         console.log('Qwen OAuth file structure:', Object.keys(creds));
         await db.saveSetting('llm.qwen.oauthCreds', JSON.stringify(creds));
+        await db.saveSetting('llm.qwen.useOAuth', 'true');
         return creds;
       }
       throw new Error('Qwen OAuth credentials not found at ~/.qwen/oauth_creds.json');
@@ -153,8 +166,12 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       if (provider) {
         const apiKey = await db.getSetting(`llm.${provider}.apiKey`);
         const url = await db.getSetting(`llm.${provider}.url`);
+        const mode = await db.getSetting(`llm.${provider}.mode`);
+        const useOAuth = await db.getSetting(`llm.${provider}.useOAuth`);
         if (apiKey) config.apiKey = apiKey;
         if (url) config.url = url;
+        if (mode) config.mode = mode;
+        if (useOAuth === 'true') config.useOAuth = true;
       }
 
       return config;

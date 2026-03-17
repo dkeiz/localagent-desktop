@@ -83,13 +83,13 @@ class AIService {
   /**
    * Get models for a specific provider.
    */
-  async getModels(provider = null) {
+  async getModels(provider = null, forceRefresh = false) {
     const targetProvider = provider || this.currentProvider;
     const adapter = this.adapters[targetProvider];
     if (!adapter) return [];
 
     try {
-      return await adapter.getModels();
+      return await adapter.getModels(forceRefresh);
     } catch (error) {
       console.error(`Error fetching models from ${targetProvider}:`, error.message);
       return [];

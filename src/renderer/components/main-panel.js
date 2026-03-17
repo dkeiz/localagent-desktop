@@ -1395,7 +1395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     llmProviderSelect.innerHTML = '<option disabled selected>Select a Provider...</option>';
 
-    const loadModelsForProvider = async (provider) => {
+    const loadModelsForProvider = async (provider, forceRefresh = false) => {
         if (!provider || provider === 'Select a Provider...') {
             llmModelSelect.innerHTML = '<option>Select a provider first</option>';
             return;
@@ -1411,7 +1411,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
 
         try {
-            const models = await window.electronAPI.llm.getModels(provider);
+            const models = await window.electronAPI.llm.getModels(provider, forceRefresh);
             console.log('Models received:', models);
             llmModelSelect.innerHTML = '<option disabled selected>Select a Model...</option>';
             if (models && models.length > 0) {
@@ -1456,6 +1456,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <label style="margin-left: 15px;">
                         <input type="radio" name="qwen-mode" value="api"> Use Qwen API
                     </label>
+                    <label style="margin-left: 15px;">
+                        <input type="radio" name="qwen-mode" value="oauth"> Use Qwen OAuth
+                    </label>
                 </div>
                 <div id="qwen-cli-settings" style="margin-top: 10px;">
                     <p style="font-size: 0.9em; color: #666;">CLI mode will execute "qwen" command with your message</p>
@@ -1466,25 +1469,32 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <button type="button" id="verify-api-key" style="margin-top: 5px;">Verify Key</button>
                     <div id="qwen-api-status" style="margin-top: 5px; font-size: 0.9em;"></div>
                 </div>
+                <div id="qwen-oauth-settings" style="display: none; margin-top: 10px;">
+                    <button type="button" id="qwen-fetch-oauth" style="margin-top: 5px;">Load OAuth Credentials</button>
+                    <div id="qwen-oauth-status" style="margin-top: 5px; font-size: 0.9em;"></div>
+                </div>
             `;
 
             // Add event listeners for radio buttons
             setTimeout(() => {
                 const radios = document.getElementsByName('qwen-mode');
+                const cliSettings = document.getElementById('qwen-cli-settings');
                 const apiSettings = document.getElementById('qwen-api-settings');
                 const oauthSettings = document.getElementById('qwen-oauth-settings');
                 const fetchBtn = document.getElementById('qwen-fetch-oauth');
                 const oauthStatus = document.getElementById('qwen-oauth-status');
+                const applyQwenMode = async (mode, refresh = false) => {
+                    if (cliSettings) cliSettings.style.display = mode === 'cli' ? 'block' : 'none';
+                    if (apiSettings) apiSettings.style.display = mode === 'api' ? 'block' : 'none';
+                    if (oauthSettings) oauthSettings.style.display = mode === 'oauth' ? 'block' : 'none';
+
+                    llmModelSelect.disabled = false;
+                    await loadModelsForProvider('qwen', refresh || mode === 'oauth');
+                };
 
                 radios.forEach(radio => {
-                    radio.addEventListener('change', (e) => {
-                        if (e.target.value === 'oauth') {
-                            oauthSettings.style.display = 'block';
-                            apiSettings.style.display = 'none';
-                        } else {
-                            apiSettings.style.display = 'none';
-                            oauthSettings.style.display = 'block';
-                        }
+                    radio.addEventListener('change', async (e) => {
+                        await applyQwenMode(e.target.value, e.target.value === 'oauth');
                     });
                 });
 
@@ -1498,22 +1508,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 window.mainPanel.showNotification('OAuth credentials loaded!');
 
                                 // Fetch models dynamically
-                                llmModelSelect.innerHTML = '<option>Loading models...</option>';
-                                try {
-                                    const models = await window.electronAPI.llm.getModels('qwen');
-                                    llmModelSelect.innerHTML = '<option disabled selected>Select a Model...</option>';
-                                    if (models && models.length > 0) {
-                                        models.forEach(modelName => {
-                                            const option = document.createElement('option');
-                                            option.value = modelName;
-                                            option.textContent = modelName;
-                                            llmModelSelect.appendChild(option);
-                                        });
-                                        window.mainPanel.showNotification(`Loaded ${models.length} models`);
-                                    }
-                                } catch (err) {
-                                    console.error('Failed to load models:', err);
-                                }
+                                await applyQwenMode('oauth', true);
                             }
                         } catch (error) {
                             oauthStatus.textContent = '✗ Failed to load credentials';
@@ -1527,7 +1522,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const verifyBtn = document.getElementById('verify-api-key');
                 if (verifyBtn) {
                     verifyBtn.addEventListener('click', async () => {
-                        const apiKey = document.getElementById('qwen-key').value;
+                        const apiKey = document.getElementById('qwen-key')?.value;
                         const statusDiv = document.getElementById('qwen-api-status');
 
                         if (!apiKey) {
@@ -1562,6 +1557,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     });
                 }
+
+                // Apply initial mode from config/default
+                const initialMode = document.querySelector('input[name="qwen-mode"]:checked')?.value || 'cli';
+                applyQwenMode(initialMode, initialMode === 'oauth').catch(err => {
+                    console.error('Failed to apply initial Qwen mode:', err);
+                });
             }, 0);
         } else if (provider === 'lmstudio') {
             providerSettingsContainer.innerHTML = `
@@ -1580,20 +1581,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (input) input.value = config.apiKey;
                     } else if (provider === 'qwen') {
                         // Set mode based on saved configuration (default to 'cli')
-                        const mode = config.mode || 'cli';
+                        const mode = config.mode || (config.useOAuth ? 'oauth' : 'cli');
                         const modeRadio = document.querySelector(`input[name="qwen-mode"][value="${mode}"]`);
-                        if (modeRadio) modeRadio.checked = true;
-
-                        // Show appropriate settings
-                        const apiSettings = document.getElementById('qwen-api-settings');
-                        const cliSettings = document.getElementById('qwen-cli-settings');
-                        if (apiSettings) apiSettings.style.display = mode === 'api' ? 'block' : 'none';
-                        if (cliSettings) cliSettings.style.display = mode === 'cli' ? 'block' : 'none';
+                        if (modeRadio) {
+                            modeRadio.checked = true;
+                            modeRadio.dispatchEvent(new Event('change'));
+                        }
 
                         // Set API key if available
                         if (config.apiKey) {
                             const input = document.getElementById('qwen-key');
                             if (input) input.value = config.apiKey;
+                        }
+                        if (config.useOAuth) {
+                            const oauthStatus = document.getElementById('qwen-oauth-status');
+                            if (oauthStatus) {
+                                oauthStatus.textContent = '✓ OAuth credentials configured';
+                                oauthStatus.style.color = '#28a745';
+                            }
+                        }
+                        if (config.model) {
+                            const trySelectModel = () => {
+                                if (Array.from(llmModelSelect.options).some(o => o.value === config.model)) {
+                                    llmModelSelect.value = config.model;
+                                }
+                            };
+                            setTimeout(trySelectModel, 150);
+                            setTimeout(trySelectModel, 500);
                         }
                     } else if (provider === 'lmstudio' && config.url) {
                         const input = document.getElementById('lmstudio-url');
@@ -1610,7 +1624,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const provider = event.target.value;
         console.log('Provider changed to:', provider);
         await updateProviderSettings(provider);
-        if (provider && provider !== 'Select a Provider...') {
+        if (provider && provider !== 'Select a Provider...' && provider !== 'qwen') {
             await loadModelsForProvider(provider);
         }
         // Show/hide custom model section for Ollama
@@ -1696,7 +1710,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         else if (provider === 'qwen') {
             const mode = document.querySelector('input[name="qwen-mode"]:checked')?.value;
-            config.mode = mode;  // Save the mode (cli or api)
+            config.mode = mode;  // Save the mode (cli, api, oauth)
+            config.useOAuth = mode === 'oauth';
 
             if (mode === 'api') {
                 const apiKey = document.getElementById('qwen-key')?.value?.trim();
@@ -1712,8 +1727,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
             }
-            // For CLI mode, model is not required
-            config.model = model;
+            if (mode === 'oauth') {
+                if (!model || model === 'Select a Model...' || model === 'No models found') {
+                    alert('Please load OAuth credentials and select a Qwen model');
+                    return;
+                }
+            }
+
+            // For CLI mode, model is optional; for API/OAuth it should be selected
+            if (model && model !== 'Select a Model...') {
+                config.model = model;
+            }
         }
         else if (provider === 'lmstudio') {
             if (!model || model === 'Select a Model...') {
@@ -1763,7 +1787,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (config && config.provider) {
             llmProviderSelect.value = config.provider;
             await updateProviderSettings(config.provider);
-            await loadModelsForProvider(config.provider);
+            if (config.provider !== 'qwen') {
+                await loadModelsForProvider(config.provider);
+            }
             if (config.model && Array.from(llmModelSelect.options).some(o => o.value === config.model)) {
                 llmModelSelect.value = config.model;
             }
@@ -1818,7 +1844,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const provider = chatProviderSelect.value;
                 const model = chatModelSelect.value;
                 if (provider && model && model !== 'Select a Model...' && model !== 'Select a provider first') {
-                    await window.electronAPI.llm.saveConfig({ provider, model });
+                    const config = { provider, model };
+                    if (provider === 'qwen') {
+                        const qwenMode = document.querySelector('input[name="qwen-mode"]:checked')?.value;
+                        if (qwenMode) {
+                            config.mode = qwenMode;
+                            config.useOAuth = qwenMode === 'oauth';
+                        }
+                    }
+                    await window.electronAPI.llm.saveConfig(config);
                     window.mainPanel.showNotification(`Switched to ${model}`, 'info');
                 }
             };
@@ -1828,7 +1862,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const provider = e.target.value;
                 llmProviderSelect.value = provider;
                 await updateProviderSettings(provider);
-                await loadModelsForProvider(provider);
+                if (provider !== 'qwen') {
+                    await loadModelsForProvider(provider);
+                }
                 syncModelsToChat();
             });
 

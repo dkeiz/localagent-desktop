@@ -42,7 +42,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   togglePromptRule: (id, active) => ipcRenderer.invoke('toggle-prompt-rule', id, active),
   deletePromptRule: (id) => ipcRenderer.invoke('delete-prompt-rule', id),
   llm: {
-    getModels: (provider) => ipcRenderer.invoke('llm:get-models', provider),
+    getModels: (provider, forceRefresh = false) => ipcRenderer.invoke('llm:get-models', provider, forceRefresh),
     saveConfig: (config) => ipcRenderer.invoke('llm:save-config', config),
     getConfig: () => ipcRenderer.invoke('llm:get-config'),
     fetchQwenOAuth: () => ipcRenderer.invoke('llm:fetch-qwen-oauth'),
