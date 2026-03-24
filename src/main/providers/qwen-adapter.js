@@ -43,13 +43,26 @@ class QwenAdapter extends BaseAdapter {
 
         if (!apiKey) throw new Error('Qwen API key not configured');
 
-        // Apply thinking mode
-        const processedMessages = this._applyThinkingMode(messages, options.thinkingMode);
+        const runtimeConfig = options.runtimeConfig || {};
+        const reasoningConfig = runtimeConfig.reasoning || {};
+        const reasoningCaps = options.modelSpec?.capabilities?.reasoning || {};
+        const processedMessages = this._applyThinkingMode(messages, options.thinkingMode, reasoningCaps, mode);
 
         const requestBody = {
             model: options.model || 'qwen-turbo',
             messages: processedMessages
         };
+
+        if (reasoningCaps.parameterMode === 'qwen_enable_thinking' && reasoningCaps.supported) {
+            requestBody.parameters = {
+                result_format: 'message',
+                enable_thinking: reasoningConfig.enabled
+            };
+
+            if (reasoningCaps.maxTokens && reasoningConfig.maxTokens) {
+                requestBody.parameters.thinking_budget = reasoningConfig.maxTokens;
+            }
+        }
 
         try {
             const response = await axios.post(this.baseURL, requestBody, {
@@ -63,10 +76,13 @@ class QwenAdapter extends BaseAdapter {
 
             this._endRequest();
 
+            const normalized = this._extractMessage(response.data);
+
             return this._normalizeResponse({
-                content: response.data.choices[0].message.content,
-                model: response.data.model,
-                usage: response.data.usage
+                content: normalized.content,
+                reasoning: normalized.reasoning,
+                model: response.data.model || response.data.output?.model,
+                usage: response.data.usage || response.data.output?.usage
             });
         } catch (error) {
             this._endRequest();
@@ -85,7 +101,13 @@ class QwenAdapter extends BaseAdapter {
 
     async _callCLI(messages, options) {
         const { exec } = require('child_process');
-        const lastMessage = messages[messages.length - 1].content;
+        const processedMessages = this._applyThinkingMode(
+            messages,
+            options.thinkingMode,
+            options.modelSpec?.capabilities?.reasoning || {},
+            'cli'
+        );
+        const lastMessage = processedMessages[processedMessages.length - 1].content;
         const escapedMessage = String(lastMessage || '').replace(/"/g, '\\"');
         const escapedModel = String(options.model || '').replace(/"/g, '\\"');
         const modelArg = escapedModel && escapedModel !== 'qwen-cli' ? ` --model "${escapedModel}"` : '';
@@ -274,8 +296,10 @@ class QwenAdapter extends BaseAdapter {
     /**
      * Qwen3 natively supports /think and /nothink prefixes.
      */
-    _applyThinkingMode(messages, thinkingMode) {
+    _applyThinkingMode(messages, thinkingMode, reasoningCaps = {}, mode = 'api') {
         if (!thinkingMode || thinkingMode === 'off') return messages;
+        if (!reasoningCaps.supported) return messages;
+        if (reasoningCaps.parameterMode === 'qwen_enable_thinking' && mode !== 'cli') return messages;
 
         const result = [...messages];
         for (let i = result.length - 1; i >= 0; i--) {
@@ -286,6 +310,36 @@ class QwenAdapter extends BaseAdapter {
             }
         }
         return result;
+    }
+
+    _extractMessage(payload = {}) {
+        const directMessage = payload?.choices?.[0]?.message;
+        const outputMessage = payload?.output?.choices?.[0]?.message;
+        const message = directMessage || outputMessage || {};
+
+        const content = this._coerceContent(message.content);
+        const reasoning = this._coerceContent(
+            message.reasoning_content ||
+            message.reasoning ||
+            payload?.output?.reasoning_content
+        );
+
+        return { content, reasoning };
+    }
+
+    _coerceContent(value) {
+        if (typeof value === 'string') return value;
+        if (Array.isArray(value)) {
+            return value
+                .map(part => {
+                    if (typeof part === 'string') return part;
+                    return part?.text || part?.content || '';
+                })
+                .filter(Boolean)
+                .join('\n')
+                .trim();
+        }
+        return '';
     }
 }
 

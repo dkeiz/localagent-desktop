@@ -45,6 +45,8 @@ window.electronAPI = Object.assign(ipcRenderer, {
     getModels: (provider, forceRefresh = false) => ipcRenderer.invoke('llm:get-models', provider, forceRefresh),
     saveConfig: (config) => ipcRenderer.invoke('llm:save-config', config),
     getConfig: () => ipcRenderer.invoke('llm:get-config'),
+    getProviderProfiles: () => ipcRenderer.invoke('llm:get-provider-profiles'),
+    getModelProfile: (provider, model) => ipcRenderer.invoke('llm:get-model-profile', provider, model),
     fetchQwenOAuth: () => ipcRenderer.invoke('llm:fetch-qwen-oauth'),
     testModel: (provider, model) => ipcRenderer.invoke('llm:test-model', { provider, model }),
     setThinkingMode: (mode) => ipcRenderer.invoke('llm:set-thinking-mode', mode),

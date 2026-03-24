@@ -1,0 +1,372 @@
+{
+  "version": 1,
+  "defaults": {
+    "runtime": {
+      "reasoning": {
+        "enabled": false,
+        "visibility": "show",
+        "effort": "medium",
+        "maxTokens": null
+      },
+      "streaming": {
+        "text": false,
+        "reasoning": false
+      },
+      "providerRouting": {
+        "requireParameters": false
+      }
+    },
+    "capabilities": {
+      "reasoning": {
+        "supported": false,
+        "toggle": false,
+        "effortLevels": [],
+        "maxTokens": false,
+        "visibilityModes": [
+          "show",
+          "min",
+          "hide"
+        ],
+        "outputChannel": "none",
+        "parameterMode": "none",
+        "defaultEnabled": false
+      },
+      "streaming": {
+        "text": true,
+        "reasoning": "none"
+      },
+      "providerRouting": {
+        "requireParameters": false
+      }
+    },
+    "notes": []
+  },
+  "providers": {
+    "ollama": {
+      "label": "Ollama",
+      "description": "Local Ollama server with model-specific reasoning behavior.",
+      "settings": {
+        "supportsApiKey": false,
+        "supportsUrl": false,
+        "supportsModes": false,
+        "supportsCustomModel": true
+      },
+      "runtime": {
+        "streaming": {
+          "text": false,
+          "reasoning": false
+        }
+      },
+      "capabilities": {
+        "streaming": {
+          "text": true,
+          "reasoning": "inline"
+        }
+      },
+      "notes": [
+        "Ollama can stream responses, but this app currently renders the final reply after the request completes."
+      ],
+      "models": [
+        {
+          "id": "ollama-qwen-reasoning",
+          "label": "Qwen / QwQ Reasoning",
+          "match": [
+            "qwen3*",
+            "qwen2.5*",
+            "qwen*",
+            "qwq*"
+          ],
+          "runtime": {
+            "reasoning": {
+              "enabled": true
+            }
+          },
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "outputChannel": "inline",
+              "parameterMode": "slash_commands",
+              "defaultEnabled": true
+            }
+          },
+          "notes": [
+            "Uses /think and /nothink prefixes, which matches the existing working behavior in this app."
+          ]
+        },
+        {
+          "id": "ollama-deepseek-reasoning",
+          "label": "DeepSeek Reasoning",
+          "match": [
+            "deepseek-r1*",
+            "deepseek-r1-distill*",
+            "deepseek*"
+          ],
+          "runtime": {
+            "reasoning": {
+              "enabled": true
+            }
+          },
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "outputChannel": "inline",
+              "parameterMode": "slash_commands",
+              "defaultEnabled": true
+            }
+          },
+          "notes": [
+            "Reasoning is treated as inline output for local Ollama models."
+          ]
+        }
+      ]
+    },
+    "lmstudio": {
+      "label": "LM Studio",
+      "description": "OpenAI-compatible local server. Reasoning control depends on the loaded model.",
+      "settings": {
+        "supportsApiKey": false,
+        "supportsUrl": true,
+        "supportsModes": false,
+        "supportsCustomModel": false
+      },
+      "runtime": {
+        "streaming": {
+          "text": false,
+          "reasoning": false
+        }
+      },
+      "capabilities": {
+        "streaming": {
+          "text": true,
+          "reasoning": "inline"
+        }
+      },
+      "notes": [
+        "LM Studio exposes streaming, but this app currently consumes responses as complete messages."
+      ],
+      "models": [
+        {
+          "id": "lmstudio-generic-reasoning",
+          "label": "Generic Local Reasoning",
+          "match": [
+            "qwen*",
+            "qwq*",
+            "deepseek*",
+            "r1*",
+            "gpt-oss*"
+          ],
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "outputChannel": "inline",
+              "parameterMode": "prompt_hint",
+              "defaultEnabled": false
+            }
+          },
+          "notes": [
+            "LM Studio does not expose a unified reasoning parameter, so the app falls back to prompt guidance."
+          ]
+        }
+      ]
+    },
+    "openrouter": {
+      "label": "OpenRouter",
+      "description": "OpenRouter with model-aware reasoning config and provider routing safeguards.",
+      "settings": {
+        "supportsApiKey": true,
+        "supportsUrl": false,
+        "supportsModes": false,
+        "supportsCustomModel": false
+      },
+      "runtime": {
+        "providerRouting": {
+          "requireParameters": true
+        },
+        "streaming": {
+          "text": false,
+          "reasoning": false
+        }
+      },
+      "capabilities": {
+        "streaming": {
+          "text": true,
+          "reasoning": "separate"
+        },
+        "providerRouting": {
+          "requireParameters": true
+        }
+      },
+      "notes": [
+        "OpenRouter can normalize reasoning controls across multiple backend providers.",
+        "Provider routing is configured to require parameter support when reasoning settings are used."
+      ],
+      "models": [
+        {
+          "id": "openrouter-gpt-oss",
+          "label": "GPT OSS",
+          "match": [
+            "openai/gpt-oss-*",
+            "gpt-oss-*"
+          ],
+          "runtime": {
+            "reasoning": {
+              "enabled": true,
+              "effort": "medium"
+            }
+          },
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "effortLevels": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "outputChannel": "separate",
+              "parameterMode": "openrouter_reasoning",
+              "defaultEnabled": true
+            }
+          },
+          "notes": [
+            "Maps to OpenRouter reasoning.effort with GPT OSS-friendly levels."
+          ]
+        },
+        {
+          "id": "openrouter-qwen-thinking",
+          "label": "Qwen Thinking",
+          "match": [
+            "qwen/qwen3.5*",
+            "qwen/qwen3*",
+            "qwen/qwq*",
+            "qwen*"
+          ],
+          "runtime": {
+            "reasoning": {
+              "enabled": true,
+              "maxTokens": 2048
+            }
+          },
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "maxTokens": true,
+              "outputChannel": "separate",
+              "parameterMode": "openrouter_reasoning",
+              "defaultEnabled": true
+            }
+          },
+          "notes": [
+            "OpenRouter maps reasoning.max_tokens to thinking_budget for supported Alibaba Qwen models."
+          ]
+        },
+        {
+          "id": "openrouter-deepseek-reasoning",
+          "label": "DeepSeek Reasoning",
+          "match": [
+            "deepseek/deepseek-r1*",
+            "deepseek-r1*"
+          ],
+          "runtime": {
+            "reasoning": {
+              "enabled": true
+            }
+          },
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "outputChannel": "separate",
+              "parameterMode": "openrouter_reasoning",
+              "defaultEnabled": true
+            }
+          },
+          "notes": [
+            "Reasoning output may be returned separately when the selected OpenRouter backend supports it."
+          ]
+        }
+      ]
+    },
+    "qwen": {
+      "label": "Qwen",
+      "description": "DashScope / Qwen with explicit thinking toggles and token budgets where supported.",
+      "settings": {
+        "supportsApiKey": true,
+        "supportsUrl": false,
+        "supportsModes": true,
+        "supportsCustomModel": false
+      },
+      "runtime": {
+        "streaming": {
+          "text": false,
+          "reasoning": false
+        }
+      },
+      "capabilities": {
+        "streaming": {
+          "text": true,
+          "reasoning": "separate"
+        }
+      },
+      "notes": [
+        "DashScope models can expose reasoning separately from the final answer when enabled."
+      ],
+      "models": [
+        {
+          "id": "qwen-3.5-thinking",
+          "label": "Qwen 3.5 Thinking",
+          "match": [
+            "qwen3.5*"
+          ],
+          "runtime": {
+            "reasoning": {
+              "enabled": true,
+              "maxTokens": 2048
+            }
+          },
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "maxTokens": true,
+              "outputChannel": "separate",
+              "parameterMode": "qwen_enable_thinking",
+              "defaultEnabled": true
+            }
+          },
+          "notes": [
+            "Qwen 3.5 thinking models default to reasoning on and support thinking_budget."
+          ]
+        },
+        {
+          "id": "qwen-hybrid-thinking",
+          "label": "Qwen Hybrid Thinking",
+          "match": [
+            "qwen-plus*",
+            "qwen-max*",
+            "qwen-turbo*",
+            "qwen3*",
+            "qwq*"
+          ],
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "maxTokens": true,
+              "outputChannel": "separate",
+              "parameterMode": "qwen_enable_thinking",
+              "defaultEnabled": false
+            }
+          },
+          "notes": [
+            "Hybrid Qwen models can be switched between normal generation and reasoning mode."
+          ]
+        }
+      ]
+    }
+  }
+}

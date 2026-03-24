@@ -1385,6 +1385,17 @@ class MainPanel {
 document.addEventListener('DOMContentLoaded', async () => {
     window.mainPanel = new MainPanel();
 
+    if (typeof window.initializeApiProviderSettings === 'function') {
+        try {
+            await window.initializeApiProviderSettings(window.mainPanel);
+        } catch (error) {
+            console.error('Failed to initialize API provider settings module:', error);
+        }
+
+        await window.mainPanel.initializeSession();
+        return;
+    }
+
     // Initialize API settings
     const llmProviderSelect = document.getElementById('llm-provider-select');
     const llmModelSelect = document.getElementById('llm-model-select');

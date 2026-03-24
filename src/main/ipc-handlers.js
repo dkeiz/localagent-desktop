@@ -1,4 +1,10 @@
 const axios = require('axios');
+const {
+  SPEC_FILE,
+  getProviderProfiles,
+  getModelRuntimeConfig,
+  saveModelRuntimeConfig
+} = require('./llm-config');
 // Remove this line - we'll get ollamaService from main.js
 
 /**
@@ -40,6 +46,22 @@ function stripToolPatterns(text) {
   }
 
   return result.trim();
+}
+
+function stripReasoningBlocks(text) {
+  return String(text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+function buildAssistantContent(response, runtimeConfig = {}) {
+  const reasoning = String(response?.reasoning || '').trim();
+  const content = String(response?.content || '').trim();
+  const visibility = runtimeConfig?.reasoning?.visibility || 'show';
+
+  if (!reasoning || visibility === 'hide') {
+    return content;
+  }
+
+  return `<think>${reasoning}</think>\n\n${content}`.trim();
 }
 
 module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager) {
@@ -118,6 +140,23 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       // Update AI service provider
       await aiService.setProvider(config.provider);
 
+      let resolvedRuntime = null;
+      if (config.model) {
+        if (config.runtimeConfig) {
+          const savedRuntime = await saveModelRuntimeConfig(db, config.provider, config.model, config.runtimeConfig);
+          resolvedRuntime = savedRuntime.runtime;
+        } else {
+          const currentRuntime = await getModelRuntimeConfig(db, config.provider, config.model);
+          resolvedRuntime = currentRuntime.runtime;
+        }
+      }
+
+      if (resolvedRuntime) {
+        await db.saveSetting('llm.thinkingMode', resolvedRuntime.reasoning?.enabled ? 'think' : 'off');
+        await db.saveSetting('llm.showThinking', resolvedRuntime.reasoning?.visibility === 'hide' ? 'false' : 'true');
+        await db.saveSetting('llm.thinkingVisibility', resolvedRuntime.reasoning?.visibility || 'show');
+      }
+
       // Background refresh models for the provider
       aiService.getModels(config.provider)
         .then(models => {
@@ -128,7 +167,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
         });
 
       console.log('Config saved successfully');
-      return { success: true };
+      return { success: true, runtimeConfig: resolvedRuntime };
     } catch (error) {
       console.error('Failed to save LLM config:', error);
       throw error;
@@ -174,11 +213,37 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
         if (useOAuth === 'true') config.useOAuth = true;
       }
 
+      if (provider && model) {
+        const { spec, runtime } = await getModelRuntimeConfig(db, provider, model);
+        config.runtimeConfig = runtime;
+        config.modelSpec = spec;
+      }
+
       return config;
     } catch (error) {
       console.error('Failed to get LLM config:', error);
       return {};
     }
+  });
+
+  ipcMain.handle('llm:get-provider-profiles', async () => {
+    return {
+      specFile: SPEC_FILE,
+      providers: getProviderProfiles()
+    };
+  });
+
+  ipcMain.handle('llm:get-model-profile', async (event, provider, model) => {
+    if (!provider || !model) {
+      return null;
+    }
+
+    const { spec, runtime } = await getModelRuntimeConfig(db, provider, model);
+    return {
+      specFile: SPEC_FILE,
+      spec,
+      runtimeConfig: runtime
+    };
   });
 
 
@@ -365,7 +430,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
-          ? stripToolPatterns(c.content)
+          ? stripReasoningBlocks(stripToolPatterns(c.content))
           : c.content
       })).filter(c => c.content && c.content.trim().length > 0).reverse();
 
@@ -406,7 +471,12 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       }
 
       // Clean any leftover TOOL: patterns from the final response
-      const cleanContent = stripToolPatterns(response.content);
+      const activeProvider = await db.getSetting('llm.provider');
+      const activeModel = await db.getSetting('llm.model');
+      const { runtime: runtimeConfig } = activeProvider && activeModel
+        ? await getModelRuntimeConfig(db, activeProvider, activeModel)
+        : { runtime: null };
+      const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
       await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
       mainWindow.webContents.send('conversation-update', { sessionId });
       return { ...response, content: cleanContent, sessionId };
@@ -423,14 +493,19 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
-          ? stripToolPatterns(c.content)
+          ? stripReasoningBlocks(stripToolPatterns(c.content))
           : c.content
       })).filter(c => c.content && c.content.trim().length > 0).reverse();
 
       const toolContext = `Tool "${toolName}" was executed with parameters: ${JSON.stringify(params)}\n\nResult: ${JSON.stringify(toolResult, null, 2)}\n\nBased on this tool result, provide a natural, helpful response to the user. Do NOT call any tools.`;
 
       const response = await dispatcher.dispatch(toolContext, conversationHistory, { mode: 'chat', sessionId });
-      const cleanContent = stripToolPatterns(response.content);
+      const activeProvider = await db.getSetting('llm.provider');
+      const activeModel = await db.getSetting('llm.model');
+      const { runtime: runtimeConfig } = activeProvider && activeModel
+        ? await getModelRuntimeConfig(db, activeProvider, activeModel)
+        : { runtime: null };
+      const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
 
       await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
       mainWindow.webContents.send('conversation-update', { sessionId });
@@ -510,18 +585,57 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   // Thinking mode settings
   ipcMain.handle('llm:set-thinking-mode', async (event, mode) => {
-    await db.saveSetting('llm.thinkingMode', mode);
+    const provider = await db.getSetting('llm.provider');
+    const model = await db.getSetting('llm.model');
+
+    if (provider && model) {
+      const profile = await getModelRuntimeConfig(db, provider, model);
+      const runtimeConfig = profile.runtime;
+
+      runtimeConfig.reasoning.enabled = mode === 'think';
+      const saved = await saveModelRuntimeConfig(db, provider, model, runtimeConfig);
+      await db.saveSetting('llm.thinkingMode', saved.runtime.reasoning.enabled ? 'think' : 'off');
+      await db.saveSetting('llm.showThinking', saved.runtime.reasoning.visibility === 'hide' ? 'false' : 'true');
+      await db.saveSetting('llm.thinkingVisibility', saved.runtime.reasoning.visibility || 'show');
+    } else {
+      await db.saveSetting('llm.thinkingMode', mode);
+    }
+
     return { success: true, mode };
   });
 
   ipcMain.handle('llm:get-thinking-mode', async () => {
+    const provider = await db.getSetting('llm.provider');
+    const model = await db.getSetting('llm.model');
+
+    if (provider && model) {
+      const { runtime } = await getModelRuntimeConfig(db, provider, model);
+      return {
+        mode: runtime.reasoning.enabled ? 'think' : 'off',
+        showThinking: runtime.reasoning.visibility !== 'hide',
+        visibility: runtime.reasoning.visibility
+      };
+    }
+
     const mode = await db.getSetting('llm.thinkingMode') || 'off';
     const show = await db.getSetting('llm.showThinking');
-    return { mode, showThinking: show !== 'false' };
+    return { mode, showThinking: show !== 'false', visibility: await db.getSetting('llm.thinkingVisibility') || 'show' };
   });
 
   ipcMain.handle('llm:set-show-thinking', async (event, show) => {
-    await db.saveSetting('llm.showThinking', show ? 'true' : 'false');
+    const provider = await db.getSetting('llm.provider');
+    const model = await db.getSetting('llm.model');
+
+    if (provider && model) {
+      const profile = await getModelRuntimeConfig(db, provider, model);
+      profile.runtime.reasoning.visibility = show ? 'show' : 'hide';
+      const saved = await saveModelRuntimeConfig(db, provider, model, profile.runtime);
+      await db.saveSetting('llm.showThinking', saved.runtime.reasoning.visibility === 'hide' ? 'false' : 'true');
+      await db.saveSetting('llm.thinkingVisibility', saved.runtime.reasoning.visibility || 'show');
+    } else {
+      await db.saveSetting('llm.showThinking', show ? 'true' : 'false');
+    }
+
     return { success: true };
   });
 
@@ -1087,7 +1201,7 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
-          ? stripToolPatterns(c.content)
+          ? stripReasoningBlocks(stripToolPatterns(c.content))
           : c.content
       })).filter(c => c.content && c.content.trim().length > 0).reverse();
 
@@ -1098,7 +1212,12 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
         response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId });
       }
 
-      const cleanContent = stripToolPatterns(response.content);
+      const activeProvider = await db.getSetting('llm.provider');
+      const activeModel = await db.getSetting('llm.model');
+      const { runtime: runtimeConfig } = activeProvider && activeModel
+        ? await getModelRuntimeConfig(db, activeProvider, activeModel)
+        : { runtime: null };
+      const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
       await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
       mainWindow.webContents.send('conversation-update', { sessionId });
 

@@ -21,7 +21,12 @@ class LMStudioAdapter extends BaseAdapter {
         const url = savedURL || this.baseURL;
 
         // Apply thinking mode via system prompt hint
-        const processedMessages = this._applyThinkingMode(messages, options.thinkingMode);
+        const processedMessages = this._applyThinkingMode(
+            messages,
+            options.thinkingMode,
+            options.runtimeConfig || {},
+            options.modelSpec?.capabilities?.reasoning || {}
+        );
 
         const requestBody = {
             model: options.model || '',
@@ -83,13 +88,20 @@ class LMStudioAdapter extends BaseAdapter {
      * LM Studio models with thinking support use <think> tags naturally.
      * We add a system hint to encourage or suppress reasoning.
      */
-    _applyThinkingMode(messages, thinkingMode) {
+    _applyThinkingMode(messages, thinkingMode, runtimeConfig = {}, reasoningCaps = {}) {
         if (!thinkingMode || thinkingMode === 'off') return messages;
+        if (!reasoningCaps.supported) return messages;
 
         const result = [...messages];
-        const hint = thinkingMode === 'think'
-            ? 'Show your reasoning step by step inside <think></think> tags before giving your final answer.'
-            : 'Do not include any reasoning or thinking tags. Give your answer directly.';
+        let hint;
+
+        if (runtimeConfig.reasoning?.visibility === 'hide') {
+            hint = 'Reason internally if needed, but do not expose chain-of-thought or thinking tags in the final answer.';
+        } else {
+            hint = thinkingMode === 'think'
+                ? 'Show your reasoning step by step inside <think></think> tags before giving your final answer.'
+                : 'Do not include any reasoning or thinking tags. Give your answer directly.';
+        }
 
         // Append to system message if exists, or prepend new one
         if (result.length > 0 && result[0].role === 'system') {

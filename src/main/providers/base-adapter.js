@@ -66,9 +66,10 @@ class BaseAdapter {
     /**
      * Normalize response to standard shape.
      */
-    _normalizeResponse({ content, model, usage, stopped = false, context_length }) {
+    _normalizeResponse({ content, reasoning, model, usage, stopped = false, context_length }) {
         const result = {
             content: content || '',
+            reasoning: reasoning || '',
             model: model || this.name,
             usage: {
                 prompt_tokens: usage?.prompt_tokens || 0,

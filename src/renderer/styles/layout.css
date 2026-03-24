@@ -328,6 +328,37 @@
     font-family: inherit;
 }
 
+.config-inline-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.config-inline-row label {
+    margin: 0;
+}
+
+.config-help {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.4;
+}
+
+.config-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.provider-config-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
 /* Right Column - Widgets */
 .widget-panel {
     background-color: var(--sidebar-bg);

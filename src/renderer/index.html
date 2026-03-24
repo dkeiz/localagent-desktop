@@ -347,45 +347,36 @@
                 </div>
 
                 <div class="llm-settings">
-                    <label for="llm-provider-select">Provider</label>
-                    <select id="llm-provider-select"></select>
+                    <div class="provider-config">
+                        <h3>Connection</h3>
 
-                    <label for="llm-model-select">Model</label>
-                    <select id="llm-model-select"></select>
+                        <label for="llm-provider-select">Provider</label>
+                        <select id="llm-provider-select"></select>
 
-                    <!-- Custom model input (shown for Ollama) -->
-                    <div id="custom-model-section" style="display: none; margin-top: 8px;">
-                        <label for="custom-model-input">Custom Model (e.g. deepseek-v3.2:cloud)</label>
-                        <div style="display: flex; gap: 8px;">
-                            <input type="text" id="custom-model-input" placeholder="Type model name..."
-                                style="flex: 1;">
-                            <button id="test-custom-model-btn" type="button" style="white-space: nowrap;">Test
-                                Model</button>
+                        <label for="llm-model-select">Model</label>
+                        <select id="llm-model-select"></select>
+
+                        <!-- Custom model input (shown for Ollama) -->
+                        <div id="custom-model-section" style="display: none; margin-top: 8px;">
+                            <label for="custom-model-input">Custom Model (e.g. deepseek-v3.2:cloud)</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="text" id="custom-model-input" placeholder="Type model name..."
+                                    style="flex: 1;">
+                                <button id="test-custom-model-btn" type="button" style="white-space: nowrap;">Test
+                                    Model</button>
+                            </div>
+                            <div id="custom-model-status" style="margin-top: 4px; font-size: 0.85em;"></div>
                         </div>
-                        <div id="custom-model-status" style="margin-top: 4px; font-size: 0.85em;"></div>
+
+                        <!-- Dynamic provider-specific settings (API keys, etc.) -->
+                        <div id="provider-settings-container"></div>
                     </div>
 
-                    <!-- Dynamic provider-specific settings (API keys, etc.) -->
-                    <div id="provider-settings-container"></div>
-
-                    <!-- Thinking Mode -->
-                    <div style="margin-top: 12px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-                        <label class="think-toggle" title="Enable/disable thinking">
-                            <input type="checkbox" id="thinking-toggle">
-                            <span class="think-slider"></span>
-                            <span style="margin-left: 4px; font-size: 0.85rem;">Think</span>
-                        </label>
-                        <div id="thinking-visibility-group" style="display: none; gap: 8px; align-items: center;">
-                            <label class="radio-pill" title="Show thinking fully expanded">
-                                <input type="radio" name="think-vis" value="show" checked> Show
-                            </label>
-                            <label class="radio-pill" title="Collapsed by default, click to expand">
-                                <input type="radio" name="think-vis" value="min"> Min
-                            </label>
-                            <label class="radio-pill" title="Hide thinking blocks entirely">
-                                <input type="radio" name="think-vis" value="hide"> Hide
-                            </label>
-                        </div>
+                    <div id="llm-model-settings-section" class="provider-config" style="display: none;">
+                        <h3>Model Settings</h3>
+                        <div id="llm-model-capabilities"
+                            style="margin-bottom: 10px; color: #666; font-size: 0.85rem; line-height: 1.4;"></div>
+                        <div id="llm-model-config-container"></div>
                     </div>
 
                     <button id="llm-config-save-button">Save Configuration</button>
@@ -456,6 +447,7 @@
     <script src="components/sidebar.js?v=7"></script>
     <script src="components/command-handler.js?v=1"></script>
     <script src="components/main-panel.js?v=8"></script>
+    <script src="components/api-provider-settings.js?v=1"></script>
     <script src="components/calendar.js?v=7"></script>
     <script src="components/todos.js?v=7"></script>
     <script src="components/agent-picker.js?v=1"></script>

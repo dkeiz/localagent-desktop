@@ -16,9 +16,12 @@ class OpenRouterAdapter extends BaseAdapter {
     async call(messages, options = {}) {
         const signal = this._startRequest();
         const headers = await this._getHeaders();
+        const runtimeConfig = options.runtimeConfig || {};
+        const reasoningConfig = runtimeConfig.reasoning || {};
+        const reasoningCaps = options.modelSpec?.capabilities?.reasoning || {};
 
-        // Apply thinking mode
-        const processedMessages = this._applyThinkingMode(messages, options.thinkingMode);
+        // Apply a prompt hint only for models that do not expose a real reasoning parameter.
+        const processedMessages = this._applyThinkingMode(messages, options.thinkingMode, reasoningCaps);
 
         const requestBody = {
             model: options.model || 'openrouter/auto',
@@ -28,6 +31,27 @@ class OpenRouterAdapter extends BaseAdapter {
             stream: false
         };
 
+        if (reasoningCaps.parameterMode === 'openrouter_reasoning' && reasoningCaps.supported) {
+            requestBody.reasoning = {
+                enabled: reasoningConfig.enabled,
+                exclude: reasoningConfig.visibility === 'hide'
+            };
+
+            if (Array.isArray(reasoningCaps.effortLevels) && reasoningCaps.effortLevels.length > 0 && reasoningConfig.effort) {
+                requestBody.reasoning.effort = reasoningConfig.effort;
+            }
+
+            if (reasoningCaps.maxTokens && reasoningConfig.maxTokens) {
+                requestBody.reasoning.max_tokens = reasoningConfig.maxTokens;
+            }
+        }
+
+        if (runtimeConfig.providerRouting?.requireParameters) {
+            requestBody.provider = {
+                require_parameters: true
+            };
+        }
+
         try {
             const response = await axios.post(`${this.baseURL}/chat/completions`, requestBody, {
                 signal,
@@ -36,8 +60,12 @@ class OpenRouterAdapter extends BaseAdapter {
 
             this._endRequest();
 
+            const message = response.data.choices?.[0]?.message || {};
+            const reasoning = this._extractReasoning(message);
+
             return this._normalizeResponse({
-                content: response.data.choices[0].message.content,
+                content: message.content || '',
+                reasoning,
                 model: response.data.model,
                 usage: response.data.usage
             });
@@ -79,8 +107,9 @@ class OpenRouterAdapter extends BaseAdapter {
      * OpenRouter thinking mode — uses system prompt hints.
      * Some models behind OpenRouter support <think> tags natively.
      */
-    _applyThinkingMode(messages, thinkingMode) {
+    _applyThinkingMode(messages, thinkingMode, reasoningCaps = {}) {
         if (!thinkingMode || thinkingMode === 'off') return messages;
+        if (reasoningCaps.parameterMode === 'openrouter_reasoning') return messages;
 
         const result = [...messages];
         const hint = thinkingMode === 'think'
@@ -93,6 +122,26 @@ class OpenRouterAdapter extends BaseAdapter {
             result.unshift({ role: 'system', content: hint });
         }
         return result;
+    }
+
+    _extractReasoning(message = {}) {
+        if (typeof message.reasoning === 'string' && message.reasoning.trim()) {
+            return message.reasoning.trim();
+        }
+
+        if (typeof message.reasoning_content === 'string' && message.reasoning_content.trim()) {
+            return message.reasoning_content.trim();
+        }
+
+        if (Array.isArray(message.reasoning_details) && message.reasoning_details.length > 0) {
+            return message.reasoning_details
+                .map(detail => detail?.text || detail?.content || detail?.reasoning || '')
+                .filter(Boolean)
+                .join('\n')
+                .trim();
+        }
+
+        return '';
     }
 }
 

@@ -21,7 +21,11 @@ class OllamaAdapter extends BaseAdapter {
         const contextLength = userContextWindow ? parseInt(userContextWindow) : 8192;
 
         // Apply thinking mode if set
-        const processedMessages = this._applyThinkingMode(messages, options.thinkingMode);
+        const processedMessages = this._applyThinkingMode(
+            messages,
+            options.thinkingMode,
+            options.modelSpec?.capabilities?.reasoning || {}
+        );
 
         const requestBody = {
             model: options.model,
@@ -81,8 +85,9 @@ class OllamaAdapter extends BaseAdapter {
      * Apply thinking mode for Qwen3/DeepSeek-style models.
      * Prepends /think or /nothink to the last user message.
      */
-    _applyThinkingMode(messages, thinkingMode) {
+    _applyThinkingMode(messages, thinkingMode, reasoningCaps = {}) {
         if (!thinkingMode || thinkingMode === 'off') return messages;
+        if (!reasoningCaps.supported) return messages;
 
         const result = [...messages];
         // Find last user message and prepend the directive

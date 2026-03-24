@@ -1,4 +1,5 @@
 const path = require('path');
+const { getModelRuntimeConfig } = require('./llm-config');
 
 /**
  * InferenceDispatcher — Central routing layer for all LLM inference calls.
@@ -58,9 +59,22 @@ class InferenceDispatcher {
         }
 
         // Read thinking mode settings
+        if (!options.runtimeConfig && options.model) {
+            const { spec, runtime } = await getModelRuntimeConfig(
+                this.db,
+                this.aiService.getCurrentProvider(),
+                options.model
+            );
+            options.modelSpec = spec;
+            options.runtimeConfig = runtime;
+        }
+
         if (!options.thinkingMode) {
+            if (options.runtimeConfig?.reasoning) {
+                options.thinkingMode = options.runtimeConfig.reasoning.enabled ? 'think' : 'off';
+            }
             const thinkingMode = await this.db.getSetting('llm.thinkingMode');
-            if (thinkingMode && thinkingMode !== 'off') {
+            if (!options.runtimeConfig?.reasoning && thinkingMode && thinkingMode !== 'off') {
                 options.thinkingMode = thinkingMode;
             }
         }
