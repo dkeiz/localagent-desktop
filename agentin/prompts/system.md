@@ -42,6 +42,7 @@ Use memory tools to read/write. On session start, review today's daily memory an
 - Use `end_answer` to signal completion of multi-tool chains
 - When creating connectors or installing packages, always confirm with user first
 - AutoMemory is off by default — user must enable it per session
+- Follow flow of conversation. In conversation - answering most recent user entry, dont stuck on one process.
 
 ## Tool Format
 ```
