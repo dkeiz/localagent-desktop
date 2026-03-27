@@ -1,0 +1,112 @@
+WEB SEARCH PLAN (FREE, NO API KEY)
+
+Goal:
+Replace unreliable instant-answer search behavior with a free search pipeline that can return useful answers with sources.
+
+Constraints:
+- No paid API
+- No subscription
+- Keep existing tools working during rollout
+- Preserve current capability-group model
+
+Approach:
+1. Add a new tool `search_web_bing_rss` using Bing RSS feed.
+2. Keep existing `search_web` for compatibility, put in description that it is duckduckgo instant answer, also implement in prompt or description when tool revield for agent, that if content is return empty, llm should use other tool
+3. Use `fetch_url` on top results to build final answer quality.
+make use fetch_url for full getching abd fetch_url_search_glob to take only neccessary amount of data from fetched content. modify that part to be properly worked in backend and introduced to llm
+when fetched - create artifact - temporary files in proper folder (think about create and introduce to agent into prompt) so that  agent could keep search data inside this fetched website and backend could delete that temporary files later (24hours expiration)
+4. Update prompts/docs to prefer the new tool.
+
+Why Bing RSS:
+- Free and no key
+- Returns broad SERP-style results (title, link, snippet)
+- Easy to parse in Node.js
+- Better coverage than DuckDuckGo Instant Answer for general queries
+
+Tool Spec: `search_web_bing_rss`
+
+Input:
+- `query` (string, required)
+- `max_results` (number, default 8)
+- `fetch_top_n` (number, default 3)
+- `site` (string, optional; appends `site:domain.com` to query)
+
+Output:
+- `query`
+- `backend` = `bing_rss`
+- `answer` (short synthesized summary)
+- `sources` (array of URLs used for answer)
+- `results` (array of `{ title, url, snippet, fetched }`)
+- `errors` (optional non-fatal warnings)
+
+Implementation Steps:
+
+Step 1: Add tool handler in `src/main/mcp-server.js`
+- Register `search_web_rss` in the Web group section.
+- Build feed URL:
+  `https://www.bing.com/search?q=<encoded_query>&format=rss`
+- Fetch RSS with timeout.
+- Parse `<item>` blocks into title/link/description.
+- Normalize text (strip tags, decode entities).
+- Deduplicate by URL.
+- Limit to `max_results`.
+
+Step 2: Optional content enrichment inside same tool
+- For first `fetch_top_n` URLs, fetch page text (same strategy as `fetch_url`).
+- Truncate content to safe size.
+- Mark each result with `fetched: true/false`.
+- Build `answer` from snippets + fetched content.
+
+Step 3: Add tool to capability configs
+- `src/main/tool-classification.json`: add `search_web_rss` to `groups.web.tools`.
+- `src/main/tool-groups.json` (fallback path): add `search_web_rss` to `groups.web.tools`.
+
+Step 4: Prompt and UX updates
+- `src/main/agent-manager.js`: change default agent guidance to prefer `search_web_rss`, then `fetch_url` for deep read.
+- `src/renderer/index.html`: update tooltip text to include `search_web_rss`.
+- `MCP_TOOLS_GUIDE.md`: add usage/examples for `search_web_rss`.
+
+Step 5: Rollout strategy
+- Phase A: Ship `search_web_rss` only, keep old `search_web`.
+- Phase B: Update prompts to prefer `search_web_rss`.
+- Phase C: If stable, make `search_web` call same backend internally or keep as legacy alias.
+
+Error Handling Rules:
+- If RSS request fails: return clear error with status/message.
+- If feed has zero items: return empty results with guidance text.
+- If some URLs fail to fetch: continue with remaining links and include warning in `errors`.
+- Never fail whole tool due to one bad source URL.
+
+Safety and Reliability:
+- Enforce timeout per network request (6-8s).
+- Enforce result caps and content truncation.
+- Return source links for every synthesized answer.
+- Avoid JavaScript execution/parsing complexity in fetched pages (text-only extraction is enough).
+
+Testing Plan:
+
+Query coverage:
+- `latest ai news`
+- `who won nba yesterday`
+- `openai`
+- `site:github.com mcp server node`
+- random/noisy query
+
+Success criteria:
+- Returns non-empty results for general queries.
+- Includes at least 3 sources when available.
+- Produces a concise answer + source list.
+- Degrades gracefully on empty or failing sources.
+
+Future Optional Enhancements:
+- Add secondary fallback backend (DuckDuckGo HTML or another free source).
+- Add relevance scoring before fetch step.
+- Add language/region parameters.
+- Cache recent queries for speed and lower network load.
+
+Done Definition:
+- Tool implemented and registered
+- Configs updated
+- Docs and prompt guidance updated
+- Manual tests pass on all query coverage cases
+- No regression to existing `fetch_url` behavior

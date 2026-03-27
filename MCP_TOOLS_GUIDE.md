@@ -262,7 +262,121 @@ TOOL:todo_complete{"id":1}
 
 ---
 
-### 🔍 Search Tools
+### 🔍 Search & Web Tools
+
+#### search_web_bing
+**Description**: General web search using Bing RSS. Best for news, tutorials, current events, and broad research. Use as your **primary** search tool.
+
+**Parameters**:
+- `query` (string) **[REQUIRED]**: Search query — any topic, question, or keywords
+- `max_results` (number): Maximum results to return - Default: 8
+- `site` (string): Optional domain restriction (e.g. "github.com")
+
+**Example**:
+```
+TOOL:search_web_bing{"query":"latest AI news 2026"}
+TOOL:search_web_bing{"query":"mcp server node","site":"github.com"}
+```
+
+**Output**:
+```json
+{
+  "query": "latest AI news 2026",
+  "backend": "bing_rss",
+  "results": [
+    { "title": "AI Breakthrough...", "url": "https://...", "snippet": "Researchers announced..." }
+  ]
+}
+```
+
+---
+
+#### search_web_insta
+**Description**: Quick factual lookup via DuckDuckGo Instant Answer. Best for definitions, entities, and well-known topics. If results are empty, use `search_web_bing` instead.
+
+**Parameters**:
+- `query` (string) **[REQUIRED]**: Search query — works best with entity names and definitions
+
+**Example**:
+```
+TOOL:search_web_insta{"query":"Python programming language"}
+```
+
+**Output**:
+```json
+{
+  "query": "Python programming language",
+  "abstract": "Python is a high-level, general-purpose programming language...",
+  "abstractSource": "Wikipedia",
+  "relatedTopics": ["Python syntax", "Python libraries"]
+}
+```
+
+---
+
+#### fetch_url
+**Description**: Fetches raw content from a URL (HTML or API response). Output is truncated to 5000 chars, but full content is saved for use by `extract_text` and `search_fetched_text`.
+
+**Parameters**:
+- `url` (string) **[REQUIRED]**: URL to fetch
+- `method` (string): HTTP method (GET, POST, etc.) - Default: "GET"
+
+**Example**:
+```
+TOOL:fetch_url{"url":"https://example.com"}
+```
+
+---
+
+#### extract_text
+**Description**: Converts the last fetched URL content from HTML to clean readable text. Strips scripts, styles, navigation, and all HTML tags. Use after `fetch_url`.
+
+**Parameters**:
+- `max_length` (number): Maximum characters of text to return - Default: 5000
+
+**Example**:
+```
+TOOL:extract_text{"max_length":3000}
+```
+
+**Output**:
+```json
+{
+  "source_url": "https://example.com",
+  "text_length": 2847,
+  "text": "Clean readable text from the page..."
+}
+```
+
+---
+
+#### search_fetched_text
+**Description**: Searches for keywords within the last fetched page content. Returns matching passages with surrounding context. Use after `fetch_url` to find specific info in large pages.
+
+**Parameters**:
+- `query` (string) **[REQUIRED]**: Text or keyword to search for
+- `context_chars` (number): Characters of context around each match - Default: 200
+
+**Example**:
+```
+TOOL:search_fetched_text{"query":"pricing","context_chars":200}
+```
+
+**Output**:
+```json
+{
+  "query": "pricing",
+  "source_url": "https://example.com",
+  "total_matches": 3,
+  "matches": [
+    { "position": 1234, "context": "...surrounding text with pricing info..." }
+  ]
+}
+```
+
+---
+
+### 🔍 Conversation Search Tools
 
 #### search_conversations
 **Description**: Searches past conversations for messages containing specific keywords or phrases

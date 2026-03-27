@@ -78,15 +78,17 @@ class MCPServer extends EventEmitter {
       };
     });
 
-    this.registerTool('search_web', {
-      name: 'search_web',
-      description: 'Search the web using DuckDuckGo instant answer API',
-      userDescription: 'Searches the web and returns summarized results',
-      example: 'TOOL:search_web{"query":"latest news about AI"}',
+    // ── Web Search: Instant Answer (DuckDuckGo) ──
+    this.registerTool('search_web_insta', {
+      name: 'search_web_insta',
+      description: 'Quick factual lookup using DuckDuckGo Instant Answer API. Best for definitions, entity info, and well-known topics (e.g. "Python programming language", "Albert Einstein"). Returns an abstract summary and related topics. If results are empty or say "No direct answer found", use search_web_bing instead for broader results.',
+      userDescription: 'Quick factual search via DuckDuckGo — best for known entities and definitions',
+      example: 'TOOL:search_web_insta{"query":"Python programming language"}',
+      exampleOutput: '{"query":"Python programming language","abstract":"Python is a high-level...","abstractSource":"Wikipedia","relatedTopics":["Python syntax","Python libraries"]}',
       inputSchema: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Search query' }
+          query: { type: 'string', description: 'Search query — works best with entity names, definitions, or well-known topics' }
         },
         required: ['query']
       }
@@ -101,6 +103,95 @@ class MCPServer extends EventEmitter {
         abstractSource: data.AbstractSource || '',
         relatedTopics: (data.RelatedTopics || []).slice(0, 5).map(t => t.Text || t.Name).filter(Boolean)
       };
+    });
+
+    // ── Web Search: Bing RSS (broad results) ──
+    this.registerTool('search_web_bing', {
+      name: 'search_web_bing',
+      description: 'General web search using Bing RSS. Returns titles, URLs, and text snippets for any query. Best for news, tutorials, current events, general questions, and broad research. Use this as your primary search tool. If this fails, try search_web_insta as a fallback for factual/entity queries.',
+      userDescription: 'Broad web search via Bing — works for any query type',
+      example: 'TOOL:search_web_bing{"query":"latest AI news 2026"}',
+      exampleOutput: '{"query":"latest AI news 2026","backend":"bing_rss","results":[{"title":"...","url":"https://...","snippet":"..."}]}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query — any topic, question, or keywords' },
+          max_results: { type: 'number', description: 'Maximum number of results to return', default: 8 },
+          site: { type: 'string', description: 'Optional: restrict results to a domain (e.g. "github.com", "stackoverflow.com")' }
+        },
+        required: ['query']
+      }
+    }, async (params) => {
+      const fetch = require('node-fetch');
+      const AbortController = globalThis.AbortController || require('abort-controller');
+      const maxResults = params.max_results || 8;
+
+      // Build query with optional site restriction
+      let searchQuery = params.query;
+      if (params.site) {
+        searchQuery += ` site:${params.site}`;
+      }
+
+      const feedUrl = `https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}&format=rss`;
+
+      // Fetch with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+
+      try {
+        const response = await fetch(feedUrl, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LocalAgent/1.0)' }
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) {
+          throw new Error(`Bing RSS error: HTTP ${response.status}`);
+        }
+
+        const xml = await response.text();
+
+        // Parse RSS items with regex (no XML dependency needed)
+        const items = [];
+        const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+        let match;
+        while ((match = itemRegex.exec(xml)) !== null) {
+          const itemXml = match[1];
+          const title = (itemXml.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/i) ||
+                         itemXml.match(/<title>(.*?)<\/title>/i) || [])[1] || '';
+          const link = (itemXml.match(/<link>(.*?)<\/link>/i) || [])[1] || '';
+          const desc = (itemXml.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/i) ||
+                        itemXml.match(/<description>(.*?)<\/description>/i) || [])[1] || '';
+
+          // Clean snippet: strip HTML tags, decode common entities
+          const snippet = desc
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&nbsp;/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          if (link && !items.some(i => i.url === link)) {
+            items.push({ title: title.trim(), url: link.trim(), snippet });
+          }
+        }
+
+        return {
+          query: params.query,
+          backend: 'bing_rss',
+          results: items.slice(0, maxResults)
+        };
+      } catch (err) {
+        clearTimeout(timeout);
+        if (err.name === 'AbortError') {
+          return { query: params.query, backend: 'bing_rss', results: [], error: 'Search timed out after 8 seconds' };
+        }
+        throw err;
+      }
     });
 
     // Calendar tools
@@ -809,7 +900,7 @@ ${params.content || ''}`;
           id: { type: 'number', description: 'Workflow ID to execute' },
           param_overrides: {
             type: 'object',
-            description: 'Optional parameter overrides keyed by tool name, e.g. {"search_web": {"query": "new query"}}',
+            description: 'Optional parameter overrides keyed by tool name, e.g. {"search_web_bing": {"query": "new query"}}',
             default: {}
           }
         },
@@ -1006,8 +1097,8 @@ ${params.content || ''}`;
 
     this.registerTool('fetch_url', {
       name: 'fetch_url',
-      description: 'Fetch content from a URL',
-      userDescription: 'Retrieves the content of a web page or API endpoint',
+      description: 'Fetch raw content from a URL. Returns the full HTML or API response (truncated to 5000 chars in output). The full fetched content is also saved to a temp file so you can process it with extract_text or search_fetched_text. Use after search_web_bing or search_web_insta to read a specific page.',
+      userDescription: 'Retrieves the raw content of a web page or API endpoint',
       example: 'TOOL:fetch_url{"url":"https://example.com"}',
       inputSchema: {
         type: 'object',
@@ -1019,8 +1110,24 @@ ${params.content || ''}`;
       }
     }, async (params) => {
       const fetch = require('node-fetch');
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
       const response = await fetch(params.url, { method: params.method || 'GET' });
       const text = await response.text();
+
+      // Persist full content for extract_text / search_fetched_text
+      try {
+        const workDir = this._sessionWorkspace?.getWorkspacePath?.() || os.tmpdir();
+        const lastFetchedPath = path.join(workDir, 'last_fetched.txt');
+        fs.writeFileSync(lastFetchedPath, text, 'utf-8');
+        this._lastFetchedPath = lastFetchedPath;
+        this._lastFetchedUrl = params.url;
+      } catch (e) {
+        // Non-fatal — tool still works without persistence
+        console.error('[fetch_url] Failed to persist fetched content:', e.message);
+      }
+
       return { url: params.url, status: response.status, content: text.substring(0, 5000) };
     });
 
@@ -1056,6 +1163,122 @@ ${params.content || ''}`;
       const buffer = await response.buffer();
       fs.writeFileSync(params.savePath, buffer);
       return { url: params.url, savedTo: params.savePath, size: buffer.length };
+    });
+
+    // ── Web Utilities: Text extraction & search ──
+
+    this.registerTool('extract_text', {
+      name: 'extract_text',
+      description: 'Convert the last fetched URL content from HTML to clean readable text. Strips scripts, styles, navigation, footers, and all HTML tags. Use after fetch_url when you need readable text instead of raw HTML. Returns plain text truncated to max_length.',
+      userDescription: 'Extracts readable text from last fetched page (strips HTML)',
+      example: 'TOOL:extract_text{"max_length":3000}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          max_length: { type: 'number', description: 'Maximum characters of text to return', default: 5000 }
+        }
+      }
+    }, async (params) => {
+      const fs = require('fs');
+      const maxLen = params.max_length || 5000;
+
+      if (!this._lastFetchedPath) {
+        return { error: 'No content available. Use fetch_url first to fetch a page.' };
+      }
+
+      try {
+        const html = fs.readFileSync(this._lastFetchedPath, 'utf-8');
+
+        // Strip non-content blocks, then all tags, normalize whitespace
+        const text = html
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+          .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+          .replace(/<header[\s\S]*?<\/header>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .substring(0, maxLen);
+
+        return {
+          source_url: this._lastFetchedUrl || 'unknown',
+          text_length: text.length,
+          text
+        };
+      } catch (e) {
+        return { error: `Failed to read fetched content: ${e.message}` };
+      }
+    });
+
+    this.registerTool('search_fetched_text', {
+      name: 'search_fetched_text',
+      description: 'Search for keywords within the last fetched or extracted page content. Returns matching passages with surrounding context. Use after fetch_url or extract_text to find specific information in a large page without reading the entire content.',
+      userDescription: 'Search for keywords in last fetched page content',
+      example: 'TOOL:search_fetched_text{"query":"pricing","context_chars":200}',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Text or keyword to search for in the fetched content' },
+          context_chars: { type: 'number', description: 'Number of characters of context to show around each match', default: 200 }
+        },
+        required: ['query']
+      }
+    }, async (params) => {
+      const fs = require('fs');
+      const contextChars = params.context_chars || 200;
+
+      if (!this._lastFetchedPath) {
+        return { error: 'No content available. Use fetch_url first to fetch a page.' };
+      }
+
+      try {
+        let content = fs.readFileSync(this._lastFetchedPath, 'utf-8');
+
+        // Work on plain text version for searching
+        const plainText = content
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        const query = params.query.toLowerCase();
+        const matches = [];
+        let searchFrom = 0;
+
+        while (matches.length < 10) {
+          const idx = plainText.toLowerCase().indexOf(query, searchFrom);
+          if (idx === -1) break;
+
+          const start = Math.max(0, idx - contextChars);
+          const end = Math.min(plainText.length, idx + query.length + contextChars);
+          const context = plainText.substring(start, end);
+
+          matches.push({
+            position: idx,
+            context: (start > 0 ? '...' : '') + context + (end < plainText.length ? '...' : '')
+          });
+
+          searchFrom = idx + query.length;
+        }
+
+        return {
+          query: params.query,
+          source_url: this._lastFetchedUrl || 'unknown',
+          total_matches: matches.length,
+          matches
+        };
+      } catch (e) {
+        return { error: `Failed to search fetched content: ${e.message}` };
+      }
     });
 
     // ============================================

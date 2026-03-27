@@ -48,9 +48,12 @@
       "icon": "🌐",
       "enabled": true,
       "tools": [
-        "search_web",
+        "search_web_bing",
+        "search_web_insta",
         "current_weather",
         "fetch_url",
+        "extract_text",
+        "search_fetched_text",
         "get_public_ip",
         "download_file"
       ]
