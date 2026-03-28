@@ -1,0 +1,444 @@
+const fs = require('fs');
+const path = require('path');
+const ResourceMonitor = require('./resource-monitor');
+
+/**
+ * BackgroundMemoryDaemon — Persistent background agent for memory housekeeping.
+ *
+ * Runs on an escalating tick schedule:
+ *   Tick 1: immediately after cold start
+ *   Tick 2: +15 minutes
+ *   Tick 3: +1 hour
+ *   Tick 4: +4 hours
+ *   Tick 5: +16 hours
+ *   Tick 6+: every 24 hours
+ *
+ * Resource gate: only runs when GPU + VRAM + CPU load < 20%.
+ *
+ * Tasks (LLM-driven selection):
+ *   - Summarize unsummarized closed sessions
+ *   - Update user persona profile
+ *   - Consolidate daily memories
+ *   - Memory health check (hash integrity)
+ *   - Clean stale temp files
+ */
+class BackgroundMemoryDaemon {
+    constructor(dispatcher, agentMemory, db, eventBus) {
+        this.dispatcher = dispatcher;
+        this.agentMemory = agentMemory;
+        this.db = db;
+        this.eventBus = eventBus;
+
+        this.running = false;
+        this._tickTimer = null;
+        this._tickIndex = 0;
+        this._retryTimer = null;
+
+        // Escalating intervals in milliseconds
+        this.TICK_INTERVALS = [
+            0,              // Tick 0: immediate (on start)
+            15 * 60 * 1000, // Tick 1: +15 min
+            60 * 60 * 1000, // Tick 2: +1 hour
+            4 * 60 * 60 * 1000,  // Tick 3: +4 hours
+            16 * 60 * 60 * 1000, // Tick 4: +16 hours
+            24 * 60 * 60 * 1000, // Tick 5+: every 24 hours
+        ];
+
+        // Resource thresholds
+        this.RESOURCE_THRESHOLD = 20; // percentage
+        this.RETRY_DELAY = 5 * 60 * 1000; // 5 min retry if resources busy
+        this._resourceMonitor = new ResourceMonitor(this.RESOURCE_THRESHOLD);
+
+        // Paths
+        this.basePath = path.join(__dirname, '../../agentin/agents/pro/background-daemon');
+        this.statePath = path.join(this.basePath, 'config', 'state.json');
+        this.systemPromptPath = path.join(this.basePath, 'system.md');
+
+        // Listen for chat activity events from EventBus
+        if (this.eventBus) {
+            this.eventBus.on('chat:user-active', () => {
+                this._userActive = true;
+                this._lastUserActivity = Date.now();
+            });
+            this.eventBus.on('chat:user-idle', () => {
+                this._userActive = false;
+            });
+        }
+
+        this._userActive = false;
+        this._lastUserActivity = Date.now();
+    }
+
+    // ==================== Lifecycle ====================
+
+    /**
+     * Start the daemon. Ensures folder structure, loads state, begins ticking.
+     */
+    async start() {
+        if (this.running) {
+            console.log('[MemoryDaemon] Already running');
+            return;
+        }
+
+        this._ensureFolderStructure();
+        this._loadState();
+
+        this.running = true;
+        this._tickIndex = 0;
+
+        console.log('[MemoryDaemon] Started');
+        if (this.eventBus) {
+            this.eventBus.publish('daemon:started', { daemon: 'memory' });
+        }
+
+        // First tick: immediate
+        this._scheduleTick(0);
+    }
+
+    /**
+     * Stop the daemon gracefully.
+     */
+    stop() {
+        this.running = false;
+        if (this._tickTimer) {
+            clearTimeout(this._tickTimer);
+            this._tickTimer = null;
+        }
+        if (this._retryTimer) {
+            clearTimeout(this._retryTimer);
+            this._retryTimer = null;
+        }
+
+        this._saveState();
+        console.log('[MemoryDaemon] Stopped');
+        if (this.eventBus) {
+            this.eventBus.publish('daemon:stopped', { daemon: 'memory' });
+        }
+    }
+
+    /**
+     * Get current daemon status.
+     */
+    getStatus() {
+        const state = this._loadState();
+        return {
+            running: this.running,
+            tickIndex: this._tickIndex,
+            nextTickIn: this._getNextTickDelay(),
+            lastTick: state.lastTickTime,
+            tasksCompleted: state.tasksCompleted || 0,
+            lastTask: state.lastTaskName,
+        };
+    }
+
+    // ==================== Tick Scheduler ====================
+
+    _scheduleTick(delayMs) {
+        if (!this.running) return;
+
+        if (this._tickTimer) clearTimeout(this._tickTimer);
+
+        this._tickTimer = setTimeout(async () => {
+            await this._onTick();
+        }, delayMs);
+    }
+
+    _getNextTickDelay() {
+        const idx = Math.min(this._tickIndex, this.TICK_INTERVALS.length - 1);
+        return this.TICK_INTERVALS[idx];
+    }
+
+    async _onTick() {
+        if (!this.running) return;
+
+        console.log(`[MemoryDaemon] Tick ${this._tickIndex}`);
+        if (this.eventBus) {
+            this.eventBus.publish('daemon:tick', { tickIndex: this._tickIndex });
+        }
+
+        // Check resource gate
+        const resources = await this._checkResources();
+        if (!resources.available) {
+            console.log(`[MemoryDaemon] Resources busy (CPU: ${resources.cpu}%, GPU: ${resources.gpu}%), retrying in 5 min`);
+            this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
+            return;
+        }
+
+        // Check if user is actively chatting
+        if (this._userActive) {
+            console.log('[MemoryDaemon] User is active, deferring tick');
+            this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
+            return;
+        }
+
+        try {
+            await this._executeTick();
+        } catch (err) {
+            console.error('[MemoryDaemon] Tick failed:', err.message);
+            if (this.eventBus) {
+                this.eventBus.publish('daemon:error', { daemon: 'memory', error: err.message });
+            }
+        }
+
+        // Schedule next tick
+        this._tickIndex++;
+        const nextDelay = this._getNextTickDelay();
+        console.log(`[MemoryDaemon] Next tick in ${Math.round(nextDelay / 60000)} minutes`);
+        this._scheduleTick(nextDelay);
+    }
+
+    // ==================== Task Execution ====================
+
+    /**
+     * Execute a tick — ask LLM what needs doing, then do it.
+     */
+    async _executeTick() {
+        // Gather current state for the LLM
+        const stateContext = await this._gatherStateContext();
+        const systemPrompt = this._loadSystemPrompt();
+
+        const taskPrompt = `${systemPrompt}
+
+## Current State
+${stateContext}
+
+## Instructions
+Review the current state above. Decide what task (if any) needs to be done right now.
+
+If no work is needed, respond with exactly: [no work needed]
+
+If work is needed, perform it now using the available information. You can:
+- Write memory summaries for unsummarized sessions
+- Update the user persona based on recent conversations
+- Consolidate verbose daily memories into concise entries
+- Note any issues found during review
+
+After completing the task, end with a brief summary of what you did in the format:
+[task: <task_name>] <summary>`;
+
+        const response = await this.dispatcher.dispatch(taskPrompt, [], {
+            mode: 'internal',
+            includeTools: false,
+            includeRules: false,
+        });
+
+        if (!response || !response.content) return;
+
+        const content = response.content.trim();
+
+        // Check if work was needed
+        if (content.toLowerCase().includes('[no work needed]')) {
+            console.log('[MemoryDaemon] No work needed this tick');
+            if (this.eventBus) {
+                this.eventBus.publish('daemon:idle', { tickIndex: this._tickIndex });
+            }
+            return;
+        }
+
+        // Parse task name from response
+        const taskMatch = content.match(/\[task:\s*([^\]]+)\]/i);
+        const taskName = taskMatch ? taskMatch[1].trim() : 'general-maintenance';
+
+        // Process LLM output — save to memory if it produced content
+        await this._processTaskOutput(taskName, content);
+
+        // Update state
+        const state = this._loadState();
+        state.lastTickTime = new Date().toISOString();
+        state.lastTaskName = taskName;
+        state.tasksCompleted = (state.tasksCompleted || 0) + 1;
+        this._saveStateData(state);
+
+        console.log(`[MemoryDaemon] Task completed: ${taskName}`);
+        if (this.eventBus) {
+            this.eventBus.publish('daemon:task-completed', {
+                daemon: 'memory',
+                task: taskName,
+                summary: content.substring(0, 200),
+            });
+        }
+    }
+
+    /**
+     * Process the LLM's task output — save results to appropriate memory locations.
+     */
+    async _processTaskOutput(taskName, content) {
+        // Strip the task tag from content
+        const cleanContent = content.replace(/\[task:\s*[^\]]+\]/gi, '').trim();
+        if (!cleanContent) return;
+
+        try {
+            if (taskName.includes('summar')) {
+                // Session summaries go to daily memory
+                await this.agentMemory.append('daily', `[Daemon: Session Summary]\n${cleanContent}`);
+            } else if (taskName.includes('persona') || taskName.includes('user')) {
+                // Persona updates go to user about file
+                const userAboutPath = path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
+                const timestamp = new Date().toISOString().split('T')[0];
+                const entry = `\n\n---\n[${timestamp}] Daemon Observation\n${cleanContent}\n`;
+                fs.appendFileSync(userAboutPath, entry);
+            } else if (taskName.includes('consolidat')) {
+                // Consolidated memories go to global
+                await this.agentMemory.append('global', `[Daemon: Daily Consolidation]\n${cleanContent}`, 'daily-consolidation.md');
+            } else {
+                // General daemon notes
+                const compactPath = path.join(this.basePath, 'memory', 'compact.md');
+                const timestamp = new Date().toISOString();
+                const entry = `\n\n---\n[${timestamp}] ${taskName}\n${cleanContent}\n`;
+                fs.appendFileSync(compactPath, entry);
+            }
+        } catch (err) {
+            console.error(`[MemoryDaemon] Failed to save task output:`, err.message);
+        }
+    }
+
+    // ==================== State Context ====================
+
+    /**
+     * Gather context about current application state for the LLM to review.
+     */
+    async _gatherStateContext() {
+        const lines = [];
+
+        try {
+            // Memory stats
+            const stats = this.agentMemory.getStats();
+            lines.push(`**Memory Stats:** daily=${stats.daily || 0} files, global=${stats.global || 0} files, tasks=${stats.tasks || 0} files`);
+
+            // Recent daily memory
+            const dailyResult = await this.agentMemory.read('daily');
+            if (dailyResult.content) {
+                const preview = dailyResult.content.substring(0, 500);
+                lines.push(`**Today's Memory (preview):**\n${preview}`);
+            } else {
+                lines.push('**Today\'s Memory:** Empty — no entries yet today');
+            }
+
+            // User profile
+            const userAboutPath = path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
+            if (fs.existsSync(userAboutPath)) {
+                const userAbout = fs.readFileSync(userAboutPath, 'utf-8').trim();
+                lines.push(`**User Profile:**\n${userAbout.substring(0, 300)}`);
+            }
+
+            // Unsummarized sessions (sessions closed without memory save)
+            const recentSessions = this.db.all(`
+                SELECT cs.id, cs.title, cs.created_at, cs.last_message_at,
+                       COUNT(c.id) as message_count
+                FROM chat_sessions cs
+                LEFT JOIN conversations c ON cs.id = c.session_id
+                WHERE cs.agent_id IS NULL
+                GROUP BY cs.id
+                HAVING message_count >= 4
+                ORDER BY cs.last_message_at DESC
+                LIMIT 10
+            `);
+            lines.push(`**Recent Sessions:** ${recentSessions.length} with 4+ messages`);
+
+            // Daemon's own state
+            const state = this._loadState();
+            lines.push(`**Last Tick:** ${state.lastTickTime || 'never'}`);
+            lines.push(`**Last Task:** ${state.lastTaskName || 'none'}`);
+            lines.push(`**Tasks Completed:** ${state.tasksCompleted || 0}`);
+            lines.push(`**Current Time:** ${new Date().toISOString()}`);
+
+        } catch (err) {
+            lines.push(`**Error gathering state:** ${err.message}`);
+        }
+
+        return lines.join('\n');
+    }
+
+    // ==================== Resource Check ====================
+
+    /**
+     * Check GPU + CPU usage. Returns { available: bool, cpu, gpu }
+     */
+    async _checkResources() {
+        return await this._resourceMonitor.check();
+    }
+
+    // ==================== Folder & State ====================
+
+    _ensureFolderStructure() {
+        const dirs = [
+            this.basePath,
+            path.join(this.basePath, 'memory'),
+            path.join(this.basePath, 'config'),
+        ];
+        for (const dir of dirs) {
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+        }
+
+        // Seed system.md if missing
+        if (!fs.existsSync(this.systemPromptPath)) {
+            fs.writeFileSync(this.systemPromptPath, this._defaultSystemPrompt(), 'utf-8');
+        }
+
+        // Seed state.json if missing
+        if (!fs.existsSync(this.statePath)) {
+            this._saveStateData({
+                lastTickTime: null,
+                lastTaskName: null,
+                tasksCompleted: 0,
+                createdAt: new Date().toISOString(),
+            });
+        }
+    }
+
+    _loadState() {
+        try {
+            if (fs.existsSync(this.statePath)) {
+                return JSON.parse(fs.readFileSync(this.statePath, 'utf-8'));
+            }
+        } catch (e) { /* ignore */ }
+        return { lastTickTime: null, lastTaskName: null, tasksCompleted: 0 };
+    }
+
+    _saveState() {
+        const state = this._loadState();
+        this._saveStateData(state);
+    }
+
+    _saveStateData(state) {
+        try {
+            fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2), 'utf-8');
+        } catch (e) {
+            console.error('[MemoryDaemon] Failed to save state:', e.message);
+        }
+    }
+
+    _loadSystemPrompt() {
+        try {
+            if (fs.existsSync(this.systemPromptPath)) {
+                return fs.readFileSync(this.systemPromptPath, 'utf-8');
+            }
+        } catch (e) { /* ignore */ }
+        return this._defaultSystemPrompt();
+    }
+
+    _defaultSystemPrompt() {
+        return `# Background Memory Daemon
+
+You are the background memory daemon for the LocalAgent desktop app. You run autonomously in the background, maintaining the agent's memory and user profile.
+
+## Your Responsibilities
+1. **Summarize unsummarized sessions** — Find closed chat sessions that haven't been summarized. Create concise summaries (3-5 bullet points) capturing key decisions, discoveries, and action items.
+2. **Update user persona** — Review recent conversations for new information about the user (preferences, habits, projects, goals). Add dated observations to the user profile.
+3. **Consolidate daily memories** — If today's memory is getting long/verbose, consolidate into key points.
+4. **Health check** — Note any anomalies (missing files, inconsistent data).
+
+## Rules
+- Be concise. Summaries should be 3-5 bullet points max.
+- Preserve factual accuracy — don't infer or assume.
+- Date all entries.
+- If nothing needs doing, say [no work needed].
+- After completing a task, respond with [task: task_name] followed by the output.
+- You cannot ask the user questions — they may not be present.
+- Focus on the highest-priority task only (one per tick).`;
+    }
+}
+
+module.exports = BackgroundMemoryDaemon;

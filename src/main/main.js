@@ -17,6 +17,10 @@ const InferenceDispatcher = require('./inference-dispatcher');
 const SessionWorkspace = require('./session-workspace');
 const AgentManager = require('./agent-manager');
 const ollamaService = require('./ollama-service');
+const BackendEventBus = require('./backend-event-bus');
+const BackgroundMemoryDaemon = require('./background-memory-daemon');
+const BackgroundWorkflowScheduler = require('./background-workflow-scheduler');
+const SessionInitManager = require('./session-init-manager');
 
 let mainWindow;
 let db;
@@ -35,6 +39,10 @@ let connectorRuntime;
 let dispatcher;
 let sessionWorkspace;
 let agentManager;
+let eventBus;
+let memoryDaemon;
+let workflowScheduler;
+let sessionInitManager;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -64,6 +72,9 @@ app.whenReady().then(async () => {
     // Initialize services
     db = new Database();
     await db.init();
+
+    // Create Event Bus (foundation for background architecture)
+    eventBus = new BackendEventBus();
 
     // Create Capability Manager for tool permissions
     capabilityManager = new CapabilityManager(db);
@@ -120,10 +131,30 @@ app.whenReady().then(async () => {
     await agentManager.initialize();
     dispatcher.setAgentManager(agentManager);
 
+    // Create Session Init Manager
+    sessionInitManager = new SessionInitManager(db, agentMemory, eventBus);
+
+    // Create Background Memory Daemon (escalating tick schedule)
+    memoryDaemon = new BackgroundMemoryDaemon(dispatcher, agentMemory, db, eventBus);
+
+    // Create Background Workflow Scheduler (15-min fixed tick)
+    workflowScheduler = new BackgroundWorkflowScheduler(workflowManager, db, eventBus);
+
     createWindow();
 
     // Setup IPC handlers (pass all services)
-    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager);
+    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager, eventBus, memoryDaemon, workflowScheduler, sessionInitManager);
+
+    // Late-bind EventBus dependencies (needs mainWindow)
+    eventBus.init({ mainWindow, dispatcher, db });
+
+    // Auto-start background daemons if baseinit was completed
+    const baseinitDone = await db.getSetting('baseinit.completed');
+    const daemonEnabled = await db.getSetting('baseinit.daemonEnabled');
+    if (baseinitDone === 'true' || daemonEnabled === 'true') {
+      memoryDaemon.start().catch(e => console.error('[Main] Memory daemon start failed:', e));
+      workflowScheduler.start().catch(e => console.error('[Main] Workflow scheduler start failed:', e));
+    }
 
     // CLI: --seed <script.js> — run a seed script with live DB after init
     const seedIdx = process.argv.indexOf('--seed');
@@ -161,6 +192,13 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  // Stop background daemons
+  if (memoryDaemon) {
+    memoryDaemon.stop();
+  }
+  if (workflowScheduler) {
+    workflowScheduler.stop();
+  }
   // Save all agent loop sessions on quit
   if (agentLoop) {
     await agentLoop.onAppQuit();

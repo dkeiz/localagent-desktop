@@ -314,6 +314,145 @@ class CommandHandler {
                 }
             }
         });
+
+        // /daemonstart — start background daemons
+        this.commands.set('/daemonstart', {
+            description: 'Start background memory daemon and workflow scheduler',
+            execute: async () => {
+                try {
+                    const memResult = await window.electronAPI.daemon.memoryStart();
+                    const wfResult = await window.electronAPI.daemon.workflowStart();
+                    const lines = ['🔄 **Background Daemons:**'];
+                    lines.push(`  Memory Daemon: ${memResult.success ? '✅ Started' : '❌ ' + (memResult.error || 'Failed')}`);
+                    lines.push(`  Workflow Scheduler: ${wfResult.success ? '✅ Started' : '❌ ' + (wfResult.error || 'Failed')}`);
+                    return { output: lines.join('\n'), style: 'system' };
+                } catch (e) {
+                    return { output: `Daemon start error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /daemonstop — stop background daemons
+        this.commands.set('/daemonstop', {
+            description: 'Stop background memory daemon and workflow scheduler',
+            execute: async () => {
+                try {
+                    await window.electronAPI.daemon.memoryStop();
+                    await window.electronAPI.daemon.workflowStop();
+                    return { output: '⏹ Background daemons stopped.', style: 'system' };
+                } catch (e) {
+                    return { output: `Daemon stop error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /daemonstatus — show daemon status
+        this.commands.set('/daemonstatus', {
+            description: 'Show background daemon status',
+            execute: async () => {
+                try {
+                    const memStatus = await window.electronAPI.daemon.memoryStatus();
+                    const wfStatus = await window.electronAPI.daemon.workflowStatus();
+
+                    const lines = ['📊 **Daemon Status:**', ''];
+                    lines.push('**Memory Daemon:**');
+                    lines.push(`  Running: ${memStatus.running ? '✅ Yes' : '❌ No'}`);
+                    if (memStatus.running) {
+                        lines.push(`  Tick: #${memStatus.tickIndex}`);
+                        lines.push(`  Tasks completed: ${memStatus.tasksCompleted || 0}`);
+                        lines.push(`  Last task: ${memStatus.lastTask || 'none'}`);
+                        if (memStatus.nextTickIn) {
+                            lines.push(`  Next tick in: ${Math.round(memStatus.nextTickIn / 60000)} min`);
+                        }
+                    }
+
+                    lines.push('');
+                    lines.push('**Workflow Scheduler:**');
+                    lines.push(`  Running: ${wfStatus.running ? '✅ Yes' : '❌ No'}`);
+                    if (wfStatus.running) {
+                        lines.push(`  Tick interval: ${wfStatus.tickInterval} min`);
+                        lines.push(`  Scheduled workflows: ${wfStatus.scheduledWorkflows || 0}`);
+                        lines.push(`  Due now: ${wfStatus.dueNow || 0}`);
+                    }
+
+                    return { output: lines.join('\n'), style: 'system' };
+                } catch (e) {
+                    return { output: `Status error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /loopstop — stop the agent loop (existing, separate from daemon)
+        this.commands.set('/loopstop', {
+            description: 'Stop the agent loop (automemory triggers)',
+            execute: async () => {
+                return { output: '⏹ Agent loop automemory paused. Use /daemonstop for background daemons.', style: 'system' };
+            }
+        });
+
+        // /baseinit — first-time setup
+        this.commands.set('/baseinit', {
+            description: 'Run first-time agent setup (model, connectivity, daemons)',
+            execute: async () => {
+                try {
+                    const check = await window.electronAPI.baseinit.check();
+                    const prefix = check.completed
+                        ? '🔄 **Re-running BaseInit** (already completed previously)\n\n'
+                        : '🚀 **First-Time Setup (BaseInit)**\n\n';
+
+                    const result = await window.electronAPI.baseinit.run();
+
+                    if (!result.success) {
+                        return { output: `❌ BaseInit failed: ${result.error}`, style: 'system' };
+                    }
+
+                    const r = result.report;
+                    const lines = [prefix];
+
+                    // Model
+                    lines.push('**Model Configuration:**');
+                    if (r.model.configured) {
+                        lines.push(`  ✅ Provider: ${r.model.provider}, Model: ${r.model.model}`);
+                    } else {
+                        lines.push(`  ⚠️ No model configured — go to Settings to pick one`);
+                    }
+
+                    // Connectivity
+                    lines.push('\n**Connectivity:**');
+                    lines.push(`  Internet: ${r.connectivity.internet ? '✅' : '❌'}`);
+                    if (r.connectivity.providers) {
+                        for (const [prov, ok] of Object.entries(r.connectivity.providers)) {
+                            lines.push(`  ${prov}: ${ok ? '✅' : '❌'}`);
+                        }
+                    }
+
+                    // Capabilities
+                    if (r.capabilities) {
+                        lines.push('\n**Capabilities:**');
+                        const c = r.capabilities;
+                        lines.push(`  Agents: ${c.agents.pro.length} pro, ${c.agents.sub.length} sub`);
+                        lines.push(`  Connectors: ${c.connectors.length}`);
+                        lines.push(`  Workflows: ${c.workflows}`);
+                        lines.push(`  Rules: ${c.rules.active} active / ${c.rules.total} total`);
+                    }
+
+                    // Memory health
+                    if (r.memoryHealth) {
+                        lines.push('\n**Memory Health:**');
+                        lines.push(`  Status: ${r.memoryHealth.ok ? '✅ OK' : '⚠️ Issues found'}`);
+                        if (r.memoryHealth.issues.length > 0) {
+                            r.memoryHealth.issues.forEach(i => lines.push(`  - ${i}`));
+                        }
+                    }
+
+                    lines.push('\n✅ Background daemons started. Agent is ready.');
+
+                    return { output: lines.join('\n'), style: 'system' };
+                } catch (e) {
+                    return { output: `BaseInit error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
     }
 }
 

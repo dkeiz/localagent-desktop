@@ -64,7 +64,7 @@ function buildAssistantContent(response, runtimeConfig = {}) {
   return `<think>${reasoning}</think>\n\n${content}`.trim();
 }
 
-module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager) {
+module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager, eventBus, memoryDaemon, workflowScheduler, sessionInitManager) {
   // Provider model selection handlers — all go through aiService adapters now
   ipcMain.handle('getProviderModels', async (event, provider) => {
     try {
@@ -440,6 +440,16 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       }
       if (mcpServer.setCurrentSessionId) {
         mcpServer.setCurrentSessionId(sessionId || 'default');
+      }
+
+      // Emit user activity event for background daemons
+      if (eventBus) {
+        eventBus.publish('chat:user-active', { sessionId });
+      }
+
+      // Record activity for session init tracking
+      if (sessionInitManager) {
+        sessionInitManager.recordActivity().catch(() => {});
       }
 
       await db.addConversation({ role: 'user', content: message }, sessionId);
@@ -1417,4 +1427,118 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   // Initialize AI service
   aiService.initialize().catch(console.error);
+
+  // ==================== Background Daemon Controls ====================
+
+  ipcMain.handle('daemon:memory-start', async () => {
+    if (!memoryDaemon) return { error: 'Memory daemon not initialized' };
+    await memoryDaemon.start();
+    await db.saveSetting('baseinit.daemonEnabled', 'true');
+    return { success: true };
+  });
+
+  ipcMain.handle('daemon:memory-stop', async () => {
+    if (!memoryDaemon) return { error: 'Memory daemon not initialized' };
+    memoryDaemon.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('daemon:memory-status', async () => {
+    if (!memoryDaemon) return { running: false };
+    return memoryDaemon.getStatus();
+  });
+
+  ipcMain.handle('daemon:workflow-start', async () => {
+    if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
+    await workflowScheduler.start();
+    return { success: true };
+  });
+
+  ipcMain.handle('daemon:workflow-stop', async () => {
+    if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
+    workflowScheduler.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('daemon:workflow-status', async () => {
+    if (!workflowScheduler) return { running: false };
+    return workflowScheduler.getStatus();
+  });
+
+  // Workflow schedule management
+  ipcMain.handle('daemon:add-schedule', async (event, workflowId, intervalMinutes, name) => {
+    if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
+    return workflowScheduler.addSchedule(workflowId, intervalMinutes, name);
+  });
+
+  ipcMain.handle('daemon:remove-schedule', async (event, scheduleId) => {
+    if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
+    return workflowScheduler.removeSchedule(scheduleId);
+  });
+
+  ipcMain.handle('daemon:toggle-schedule', async (event, scheduleId, enabled) => {
+    if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
+    return workflowScheduler.toggleSchedule(scheduleId, enabled);
+  });
+
+  ipcMain.handle('daemon:get-schedules', async () => {
+    if (!workflowScheduler) return [];
+    return workflowScheduler._getAllSchedules();
+  });
+
+  // ==================== Session Init ====================
+
+  ipcMain.handle('session-init:detect', async () => {
+    if (!sessionInitManager) return { isColdStart: false };
+    const daemonRunning = memoryDaemon ? memoryDaemon.running : false;
+    return await sessionInitManager.detectStartType(daemonRunning);
+  });
+
+  ipcMain.handle('session-init:cold-start-prompt', async (event, hoursInactive) => {
+    if (!sessionInitManager) return null;
+    return await sessionInitManager.buildColdStartPrompt(hoursInactive);
+  });
+
+  // ==================== /baseinit ====================
+
+  ipcMain.handle('baseinit:check', async () => {
+    const completed = await db.getSetting('baseinit.completed');
+    return { completed: completed === 'true' };
+  });
+
+  ipcMain.handle('baseinit:run', async () => {
+    if (!sessionInitManager) return { error: 'SessionInitManager not initialized' };
+
+    try {
+      const report = await sessionInitManager.buildBaseInitReport();
+
+      // Start daemons as part of baseinit
+      if (memoryDaemon && !memoryDaemon.running) {
+        await memoryDaemon.start();
+      }
+      if (workflowScheduler && !workflowScheduler.running) {
+        await workflowScheduler.start();
+      }
+
+      // Mark baseinit as complete
+      await db.saveSetting('baseinit.completed', 'true');
+      await db.saveSetting('baseinit.timestamp', new Date().toISOString());
+      await db.saveSetting('baseinit.daemonEnabled', 'true');
+
+      if (eventBus) {
+        eventBus.publish('init:baseinit-complete', { report });
+      }
+
+      return { success: true, report };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ==================== EventBus ====================
+
+  ipcMain.handle('eventbus:get-log', async (event, category, limit) => {
+    if (!eventBus) return [];
+    return eventBus.getLog(category, limit);
+  });
 };

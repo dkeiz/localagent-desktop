@@ -111,4 +111,37 @@ window.electronAPI = Object.assign(ipcRenderer, {
     compact: (id) => ipcRenderer.invoke('compact-agent', id),
   },
   onAgentUpdate: (callback) => ipcRenderer.on('agent-update', callback),
+
+  // Background Daemon API
+  daemon: {
+    memoryStart: () => ipcRenderer.invoke('daemon:memory-start'),
+    memoryStop: () => ipcRenderer.invoke('daemon:memory-stop'),
+    memoryStatus: () => ipcRenderer.invoke('daemon:memory-status'),
+    workflowStart: () => ipcRenderer.invoke('daemon:workflow-start'),
+    workflowStop: () => ipcRenderer.invoke('daemon:workflow-stop'),
+    workflowStatus: () => ipcRenderer.invoke('daemon:workflow-status'),
+    addSchedule: (workflowId, intervalMinutes, name) => ipcRenderer.invoke('daemon:add-schedule', workflowId, intervalMinutes, name),
+    removeSchedule: (scheduleId) => ipcRenderer.invoke('daemon:remove-schedule', scheduleId),
+    toggleSchedule: (scheduleId, enabled) => ipcRenderer.invoke('daemon:toggle-schedule', scheduleId, enabled),
+    getSchedules: () => ipcRenderer.invoke('daemon:get-schedules'),
+  },
+
+  // Session Init API
+  sessionInit: {
+    detect: () => ipcRenderer.invoke('session-init:detect'),
+    getColdStartPrompt: (hoursInactive) => ipcRenderer.invoke('session-init:cold-start-prompt', hoursInactive),
+  },
+
+  // BaseInit API
+  baseinit: {
+    check: () => ipcRenderer.invoke('baseinit:check'),
+    run: () => ipcRenderer.invoke('baseinit:run'),
+  },
+
+  // EventBus API
+  eventBus: {
+    getLog: (category, limit) => ipcRenderer.invoke('eventbus:get-log', category, limit),
+  },
+  onBackgroundEvent: (callback) => ipcRenderer.on('background-event', callback),
+  onBackgroundNotification: (callback) => ipcRenderer.on('background-notification', callback),
 });
