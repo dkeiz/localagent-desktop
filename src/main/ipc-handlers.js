@@ -65,6 +65,48 @@ function buildAssistantContent(response, runtimeConfig = {}) {
 }
 
 module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager, eventBus, memoryDaemon, workflowScheduler, sessionInitManager) {
+  const USER_IDLE_DEBOUNCE_MS = 20 * 1000;
+  let activeUserRequests = 0;
+  let userIdleTimer = null;
+
+  function markUserActive(sessionId = null) {
+    if (!eventBus) return;
+
+    if (userIdleTimer) {
+      clearTimeout(userIdleTimer);
+      userIdleTimer = null;
+    }
+
+    activeUserRequests += 1;
+    if (activeUserRequests === 1) {
+      eventBus.publish('chat:user-active', { sessionId });
+    }
+  }
+
+  function markUserIdle(sessionId = null) {
+    if (!eventBus) return;
+
+    activeUserRequests = Math.max(0, activeUserRequests - 1);
+    if (activeUserRequests > 0) {
+      return;
+    }
+
+    if (userIdleTimer) {
+      clearTimeout(userIdleTimer);
+    }
+
+    userIdleTimer = setTimeout(() => {
+      if (activeUserRequests === 0) {
+        eventBus.publish('chat:user-idle', { sessionId });
+      }
+    }, USER_IDLE_DEBOUNCE_MS);
+  }
+
+  async function syncDaemonEnabledSetting() {
+    const enabled = Boolean((memoryDaemon && memoryDaemon.running) || (workflowScheduler && workflowScheduler.running));
+    await db.saveSetting('baseinit.daemonEnabled', enabled ? 'true' : 'false');
+  }
+
   // Provider model selection handlers — all go through aiService adapters now
   ipcMain.handle('getProviderModels', async (event, provider) => {
     try {
@@ -423,6 +465,9 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   // AI operations - with tool chaining support
   ipcMain.handle('send-message', async (event, message, useChaining = true, sessionId = null) => {
+    const activitySessionId = sessionId || 'default';
+    markUserActive(activitySessionId);
+
     try {
       // Use explicit sessionId for per-chat isolation
       const conversations = await db.getConversations(20, sessionId);
@@ -436,15 +481,10 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
       // Record activity in agent loop and set current session
       if (agentLoop) {
-        agentLoop.recordActivity(sessionId || 'default');
+        agentLoop.recordActivity(activitySessionId);
       }
       if (mcpServer.setCurrentSessionId) {
-        mcpServer.setCurrentSessionId(sessionId || 'default');
-      }
-
-      // Emit user activity event for background daemons
-      if (eventBus) {
-        eventBus.publish('chat:user-active', { sessionId });
+        mcpServer.setCurrentSessionId(activitySessionId);
       }
 
       // Record activity for session init tracking
@@ -493,11 +533,16 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
+    } finally {
+      markUserIdle(activitySessionId);
     }
   });
 
   // Interpret a tool result through the LLM (used by permission flow)
   ipcMain.handle('interpret-tool-result', async (event, toolName, params, toolResult, sessionId = null) => {
+    const activitySessionId = sessionId || 'default';
+    markUserActive(activitySessionId);
+
     try {
       const conversations = await db.getConversations(20, sessionId);
       const conversationHistory = conversations.map(c => ({
@@ -528,6 +573,8 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
         content: `Tool ${toolName} returned: ${JSON.stringify(toolResult, null, 2)}`,
         model: 'fallback'
       };
+    } finally {
+      markUserIdle(activitySessionId);
     }
   });
 
@@ -1186,6 +1233,8 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   ipcMain.handle('handle-file-drop', async (event, filePath, sessionId = null) => {
     const fs = require('fs');
     const path = require('path');
+    const activitySessionId = sessionId || 'default';
+    markUserActive(activitySessionId);
 
     try {
       const fileName = path.basename(filePath);
@@ -1237,6 +1286,8 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
       await db.addConversation({ role: 'system', content: `Error processing file: ${error.message}` }, sessionId);
       mainWindow.webContents.send('conversation-update', { sessionId });
       throw error;
+    } finally {
+      markUserIdle(activitySessionId);
     }
   });
 
@@ -1433,13 +1484,14 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   ipcMain.handle('daemon:memory-start', async () => {
     if (!memoryDaemon) return { error: 'Memory daemon not initialized' };
     await memoryDaemon.start();
-    await db.saveSetting('baseinit.daemonEnabled', 'true');
+    await syncDaemonEnabledSetting();
     return { success: true };
   });
 
   ipcMain.handle('daemon:memory-stop', async () => {
     if (!memoryDaemon) return { error: 'Memory daemon not initialized' };
     memoryDaemon.stop();
+    await syncDaemonEnabledSetting();
     return { success: true };
   });
 
@@ -1451,12 +1503,14 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
   ipcMain.handle('daemon:workflow-start', async () => {
     if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
     await workflowScheduler.start();
+    await syncDaemonEnabledSetting();
     return { success: true };
   });
 
   ipcMain.handle('daemon:workflow-stop', async () => {
     if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
     workflowScheduler.stop();
+    await syncDaemonEnabledSetting();
     return { success: true };
   });
 

@@ -23,6 +23,8 @@ class InferenceDispatcher {
 
         // Simple mutex to prevent concurrent inference calls from racing
         this._lock = null;
+        this._lockMode = null;
+        this._lockPreemptible = false;
     }
 
     setAgentManager(agentManager) {
@@ -46,6 +48,7 @@ class InferenceDispatcher {
      */
     async dispatch(prompt, history = [], options = {}) {
         const mode = options.mode || 'chat';
+        const preemptible = options.preemptible === true;
 
         // Decide what to inject based on mode (callers can override)
         const includeTools = options.includeTools ?? (mode === 'chat');
@@ -90,12 +93,24 @@ class InferenceDispatcher {
             ...(prompt ? [{ role: 'user', content: prompt }] : [])
         ];
 
+        // Foreground chat can preempt low-priority internal/background calls.
+        if (mode === 'chat' && this._lock && this._lockPreemptible) {
+            const stopped = this.aiService.stopGeneration();
+            if (stopped) {
+                console.log(`[Dispatcher] Preempted ${this._lockMode || 'background'} inference for foreground chat`);
+            }
+        }
+
         // Acquire lock — serializes concurrent calls so they don't race
         await this._acquireLock();
         try {
+            this._lockMode = mode;
+            this._lockPreemptible = preemptible;
             console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} historyLen=${history.length}`);
             return await this.aiService.sendMessage(messages, options);
         } finally {
+            this._lockMode = null;
+            this._lockPreemptible = false;
             this._releaseLock();
         }
     }

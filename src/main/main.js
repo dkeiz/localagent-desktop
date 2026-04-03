@@ -151,7 +151,12 @@ app.whenReady().then(async () => {
     // Auto-start background daemons if baseinit was completed
     const baseinitDone = await db.getSetting('baseinit.completed');
     const daemonEnabled = await db.getSetting('baseinit.daemonEnabled');
-    if (baseinitDone === 'true' || daemonEnabled === 'true') {
+    // Backward compatibility:
+    // - If daemonEnabled is explicitly false, respect it.
+    // - If daemonEnabled is missing (older installs) but baseinit is done, auto-start.
+    const shouldAutoStartDaemons =
+      daemonEnabled === 'true' || (baseinitDone === 'true' && daemonEnabled !== 'false');
+    if (shouldAutoStartDaemons) {
       memoryDaemon.start().catch(e => console.error('[Main] Memory daemon start failed:', e));
       workflowScheduler.start().catch(e => console.error('[Main] Workflow scheduler start failed:', e));
     }

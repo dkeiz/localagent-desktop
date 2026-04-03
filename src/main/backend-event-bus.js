@@ -143,7 +143,13 @@ class BackendEventBus extends EventEmitter {
                 mode: 'internal',
                 includeTools: false,
                 includeRules: false,
+                preemptible: true,
             });
+
+            if (response && response.stopped) {
+                console.log(`[EventBus] Inference preempted for ${event.type}`);
+                return;
+            }
 
             if (response && response.content) {
                 const content = response.content.trim();

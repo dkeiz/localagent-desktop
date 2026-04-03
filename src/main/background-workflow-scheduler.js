@@ -20,6 +20,7 @@ class BackgroundWorkflowScheduler {
 
         this.running = false;
         this._tickTimer = null;
+        this._tableEnsured = false;
 
         // Fixed 15-minute tick
         this.TICK_INTERVAL = 15 * 60 * 1000;
@@ -32,6 +33,9 @@ class BackgroundWorkflowScheduler {
             this.eventBus.on('chat:user-active', () => { this._userActive = true; });
             this.eventBus.on('chat:user-idle', () => { this._userActive = false; });
         }
+
+        // Ensure schedule table exists even before daemon start (for IPC schedule CRUD).
+        this._ensureTable();
     }
 
     // ==================== Lifecycle ====================
@@ -67,6 +71,7 @@ class BackgroundWorkflowScheduler {
     }
 
     getStatus() {
+        this._ensureTable();
         const schedules = this._getDueSchedules();
         const allSchedules = this._getAllSchedules();
         return {
@@ -187,6 +192,7 @@ class BackgroundWorkflowScheduler {
      * Add a workflow to the schedule.
      */
     addSchedule(workflowId, intervalMinutes, workflowName = '') {
+        this._ensureTable();
         const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000).toISOString();
         const result = this.db.run(
             `INSERT INTO workflow_schedules (workflow_id, workflow_name, interval_minutes, next_run)
@@ -200,6 +206,7 @@ class BackgroundWorkflowScheduler {
      * Remove a workflow from the schedule.
      */
     removeSchedule(scheduleId) {
+        this._ensureTable();
         this.db.run('DELETE FROM workflow_schedules WHERE id = ?', [scheduleId]);
         return { success: true };
     }
@@ -208,6 +215,7 @@ class BackgroundWorkflowScheduler {
      * Enable/disable a schedule.
      */
     toggleSchedule(scheduleId, enabled) {
+        this._ensureTable();
         this.db.run('UPDATE workflow_schedules SET enabled = ? WHERE id = ?', [enabled ? 1 : 0, scheduleId]);
         return { success: true };
     }
@@ -217,6 +225,7 @@ class BackgroundWorkflowScheduler {
      */
     _getAllSchedules() {
         try {
+            this._ensureTable();
             return this.db.all('SELECT * FROM workflow_schedules ORDER BY next_run');
         } catch (e) {
             return [];
@@ -228,6 +237,7 @@ class BackgroundWorkflowScheduler {
      */
     _getDueSchedules() {
         try {
+            this._ensureTable();
             const now = new Date().toISOString();
             return this.db.all(
                 `SELECT ws.*, w.name as workflow_name
@@ -245,6 +255,8 @@ class BackgroundWorkflowScheduler {
     // ==================== DB Table ====================
 
     _ensureTable() {
+        if (this._tableEnsured) return;
+
         try {
             this.db.db.exec(`CREATE TABLE IF NOT EXISTS workflow_schedules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -257,8 +269,9 @@ class BackgroundWorkflowScheduler {
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (workflow_id) REFERENCES workflows(id)
             )`);
+            this._tableEnsured = true;
         } catch (e) {
-            // Table already exists
+            // Keep trying on future calls if DB was temporarily unavailable.
         }
     }
 

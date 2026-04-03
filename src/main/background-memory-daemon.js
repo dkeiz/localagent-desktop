@@ -220,7 +220,13 @@ After completing the task, end with a brief summary of what you did in the forma
             mode: 'internal',
             includeTools: false,
             includeRules: false,
+            preemptible: true,
         });
+
+        if (response && response.stopped) {
+            console.log('[MemoryDaemon] Tick preempted by foreground activity');
+            return;
+        }
 
         if (!response || !response.content) return;
 
