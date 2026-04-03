@@ -262,6 +262,9 @@ class Sidebar {
                         }
                         try {
                             await window.electronAPI.setToolActive?.(tName, active);
+                            // Ensure UI reflects final persisted state after possible
+                            // capability-update mid-flight reloads.
+                            await this.loadMCPTools();
                         } catch (error) {
                             console.error('Failed to update tool state:', error);
                             e.target.checked = !active;

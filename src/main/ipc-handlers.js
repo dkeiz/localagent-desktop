@@ -823,19 +823,9 @@ module.exports = function setupIpcHandlers(ipcMain, db, aiService, mcpServer, ma
 
   ipcMain.handle('execute-mcp-tool-once', async (event, toolName, params) => {
     try {
-      // Temporarily enable the tool for this execution
-      await mcpServer.setToolActiveState(toolName, true);
-
-      // Execute normally
-      const result = await mcpServer.executeTool(toolName, params);
-
-      // Check DB for permanent state — if user permanently enabled it, keep it enabled
-      const toolStates = await db.getToolStates();
-      const isPermanentlyEnabled = toolStates[toolName]?.active !== false;
-      if (!isPermanentlyEnabled) {
-        // Only revert if not permanently enabled
-        await mcpServer.setToolActiveState(toolName, false);
-      }
+      // Allow-once path bypasses capability/group + per-tool activation checks
+      // for this single execution only.
+      const result = await mcpServer.executeTool(toolName, params, null, { bypassPermissions: true });
 
       return { success: true, result };
     } catch (error) {

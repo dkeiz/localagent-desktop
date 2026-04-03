@@ -114,9 +114,6 @@ class CapabilityManager extends EventEmitter {
                 // Files group uses mode
                 const modeTools = group.modes[group.mode] || [];
                 modeTools.forEach(tool => activeTools.add(tool));
-            } else if (groupId === 'ports') {
-                // Ports group doesn't have regular tools
-                continue;
             } else if (group.enabled && group.tools) {
                 group.tools.forEach(tool => activeTools.add(tool));
             }

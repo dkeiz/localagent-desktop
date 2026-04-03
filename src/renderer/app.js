@@ -1,6 +1,9 @@
 class App {
     constructor() {
-        this.mainPanel = new MainPanel();
+        // MainPanel is bootstrapped in components/main-panel.js.
+        // Reuse the existing instance to avoid duplicate listener registration.
+        this.mainPanel = window.mainPanel || new MainPanel();
+        window.mainPanel = this.mainPanel;
         this.initializeApp();
         this.initializePanelToggles();
         this.initializeToolGroups();

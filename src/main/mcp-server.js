@@ -1776,7 +1776,8 @@ ${params.content || ''}`;
     this.tools.set(name, { definition, handler });
   }
 
-  async executeTool(toolName, params = {}, toolCallId = null) {
+  async executeTool(toolName, params = {}, toolCallId = null, options = {}) {
+    const bypassPermissions = options && options.bypassPermissions === true;
     const tool = this.tools.get(toolName);
     if (!tool) {
       this.emit('tool-executed', { toolName, success: false, error: 'Tool not found' });
@@ -1784,7 +1785,7 @@ ${params.content || ''}`;
     }
 
     // CHECK CAPABILITY MANAGER FIRST (group-level permission — new system)
-    if (this.capabilityManager && !this.capabilityManager.isToolActive(toolName)) {
+    if (!bypassPermissions && this.capabilityManager && !this.capabilityManager.isToolActive(toolName)) {
       const permissionRequest = {
         needsPermission: true,
         toolName,
@@ -1797,7 +1798,7 @@ ${params.content || ''}`;
     }
 
     // LEGACY: per-tool DB activation state (kept for backward compatibility)
-    const isActive = await this.getToolActiveState(toolName);
+    const isActive = bypassPermissions ? true : await this.getToolActiveState(toolName);
     if (!isActive) {
       const permissionRequest = {
         needsPermission: true,
