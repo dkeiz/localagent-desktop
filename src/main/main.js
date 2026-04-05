@@ -22,6 +22,7 @@ const BackgroundMemoryDaemon = require('./background-memory-daemon');
 const BackgroundWorkflowScheduler = require('./background-workflow-scheduler');
 const SessionInitManager = require('./session-init-manager');
 const { runCheckSkins } = require('../../tools/check-skins');
+const { runApplySimulation } = require('../../tools/test-skin-apply');
 
 let mainWindow;
 let db;
@@ -54,17 +55,19 @@ if (!app || typeof app.whenReady !== 'function') {
     console.log('[HeadlessTest] Running in Node fallback mode...');
     const started = Date.now();
     const skinCheck = runCheckSkins();
+    const skinApplySimulation = runApplySimulation();
     const durationMs = Date.now() - started;
     const report = {
       mode: 'test-nowindow-node-fallback',
       durationMs,
       checks: {
-        skins: skinCheck
+        skins: skinCheck,
+        skinApplySimulation
       }
     };
     console.log('[HeadlessTest] Report:');
     console.log(JSON.stringify(report, null, 2));
-    process.exit(skinCheck.ok ? 0 : 1);
+    process.exit(skinCheck.ok && skinApplySimulation.ok ? 0 : 1);
   } else {
     throw new Error('Electron app context is unavailable. Run this entrypoint with Electron for normal app mode.');
   }
@@ -99,17 +102,19 @@ app.whenReady().then(async () => {
       console.log('[HeadlessTest] Starting --test --nowindow checks...');
       const started = Date.now();
       const skinCheck = runCheckSkins();
+      const skinApplySimulation = runApplySimulation();
       const durationMs = Date.now() - started;
       const report = {
         mode: 'test-nowindow',
         durationMs,
         checks: {
-          skins: skinCheck
+          skins: skinCheck,
+          skinApplySimulation
         }
       };
       console.log('[HeadlessTest] Report:');
       console.log(JSON.stringify(report, null, 2));
-      app.exit(skinCheck.ok ? 0 : 1);
+      app.exit(skinCheck.ok && skinApplySimulation.ok ? 0 : 1);
       return;
     }
 

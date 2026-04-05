@@ -10,6 +10,7 @@
     "build": "electron-builder",
     "watch": "nodemon --watch src --ext js,html,css --exec \"npm start\"",
     "check:skins": "node tools/check-skins.js",
+    "test:skins:apply": "node tools/test-skin-apply.js",
     "test:headless": "npm run start:test:nowindow"
   },
   "keywords": [
