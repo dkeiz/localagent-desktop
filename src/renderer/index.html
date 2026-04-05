@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="styles/capability-panel.css?v=1">
     <link rel="stylesheet" href="styles/chat-tabs.css?v=1">
     <link rel="stylesheet" href="styles/commands.css?v=1">
+    <link rel="stylesheet" href="styles/skin-manager.css?v=1">
 </head>
 
 <body>
@@ -192,6 +193,21 @@
                     <button id="delete-all-conversations-btn" class="danger-btn">
                         🗑️ Delete All Conversations
                     </button>
+                </div>
+
+                <div class="settings-group skin-settings-section">
+                    <h3>🎨 Visual Skins (Experimental)</h3>
+                    <p class="settings-description">Enable runtime skins and choose compatible concepts with supported themes.</p>
+                    <label class="skin-feature-toggle">
+                        <input type="checkbox" id="skin-feature-enabled">
+                        Enable skin system
+                    </label>
+                    <div id="skin-picker-status" class="skin-picker-status"></div>
+                    <div id="skin-picker" class="skin-picker"></div>
+                    <div id="skin-theme-options" class="skin-theme-options"></div>
+                    <button id="run-skin-autotest-btn" class="secondary-btn">Run Auto Skin Test</button>
+                    <button id="run-skin-diagnostics-btn" class="secondary-btn">Run Skin Diagnostics</button>
+                    <pre id="skin-diagnostics-output" class="skin-diagnostics-output"></pre>
                 </div>
             </section>
 
@@ -457,6 +473,7 @@
     <script src="components/stats.js?v=7"></script>
     <script src="components/workflow-editor.js?v=1"></script>
     <script src="components/capability-panel.js?v=1"></script>
+    <script src="components/skin-manager.js?v=1"></script>
     <script src="app.js?v=7"></script>
 </body>
 

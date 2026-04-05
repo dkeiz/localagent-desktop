@@ -1,0 +1,188 @@
+.skin-settings-section {
+    gap: 0.6rem;
+}
+
+.skin-feature-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.skin-picker-status {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    min-height: 1rem;
+    border-left: 2px solid var(--border-color);
+    padding-left: 0.45rem;
+}
+
+.skin-picker-status.info {
+    border-left-color: var(--border-color);
+    color: var(--text-secondary);
+}
+
+.skin-picker-status.ok {
+    border-left-color: var(--success);
+    color: var(--success);
+}
+
+.skin-picker-status.warn {
+    border-left-color: var(--warning);
+    color: var(--warning);
+}
+
+.skin-picker-status.error {
+    border-left-color: var(--danger);
+    color: var(--danger);
+}
+
+.skin-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 0.5rem;
+}
+
+.skin-card {
+    appearance: none;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--card-bg);
+    padding: 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.1s ease;
+}
+
+.skin-card:hover {
+    border-color: var(--primary-color);
+}
+
+.skin-card.active {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 1px var(--primary-color);
+}
+
+.skin-card.incompatible {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.skin-preview {
+    height: 38px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    position: relative;
+    overflow: hidden;
+}
+
+.skin-preview::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 30%;
+    height: 100%;
+    background: var(--preview-sidebar, rgba(0, 0, 0, 0.05));
+}
+
+.skin-preview::after {
+    content: "";
+    position: absolute;
+    right: 8%;
+    top: 30%;
+    width: 38%;
+    height: 40%;
+    border-radius: 999px;
+    background: var(--preview-accent, #999);
+    opacity: 0.5;
+}
+
+.skin-card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.skin-name {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.skin-compat {
+    font-size: 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 0.08rem 0.35rem;
+    color: var(--text-secondary);
+}
+
+.skin-compat.ok {
+    border-color: color-mix(in srgb, var(--success), transparent 45%);
+    color: var(--success);
+}
+
+.skin-compat.no {
+    border-color: color-mix(in srgb, var(--danger), transparent 45%);
+    color: var(--danger);
+}
+
+.skin-card-desc {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    line-height: 1.3;
+    min-height: 1.45rem;
+}
+
+.skin-theme-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.skin-theme-pill {
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 0.18rem 0.55rem;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+}
+
+.skin-theme-pill.active {
+    border-color: var(--primary-color);
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--primary-color), transparent 88%);
+}
+
+.skin-theme-pill:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.skin-diagnostics-output {
+    display: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 0.5rem;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    max-height: 170px;
+    overflow: auto;
+    white-space: pre-wrap;
+}
+
+.skin-diagnostics-output.visible {
+    display: block;
+}

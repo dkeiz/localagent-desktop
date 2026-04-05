@@ -1,0 +1,20 @@
+html[data-active-skin="design-ac"][data-theme="dark"] {
+  --skin-theme-id: dark;
+  --main-bg: #020508;
+  --sidebar-bg: #071018;
+  --chat-bg: #030b11;
+  --card-bg: #06141d;
+  --bg-secondary: #081923;
+  --bg-tertiary: #0b2230;
+  --text-primary: #d7fff1;
+  --text-secondary: #8be6c0;
+  --text-muted: #4ea986;
+  --text-color: #d7fff1;
+  --border-color: rgba(0, 255, 128, 0.4);
+  --hover-bg: rgba(0, 255, 128, 0.12);
+  --active-bg: rgba(0, 255, 128, 0.18);
+  --primary-color: #00ff80;
+  --user-msg-bg: rgba(0, 255, 128, 0.18);
+  --user-msg-text: #d7fff1;
+  --input-bg: #02080d;
+}

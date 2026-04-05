@@ -1,0 +1,75 @@
+html[data-active-skin="design-bc"] {
+  --skin-contract-id: design-bc;
+  --border-radius: 0px;
+}
+
+html[data-active-skin="design-bc"] body {
+  font-family: "Consolas", "Space Mono", "Courier New", monospace;
+  letter-spacing: 0.01em;
+  background-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+html[data-active-skin="design-bc"] .sidebar,
+html[data-active-skin="design-bc"] .widget-panel,
+html[data-active-skin="design-bc"] .messages-container,
+html[data-active-skin="design-bc"] .calendar-widget,
+html[data-active-skin="design-bc"] .agent-picker-widget,
+html[data-active-skin="design-bc"] .workflows-widget,
+html[data-active-skin="design-bc"] .settings-group,
+html[data-active-skin="design-bc"] .provider-config {
+  border: 2px solid var(--border-color);
+}
+
+html[data-active-skin="design-bc"] .nav-btn,
+html[data-active-skin="design-bc"] .capability-group-pad,
+html[data-active-skin="design-bc"] .theme-btn,
+html[data-active-skin="design-bc"] .compact-btn,
+html[data-active-skin="design-bc"] .icon-btn,
+html[data-active-skin="design-bc"] .icon-btn-sm,
+html[data-active-skin="design-bc"] .primary-btn,
+html[data-active-skin="design-bc"] .secondary-btn,
+html[data-active-skin="design-bc"] .danger-btn,
+html[data-active-skin="design-bc"] .send-button,
+html[data-active-skin="design-bc"] .stop-button,
+html[data-active-skin="design-bc"] input,
+html[data-active-skin="design-bc"] textarea,
+html[data-active-skin="design-bc"] select {
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  box-shadow: 2px 2px 0 var(--border-color);
+  transition: transform 0.08s ease;
+}
+
+html[data-active-skin="design-bc"] .nav-btn:hover,
+html[data-active-skin="design-bc"] .capability-group-pad:hover,
+html[data-active-skin="design-bc"] .theme-btn:hover,
+html[data-active-skin="design-bc"] .compact-btn:hover,
+html[data-active-skin="design-bc"] .icon-btn:hover,
+html[data-active-skin="design-bc"] .icon-btn-sm:hover,
+html[data-active-skin="design-bc"] .primary-btn:hover,
+html[data-active-skin="design-bc"] .secondary-btn:hover,
+html[data-active-skin="design-bc"] .danger-btn:hover,
+html[data-active-skin="design-bc"] .send-button:hover,
+html[data-active-skin="design-bc"] .stop-button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--border-color);
+}
+
+html[data-active-skin="design-bc"] .nav-btn.active,
+html[data-active-skin="design-bc"] .theme-btn.active,
+html[data-active-skin="design-bc"] .capability-group-pad.active {
+  background: var(--active-bg);
+}
+
+html[data-active-skin="design-bc"] .primary-btn,
+html[data-active-skin="design-bc"] .send-button {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+html[data-active-skin="design-bc"] .message.user,
+html[data-active-skin="design-bc"] .message.assistant,
+html[data-active-skin="design-bc"] .message.system {
+  border: 2px solid var(--border-color);
+}

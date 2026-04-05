@@ -1,0 +1,73 @@
+html[data-active-skin="design-ac"] {
+  --skin-contract-id: design-ac;
+  --border-radius: 2px;
+}
+
+html[data-active-skin="design-ac"] body {
+  font-family: "Consolas", "JetBrains Mono", "Cascadia Mono", monospace;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  background-image:
+    linear-gradient(rgba(0, 255, 128, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at center, rgba(0, 255, 128, 0.06), transparent 56%);
+  background-size: 100% 4px, 100% 100%;
+}
+
+html[data-active-skin="design-ac"] .sidebar,
+html[data-active-skin="design-ac"] .widget-panel,
+html[data-active-skin="design-ac"] .messages-container,
+html[data-active-skin="design-ac"] .settings-group,
+html[data-active-skin="design-ac"] .provider-config,
+html[data-active-skin="design-ac"] .calendar-widget,
+html[data-active-skin="design-ac"] .agent-picker-widget,
+html[data-active-skin="design-ac"] .workflows-widget {
+  border: 1px solid var(--border-color);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-color), transparent 80%);
+}
+
+html[data-active-skin="design-ac"] h1,
+html[data-active-skin="design-ac"] h2,
+html[data-active-skin="design-ac"] h3,
+html[data-active-skin="design-ac"] h4 {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+html[data-active-skin="design-ac"] .nav-btn,
+html[data-active-skin="design-ac"] .capability-group-pad,
+html[data-active-skin="design-ac"] .theme-btn,
+html[data-active-skin="design-ac"] .compact-btn,
+html[data-active-skin="design-ac"] .icon-btn,
+html[data-active-skin="design-ac"] .icon-btn-sm,
+html[data-active-skin="design-ac"] .primary-btn,
+html[data-active-skin="design-ac"] .secondary-btn,
+html[data-active-skin="design-ac"] .danger-btn,
+html[data-active-skin="design-ac"] .send-button,
+html[data-active-skin="design-ac"] .stop-button,
+html[data-active-skin="design-ac"] input,
+html[data-active-skin="design-ac"] textarea,
+html[data-active-skin="design-ac"] select {
+  border-radius: 1px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--border-color);
+}
+
+html[data-active-skin="design-ac"] .nav-btn.active,
+html[data-active-skin="design-ac"] .capability-group-pad.active,
+html[data-active-skin="design-ac"] .theme-btn.active {
+  background: color-mix(in srgb, var(--primary-color), transparent 86%);
+  box-shadow: inset 2px 0 0 var(--primary-color);
+}
+
+html[data-active-skin="design-ac"] .primary-btn,
+html[data-active-skin="design-ac"] .send-button {
+  background: color-mix(in srgb, var(--primary-color), transparent 84%);
+  color: var(--text-primary);
+}
+
+html[data-active-skin="design-ac"] .message.assistant,
+html[data-active-skin="design-ac"] .message.system,
+html[data-active-skin="design-ac"] .message.user {
+  border: 1px solid var(--border-color);
+}

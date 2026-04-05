@@ -1,0 +1,19 @@
+{
+  "requiredIds": [
+    "left-sidebar",
+    "right-panel",
+    "chat-tab",
+    "settings-tab",
+    "mcp-tab",
+    "workflows-tab",
+    "llm-tab",
+    "api-tab",
+    "tools-tab",
+    "messages-container",
+    "message-input",
+    "send-btn",
+    "stop-btn",
+    "theme-picker",
+    "skin-picker"
+  ]
+}

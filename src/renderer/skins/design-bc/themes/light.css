@@ -1,0 +1,20 @@
+html[data-active-skin="design-bc"][data-theme="light"] {
+  --skin-theme-id: light;
+  --main-bg: #ececec;
+  --sidebar-bg: #ffffff;
+  --chat-bg: #fbfbfb;
+  --card-bg: #ffffff;
+  --bg-secondary: #efefef;
+  --bg-tertiary: #e4e4e4;
+  --text-primary: #111111;
+  --text-secondary: #3f3f3f;
+  --text-muted: #666666;
+  --text-color: #111111;
+  --border-color: #111111;
+  --hover-bg: #e2e2e2;
+  --active-bg: #d9d9d9;
+  --primary-color: #1d4ed8;
+  --user-msg-bg: #1d4ed8;
+  --user-msg-text: #ffffff;
+  --input-bg: #ffffff;
+}

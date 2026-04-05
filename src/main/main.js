@@ -21,6 +21,7 @@ const BackendEventBus = require('./backend-event-bus');
 const BackgroundMemoryDaemon = require('./background-memory-daemon');
 const BackgroundWorkflowScheduler = require('./background-workflow-scheduler');
 const SessionInitManager = require('./session-init-manager');
+const { runCheckSkins } = require('../../tools/check-skins');
 
 let mainWindow;
 let db;
@@ -43,6 +44,31 @@ let eventBus;
 let memoryDaemon;
 let workflowScheduler;
 let sessionInitManager;
+
+const args = process.argv.slice(1);
+const isTestMode = args.includes('--test');
+const isNoWindowMode = args.includes('--nowindow');
+
+if (!app || typeof app.whenReady !== 'function') {
+  if (isTestMode && isNoWindowMode) {
+    console.log('[HeadlessTest] Running in Node fallback mode...');
+    const started = Date.now();
+    const skinCheck = runCheckSkins();
+    const durationMs = Date.now() - started;
+    const report = {
+      mode: 'test-nowindow-node-fallback',
+      durationMs,
+      checks: {
+        skins: skinCheck
+      }
+    };
+    console.log('[HeadlessTest] Report:');
+    console.log(JSON.stringify(report, null, 2));
+    process.exit(skinCheck.ok ? 0 : 1);
+  } else {
+    throw new Error('Electron app context is unavailable. Run this entrypoint with Electron for normal app mode.');
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -69,6 +95,24 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    if (isTestMode && isNoWindowMode) {
+      console.log('[HeadlessTest] Starting --test --nowindow checks...');
+      const started = Date.now();
+      const skinCheck = runCheckSkins();
+      const durationMs = Date.now() - started;
+      const report = {
+        mode: 'test-nowindow',
+        durationMs,
+        checks: {
+          skins: skinCheck
+        }
+      };
+      console.log('[HeadlessTest] Report:');
+      console.log(JSON.stringify(report, null, 2));
+      app.exit(skinCheck.ok ? 0 : 1);
+      return;
+    }
+
     // Initialize services
     db = new Database();
     await db.init();

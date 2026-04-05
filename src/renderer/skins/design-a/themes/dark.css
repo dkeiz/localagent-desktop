@@ -1,0 +1,20 @@
+html[data-active-skin="design-a"][data-theme="dark"] {
+  --skin-theme-id: dark;
+  --main-bg: #090a12;
+  --sidebar-bg: rgba(20, 21, 30, 0.86);
+  --chat-bg: rgba(12, 14, 24, 0.86);
+  --card-bg: rgba(28, 30, 41, 0.78);
+  --bg-secondary: rgba(33, 35, 48, 0.78);
+  --bg-tertiary: rgba(42, 44, 59, 0.82);
+  --text-primary: #eceef8;
+  --text-secondary: #b9bfd8;
+  --text-muted: #8a93b4;
+  --text-color: #eceef8;
+  --border-color: rgba(126, 138, 186, 0.32);
+  --hover-bg: rgba(123, 132, 176, 0.2);
+  --active-bg: rgba(120, 95, 245, 0.24);
+  --primary-color: #8b5cf6;
+  --user-msg-bg: #8b5cf6;
+  --user-msg-text: #ffffff;
+  --input-bg: rgba(17, 19, 31, 0.86);
+}
