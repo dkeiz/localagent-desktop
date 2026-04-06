@@ -2,9 +2,9 @@
 
 .capability-panel {
     background: var(--card-bg, #fff);
-    border-radius: 8px;
-    padding: 0.3rem;
-    margin: 0.3rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
+    margin: var(--space-2);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
@@ -13,12 +13,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.35rem 0.5rem;
+    min-height: 28px;
+    padding: 0 var(--space-3);
     background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all 0.2s ease;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-2);
 }
 
 .capability-main-pad:hover {
@@ -33,36 +34,36 @@
 .capability-main-pad .main-label {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     color: white;
     font-weight: 600;
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
 }
 
 .capability-main-pad .main-label .icon {
-    font-size: 0.85rem;
+    font-size: 16px;
 }
 
 .capability-main-pad .main-status {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     color: rgba(255, 255, 255, 0.9);
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
 }
 
 .capability-main-pad .tool-count {
     background: rgba(255, 255, 255, 0.2);
-    padding: 0.15rem 0.5rem;
-    border-radius: 12px;
-    font-size: 0.75rem;
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
 }
 
 .capability-main-pad .main-toggle-indicator {
-    width: 40px;
-    height: 22px;
+    width: 34px;
+    height: 18px;
     background: rgba(255, 255, 255, 0.3);
-    border-radius: 11px;
+    border-radius: 999px;
     position: relative;
     transition: all 0.3s ease;
 }
@@ -70,8 +71,8 @@
 .capability-main-pad .main-toggle-indicator::after {
     content: '';
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     background: white;
     border-radius: 50%;
     top: 2px;
@@ -81,7 +82,7 @@
 }
 
 .capability-main-pad.active .main-toggle-indicator::after {
-    left: 20px;
+    left: 18px;
 }
 
 .capability-main-pad.inactive .main-toggle-indicator {
@@ -92,8 +93,8 @@
 .capability-groups {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 0.2rem;
-    padding: 0.1rem;
+    gap: var(--space-1);
+    padding: 0;
 }
 
 /* Individual Group Pad */
@@ -102,13 +103,17 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 0.25rem 0.15rem;
+    position: relative;
+    padding: var(--space-1);
     background: var(--input-bg, #f3f4f6);
-    border-radius: 5px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all 0.15s ease;
     border: 1.5px solid transparent;
-    min-height: 36px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    overflow: hidden;
 }
 
 .capability-group-pad:hover {
@@ -121,17 +126,21 @@
 }
 
 .capability-group-pad .group-icon {
-    font-size: 0.9rem;
+    font-size: 14px;
     line-height: 1;
 }
 
 .capability-group-pad .group-name {
-    font-size: 0.5rem;
+    font-size: 10px;
     font-weight: 500;
     color: var(--text-secondary, #64748b);
     text-align: center;
     line-height: 1;
-    margin-top: 0.1rem;
+    margin-top: 2px;
+    max-width: 100%;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
 }
 
 .capability-group-pad.active .group-name {
@@ -143,7 +152,8 @@
 .capability-group-pad[data-group="files"] .mode-indicator {
     display: flex;
     gap: 2px;
-    margin-top: 0.2rem;
+    position: absolute;
+    bottom: 4px;
 }
 
 .capability-group-pad[data-group="files"] .mode-dot {
@@ -167,7 +177,13 @@
 .capability-group-pad[data-group="ports"] .config-indicator {
     font-size: 0.55rem;
     color: var(--text-tertiary, #94a3b8);
-    margin-top: 0.15rem;
+    position: absolute;
+    bottom: 3px;
+    line-height: 1;
+    max-width: calc(100% - 6px);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
 }
 
 .capability-group-pad[data-group="ports"].active .config-indicator {
@@ -179,12 +195,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.2rem;
-    padding: 0.2rem 0.3rem;
-    background: rgba(16, 185, 129, 0.1);
-    border-radius: 4px;
-    margin-top: 0.2rem;
-    font-size: 0.55rem;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    background: color-mix(in srgb, var(--success), transparent 88%);
+    border-radius: var(--radius-sm);
+    margin-top: var(--space-2);
+    font-size: 10px;
     color: #059669;
 }
 

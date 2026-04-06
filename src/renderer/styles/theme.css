@@ -105,6 +105,38 @@
 }
 
 /* =====================================
+   UI Polish Tokens (Non-breaking)
+   ===================================== */
+
+:root,
+[data-theme="light"],
+[data-theme="solar"],
+[data-theme="dark"] {
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 10px;
+  --space-4: 12px;
+  --space-6: 24px;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-lg: 36px;
+
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+
+  /* Aliases for components that use accent variables */
+  --accent-color: var(--primary-color);
+  --accent-hover: color-mix(in srgb, var(--primary-color), black 14%);
+}
+
+/* =====================================
    Base Reset & Typography
    ===================================== */
 
@@ -122,7 +154,7 @@ body {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 13px;
+  font-size: var(--text-sm);
   line-height: 1.4;
   color: var(--text-primary);
   background-color: var(--main-bg);
@@ -139,23 +171,23 @@ h6 {
 }
 
 h2 {
-  font-size: 1rem;
-  margin-bottom: 0.5rem;
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-2);
 }
 
 h3 {
-  font-size: 0.9rem;
-  margin-bottom: 0.4rem;
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
 }
 
 h4 {
-  font-size: 0.85rem;
-  margin-bottom: 0.3rem;
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-1);
 }
 
 label {
   font-weight: 500;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--text-primary);
 }
 
@@ -169,9 +201,10 @@ select {
   background-color: var(--input-bg);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  padding: 0.3rem 0.5rem;
-  font-size: 0.8rem;
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  min-height: var(--control-h-md);
+  font-size: var(--text-sm);
   transition: border-color 0.15s ease;
 }
 
@@ -348,6 +381,370 @@ select:focus {
   font-size: 0.55rem;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+}
+
+/* =====================================
+   Consistency Overrides
+   ===================================== */
+
+.sidebar,
+.widget-panel {
+  padding: var(--space-2);
+  gap: var(--space-2);
+}
+
+.logo {
+  font-size: var(--text-lg);
+  padding: var(--space-2) 0;
+}
+
+.section-header {
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.nav-tabs {
+  gap: var(--space-1);
+}
+
+.nav-btn {
+  min-height: var(--control-h-md);
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+}
+
+.nav-btn .icon {
+  font-size: 16px;
+  width: 16px;
+  text-align: center;
+}
+
+.messages-container {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+#message-input {
+  min-height: var(--control-h-md);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.chat-controls-column {
+  gap: var(--space-2);
+}
+
+.chat-provider-row {
+  gap: var(--space-1);
+}
+
+.compact-select {
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+  max-width: 120px;
+}
+
+.compact-select.model-select {
+  max-width: 220px;
+}
+
+.icon-btn-sm {
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+
+.calendar-widget,
+.agent-picker-widget,
+.workflows-widget {
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.calendar-widget h3,
+.agent-picker-widget h3,
+.workflows-widget .widget-header {
+  font-size: var(--text-md);
+}
+
+.agent-section-label {
+  font-size: var(--text-xs);
+  margin: var(--space-2) 0 var(--space-1);
+}
+
+.agent-grid {
+  gap: var(--space-2);
+}
+
+.agent-item {
+  padding: var(--space-2) var(--space-1);
+}
+
+.agent-icon {
+  font-size: 16px;
+}
+
+.agent-name {
+  font-size: var(--text-xs);
+}
+
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+}
+
+#calendar-weekdays {
+  font-size: var(--text-xs);
+}
+
+.calendar-day {
+  min-height: var(--control-h-sm);
+  padding: var(--space-1);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+.chat-session-compact {
+  min-height: var(--control-h-md);
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+}
+
+/* =====================================
+   Scroll Policy: Chat Only
+   ===================================== */
+
+/* Keep app frame fixed with no panel/page scrollbars */
+.app-container,
+.sidebar,
+.widget-panel,
+.content-panel,
+.tab-content,
+.chat-container,
+.input-container,
+.chat-tabs-bar,
+.chat-tabs-list,
+.chat-sessions-list,
+.workflows-widget .widget-content,
+.agent-picker-widget,
+.calendar-widget,
+#calendar-events,
+#todo-list,
+.tool-activity-list,
+.scrollable,
+.rule-list-container,
+.commands-list {
+  overflow: hidden !important;
+}
+
+/* Only chat messages should scroll */
+.messages-container {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* =====================================
+   Control Size Corrections
+   ===================================== */
+
+/* Keep composer controls visually aligned */
+.chat-input-row {
+  align-items: flex-start;
+}
+
+#message-input {
+  min-height: calc((var(--control-h-md) * 2) + var(--space-2));
+  height: calc((var(--control-h-md) * 2) + var(--space-2));
+  max-height: calc((var(--control-h-md) * 2) + var(--space-2));
+}
+
+.chat-provider-row .compact-select,
+.chat-provider-row .icon-btn-sm,
+#chat-model-select,
+#send-btn {
+  min-height: var(--control-h-md);
+  height: var(--control-h-md);
+}
+
+.send-btn-group {
+  align-self: stretch;
+  min-height: calc((var(--control-h-md) * 2) + var(--space-2));
+  justify-content: flex-end;
+}
+
+#send-btn {
+  padding: 0 var(--space-3);
+}
+
+#stop-btn {
+  min-height: var(--control-h-sm);
+  height: var(--control-h-sm);
+}
+
+/* Theme row buttons should share exact dimensions */
+.theme-btn {
+  min-height: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.theme-btn .theme-label {
+  font-size: var(--text-xs);
+}
+
+/* Force equal-sized theme buttons across all skins/themes */
+#theme-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-1);
+  align-items: stretch;
+}
+
+#theme-picker .theme-btn {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  transform: none;
+  line-height: 1;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  place-items: center;
+}
+
+#theme-picker .theme-btn.active,
+#theme-picker .theme-btn:hover {
+  min-height: var(--control-h-md);
+  height: var(--control-h-md);
+  transform: none;
+}
+
+#theme-picker .theme-btn .theme-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+#theme-picker .theme-btn .theme-label {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+/* Widget action buttons */
+#add-event-btn,
+#add-todo-btn,
+#add-agent-btn {
+  min-height: var(--control-h-sm);
+  height: var(--control-h-sm);
+}
+
+.calendar-nav-btn,
+.panel-toggle-btn {
+  min-height: var(--control-h-sm);
+  height: var(--control-h-sm);
+}
+
+/* =====================================
+   Panel Top Row Alignment
+   ===================================== */
+
+.sidebar,
+.widget-panel {
+  position: relative;
+}
+
+/* Left panel: put collapse button and logo on one line */
+.sidebar {
+  display: grid;
+  grid-template-columns: 1fr var(--control-h-md);
+  align-content: start;
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
+.sidebar > .left-toggle {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  justify-self: end;
+  align-self: center;
+  margin-right: -1px;
+}
+
+.sidebar > .logo {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  padding: 0;
+  min-height: var(--control-h-md);
+  display: flex;
+  align-items: center;
+  border-bottom: none;
+}
+
+.sidebar > :not(.left-toggle):not(.logo) {
+  grid-column: 1 / -1;
+}
+
+/* Right panel: put expand button and theme picker on one line */
+.widget-panel {
+  display: grid;
+  grid-template-columns: var(--control-h-md) 1fr;
+  align-content: start;
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
+.widget-panel > .right-toggle {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  justify-self: start;
+  align-self: center;
+}
+
+.widget-panel > .theme-picker {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+}
+
+.widget-panel > :not(.right-toggle):not(.theme-picker) {
+  grid-column: 1 / -1;
+}
+
+/* Keep arrow buttons visually identical */
+.left-toggle,
+.right-toggle {
+  width: var(--control-h-md);
+  min-width: var(--control-h-md);
+  height: var(--control-h-md);
+  min-height: var(--control-h-md);
+  font-size: var(--text-sm);
+  line-height: 1;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Light theme button colors */

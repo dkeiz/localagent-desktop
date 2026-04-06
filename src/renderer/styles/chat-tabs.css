@@ -2,11 +2,11 @@
 .chat-tabs-bar {
     display: flex;
     align-items: center;
-    gap: 2px;
-    padding: 4px 8px;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
     background: var(--bg-secondary, #f0f0f0);
     border-bottom: 1px solid var(--border-color, #ddd);
-    min-height: 36px;
+    min-height: var(--control-h-md);
     overflow-x: auto;
     scrollbar-width: thin;
     flex-shrink: 0;
@@ -25,13 +25,14 @@
 .chat-tab {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
+    gap: var(--space-2);
+    min-height: var(--control-h-md);
+    padding: 0 var(--space-3);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 6px 6px 0 0;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     cursor: pointer;
-    font-size: 0.82rem;
+    font-size: var(--text-sm);
     color: var(--text-secondary, #888);
     white-space: nowrap;
     max-width: 160px;
@@ -64,8 +65,8 @@
 
 /* Tab Status Dot */
 .chat-tab-status {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: transparent;
     flex-shrink: 0;
@@ -97,13 +98,13 @@
 
 /* Tab Close Button */
 .chat-tab-close {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border: none;
     background: none;
     cursor: pointer;
     font-size: 12px;
-    line-height: 16px;
+    line-height: 18px;
     text-align: center;
     border-radius: 3px;
     color: var(--text-secondary, #999);
@@ -125,11 +126,11 @@
 
 /* New Chat Button (in tab bar) */
 .chat-tab-new {
-    width: 28px;
-    height: 28px;
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
     border: 1px dashed var(--border-color, #ccc);
     background: none;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 16px;
     color: var(--text-secondary, #999);
@@ -166,19 +167,20 @@
 .chat-tab-new-session {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
+    gap: var(--space-1);
+    min-height: var(--control-h-md);
+    padding: 0 var(--space-3);
     background: var(--accent-color, #4a9eff);
     color: white;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 0.78rem;
+    font-size: var(--text-sm);
     font-weight: 600;
     white-space: nowrap;
     flex-shrink: 0;
     transition: all 0.15s ease;
-    margin-right: 6px;
+    margin-right: var(--space-2);
 }
 
 .chat-tab-new-session:hover {

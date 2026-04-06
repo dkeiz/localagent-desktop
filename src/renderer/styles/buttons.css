@@ -3,10 +3,11 @@
   background: var(--primary-color);
   color: white;
   border: none;
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--border-radius);
+  padding: 0 var(--space-3);
+  min-height: var(--control-h-md);
+  border-radius: var(--radius-md);
   font-weight: 500;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -23,10 +24,11 @@
   background: transparent;
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--border-radius);
+  padding: 0 var(--space-3);
+  min-height: var(--control-h-md);
+  border-radius: var(--radius-md);
   font-weight: 500;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -44,14 +46,15 @@
   background: var(--success);
   color: white;
   border: none;
-  padding: 0.35rem 0.7rem;
-  border-radius: var(--border-radius);
+  padding: 0 var(--space-3);
+  min-height: var(--control-h-md);
+  border-radius: var(--radius-md);
   font-weight: 500;
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   cursor: pointer;
   transition: all 0.15s ease;
-  align-self: flex-end;
-  min-width: 50px;
+  align-self: flex-start;
+  min-width: 72px;
 }
 
 .send-button:hover {
@@ -71,21 +74,23 @@
 .send-btn-group {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  align-self: flex-end;
+  gap: var(--space-1);
+  align-self: stretch;
+  justify-content: flex-end;
 }
 
 .stop-button {
   background: var(--danger);
   color: white;
   border: none;
-  padding: 0.35rem 0.7rem;
-  border-radius: var(--border-radius);
+  padding: 0 var(--space-3);
+  min-height: var(--control-h-sm);
+  border-radius: var(--radius-md);
   font-weight: 500;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   cursor: pointer;
   transition: all 0.15s ease;
-  min-width: 50px;
+  min-width: 72px;
 }
 
 .stop-button:hover {
@@ -104,8 +109,10 @@
 .icon-btn {
   background: transparent;
   border: none;
-  padding: 0.5rem;
-  border-radius: 50%;
+  min-width: var(--control-h-md);
+  min-height: var(--control-h-md);
+  padding: 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -166,13 +173,13 @@
 
 /* Button sizes */
 .btn-sm {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.8rem;
+  min-height: var(--control-h-sm);
+  font-size: var(--text-xs);
 }
 
 .btn-lg {
-  padding: 1rem 2rem;
-  font-size: 1rem;
+  min-height: var(--control-h-lg);
+  font-size: var(--text-md);
 }
 
 /* Button groups */
@@ -432,6 +439,26 @@
 
 .settings-description {
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   margin-bottom: 1rem;
+}
+
+.compact-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.compact-btn:hover {
+  background: var(--hover-bg);
+  border-color: var(--primary-color);
 }
