@@ -14,7 +14,13 @@
     "test:headless": "npm run start:test:nowindow",
     "test:ipc-handlers": "node tools/test-ipc-registration.js",
     "test:plugin-knowledge": "node tools/test-plugin-knowledge-managers.js",
-    "test:core": "npm run test:headless && npm run test:ipc-handlers && npm run test:plugin-knowledge"
+    "test:dispatcher-mocked": "node tools/test-dispatcher-mocked.js",
+    "test:ipc-flow-mocked": "node tools/test-ipc-flow-mocked.js",
+    "test:tool-lifecycle": "node tools/test-tool-routing-lifecycle.js",
+    "test:testclient-mode": "node tools/test-testclient-mode.js",
+    "test:ollama-live": "node tools/test-ollama-live.js",
+    "test:core": "npm run test:headless && npm run test:ipc-handlers && npm run test:plugin-knowledge && npm run test:dispatcher-mocked && npm run test:ipc-flow-mocked && npm run test:tool-lifecycle && npm run test:testclient-mode",
+    "test:all": "npm run test:core && npm run test:ollama-live"
   },
   "keywords": [
     "electron",

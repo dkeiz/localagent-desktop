@@ -27,7 +27,9 @@ function buildRuntime(container) {
     eventBus: container.get('eventBus'),
     memoryDaemon: container.get('memoryDaemon'),
     workflowScheduler: container.get('workflowScheduler'),
-    sessionInitManager: container.get('sessionInitManager')
+    sessionInitManager: container.get('sessionInitManager'),
+    testClientMode: container.optional('testClientMode') === true,
+    testClientStore: container.optional('testClientStore') || { sessions: new Map(), currentSessionId: null }
   };
 }
 

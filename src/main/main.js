@@ -33,6 +33,7 @@ const container = new ServiceContainer();
 const args = process.argv.slice(1);
 const isTestMode = args.includes('--test');
 const isNoWindowMode = args.includes('--nowindow');
+const isTestClientMode = args.includes('--testclient');
 
 if (!app || typeof app.whenReady !== 'function') {
   if (isTestMode && isNoWindowMode) {
@@ -106,6 +107,12 @@ app.whenReady().then(async () => {
     const db = new Database();
     await db.init();
     container.register('db', db);
+    container.register('testClientMode', isTestClientMode);
+    container.register('testClientStore', { sessions: new Map(), currentSessionId: null });
+
+    if (isTestClientMode) {
+      console.log('[TestClient] Enabled transient chat mode (--testclient)');
+    }
 
     // Create Event Bus (foundation for background architecture)
     const eventBus = new BackendEventBus();
@@ -229,7 +236,7 @@ app.whenReady().then(async () => {
     const baseinitDone = await db.getSetting('baseinit.completed');
     const daemonEnabled = await db.getSetting('baseinit.daemonEnabled');
     const shouldAutoStartDaemons =
-      daemonEnabled === 'true' || (baseinitDone === 'true' && daemonEnabled !== 'false');
+      !isTestClientMode && (daemonEnabled === 'true' || (baseinitDone === 'true' && daemonEnabled !== 'false'));
     if (shouldAutoStartDaemons) {
       memoryDaemon.start().catch(e => console.error('[Main] Memory daemon start failed:', e));
       workflowScheduler.start().catch(e => console.error('[Main] Workflow scheduler start failed:', e));

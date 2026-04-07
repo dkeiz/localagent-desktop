@@ -14,9 +14,72 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     agentLoop,
     dispatcher,
     sessionInitManager,
-    promptFileManager
+    promptFileManager,
+    testClientMode,
+    testClientStore
   } = runtime;
   const { markUserActive, markUserIdle } = helpers;
+
+  function isTestSessionId(sessionId) {
+    return typeof sessionId === 'string' && sessionId.startsWith('testclient-');
+  }
+
+  function ensureTestSession(sessionId = null) {
+    if (!testClientMode) return sessionId;
+    if (sessionId && isTestSessionId(sessionId)) {
+      if (!testClientStore.sessions.has(sessionId)) {
+        testClientStore.sessions.set(sessionId, { id: sessionId, title: 'Test Client', created_at: new Date().toISOString(), messages: [] });
+      }
+      testClientStore.currentSessionId = sessionId;
+      return sessionId;
+    }
+
+    if (testClientStore.currentSessionId && testClientStore.sessions.has(testClientStore.currentSessionId)) {
+      return testClientStore.currentSessionId;
+    }
+
+    const id = `testclient-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    testClientStore.sessions.set(id, {
+      id,
+      title: `Test Chat ${new Date().toLocaleTimeString()}`,
+      created_at: new Date().toISOString(),
+      messages: []
+    });
+    testClientStore.currentSessionId = id;
+    return id;
+  }
+
+  function getTestMessages(sessionId, limit = 100) {
+    const sid = ensureTestSession(sessionId);
+    const session = testClientStore.sessions.get(sid);
+    if (!session) return [];
+    return session.messages.slice(-limit).map(m => ({
+      ...m,
+      timestamp: m.timestamp || new Date().toISOString()
+    }));
+  }
+
+  async function getHistory(limit = 100, sessionId = null) {
+    if (testClientMode && (isTestSessionId(sessionId) || !sessionId)) {
+      return getTestMessages(sessionId, limit);
+    }
+    return db.getConversations(limit, sessionId);
+  }
+
+  async function persistMessage(message, sessionId = null) {
+    if (testClientMode && (isTestSessionId(sessionId) || !sessionId)) {
+      const sid = ensureTestSession(sessionId);
+      const session = testClientStore.sessions.get(sid);
+      session.messages.push({
+        role: message.role,
+        content: message.content,
+        metadata: message.metadata || null,
+        timestamp: new Date().toISOString()
+      });
+      return message;
+    }
+    return db.addConversation(message, sessionId);
+  }
 
   ipcMain.handle('get-calendar-events', async () => db.getCalendarEvents());
 
@@ -59,17 +122,24 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
   });
 
   ipcMain.handle('get-conversations', async (event, limit = 100, sessionId = null) => {
-    return db.getConversations(limit, sessionId);
+    return getHistory(limit, sessionId);
   });
 
   ipcMain.handle('add-conversation', async (event, message) => {
-    const result = await db.addConversation(message);
+    const result = await persistMessage(message, null);
     mainWindow.webContents.send('conversation-update');
     return result;
   });
 
   ipcMain.handle('clear-conversations', async () => {
     try {
+      if (testClientMode) {
+        const sid = ensureTestSession();
+        const session = testClientStore.sessions.get(sid);
+        session.messages = [];
+        mainWindow.webContents.send('conversation-update', { sessionId: sid });
+        return { cleared: true, sessionId: sid };
+      }
       const newSession = await db.createChatSession();
       await db.setCurrentSession(newSession.id);
       mainWindow.webContents.send('conversation-update');
@@ -108,12 +178,45 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
   });
 
   ipcMain.handle('save-setting', async (event, key, value) => db.saveSetting(key, value));
-  ipcMain.handle('create-chat-session', async () => db.createChatSession());
-  ipcMain.handle('get-chat-sessions', async (event, date = null, limit = 6) => db.getChatSessions(date, limit));
-  ipcMain.handle('load-chat-session', async (event, sessionId) => db.loadChatSession(sessionId));
+  ipcMain.handle('create-chat-session', async () => {
+    if (testClientMode) {
+      const sid = ensureTestSession();
+      return { id: sid, title: testClientStore.sessions.get(sid)?.title || 'Test Client' };
+    }
+    return db.createChatSession();
+  });
+  ipcMain.handle('get-chat-sessions', async (event, date = null, limit = 6) => {
+    if (testClientMode) {
+      return Array.from(testClientStore.sessions.values())
+        .map(s => ({
+          id: s.id,
+          title: s.title,
+          created_at: s.created_at,
+          last_message_at: s.messages.length ? s.messages[s.messages.length - 1].timestamp : s.created_at,
+          message_count: s.messages.length,
+          first_message: (s.messages.find(m => m.role === 'user') || {}).content || null
+        }))
+        .sort((a, b) => String(b.last_message_at).localeCompare(String(a.last_message_at)))
+        .slice(0, limit);
+    }
+    return db.getChatSessions(date, limit);
+  });
+  ipcMain.handle('load-chat-session', async (event, sessionId) => {
+    if (testClientMode && isTestSessionId(sessionId)) {
+      return getTestMessages(sessionId, 1000);
+    }
+    return db.loadChatSession(sessionId);
+  });
 
   ipcMain.handle('switch-chat-session', async (event, sessionId) => {
     try {
+      if (testClientMode && isTestSessionId(sessionId)) {
+        ensureTestSession(sessionId);
+        if (mcpServer.setCurrentSessionId) {
+          mcpServer.setCurrentSessionId(sessionId);
+        }
+        return { success: true, sessionId };
+      }
       if (agentLoop) {
         const prevSession = await db.getCurrentSession();
         if (prevSession && prevSession.id !== sessionId) {
@@ -133,6 +236,14 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
 
   ipcMain.handle('delete-chat-session', async (event, sessionId) => {
     try {
+      if (testClientMode && isTestSessionId(sessionId)) {
+        testClientStore.sessions.delete(sessionId);
+        if (testClientStore.currentSessionId === sessionId) {
+          testClientStore.currentSessionId = null;
+        }
+        mainWindow.webContents.send('conversation-update');
+        return { success: true };
+      }
       await db.deleteChatSession(sessionId);
       mainWindow.webContents.send('conversation-update');
       return { success: true };
@@ -144,6 +255,12 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
 
   ipcMain.handle('delete-all-conversations', async () => {
     try {
+      if (testClientMode) {
+        testClientStore.sessions.clear();
+        testClientStore.currentSessionId = null;
+        mainWindow.webContents.send('conversation-update');
+        return { success: true, message: 'All test conversations deleted' };
+      }
       await db.deleteAllConversations();
       mainWindow.webContents.send('conversation-update');
       return { success: true, message: 'All conversations deleted' };
@@ -154,11 +271,15 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
   });
 
   ipcMain.handle('send-message', async (event, message, useChaining = true, sessionId = null) => {
-    const activitySessionId = sessionId || 'default';
-    markUserActive(activitySessionId);
+    const effectiveSessionId = testClientMode ? ensureTestSession(sessionId) : sessionId;
+    const isTestSession = isTestSessionId(effectiveSessionId);
+    const activitySessionId = effectiveSessionId || 'default';
+    if (!isTestSession) {
+      markUserActive(activitySessionId);
+    }
 
     try {
-      const conversations = await db.getConversations(20, sessionId);
+      const conversations = await getHistory(20, effectiveSessionId);
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
@@ -166,31 +287,33 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
           : c.content
       })).filter(c => c.content && c.content.trim().length > 0).reverse();
 
-      if (agentLoop) {
+      if (!isTestSession && agentLoop) {
         agentLoop.recordActivity(activitySessionId);
       }
-      if (mcpServer.setCurrentSessionId) {
+      if (!isTestSession && mcpServer.setCurrentSessionId) {
         mcpServer.setCurrentSessionId(activitySessionId);
       }
-      if (sessionInitManager) {
+      if (!isTestSession && sessionInitManager) {
         sessionInitManager.recordActivity().catch(() => {});
       }
 
-      await db.addConversation({ role: 'user', content: message }, sessionId);
+      await persistMessage({ role: 'user', content: message }, effectiveSessionId);
 
-      const sessionRow = sessionId ? db.get('SELECT agent_id FROM chat_sessions WHERE id = ?', [sessionId]) : null;
+      const sessionRow = !isTestSession && effectiveSessionId
+        ? db.get('SELECT agent_id FROM chat_sessions WHERE id = ?', [effectiveSessionId])
+        : null;
       const agentId = sessionRow ? sessionRow.agent_id : null;
 
       let response;
       if (chainController && useChaining) {
         console.log('[IPC] Using tool chain controller');
-        response = await chainController.executeWithChaining(message, conversationHistory, { sessionId, agentId });
+        response = await chainController.executeWithChaining(message, conversationHistory, { sessionId: effectiveSessionId, agentId });
         if (response && response.needsPermission) {
-          mainWindow.webContents.send('tool-permission-request', { ...response.permissionRequest, sessionId });
-          return { needsPermission: true, sessionId, ...response.permissionRequest };
+          mainWindow.webContents.send('tool-permission-request', { ...response.permissionRequest, sessionId: effectiveSessionId });
+          return { needsPermission: true, sessionId: effectiveSessionId, ...response.permissionRequest };
         }
       } else {
-        response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId, agentId });
+        response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId: effectiveSessionId, agentId });
       }
 
       if (!response || !response.content) {
@@ -205,24 +328,30 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         : { runtime: null };
 
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
-      await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
-      mainWindow.webContents.send('conversation-update', { sessionId });
+      await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
+      mainWindow.webContents.send('conversation-update', { sessionId: effectiveSessionId });
 
-      return { ...response, content: cleanContent, sessionId };
+      return { ...response, content: cleanContent, sessionId: effectiveSessionId };
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
     } finally {
-      markUserIdle(activitySessionId);
+      if (!isTestSession) {
+        markUserIdle(activitySessionId);
+      }
     }
   });
 
   ipcMain.handle('interpret-tool-result', async (event, toolName, params, toolResult, sessionId = null) => {
-    const activitySessionId = sessionId || 'default';
-    markUserActive(activitySessionId);
+    const effectiveSessionId = testClientMode ? ensureTestSession(sessionId) : sessionId;
+    const isTestSession = isTestSessionId(effectiveSessionId);
+    const activitySessionId = effectiveSessionId || 'default';
+    if (!isTestSession) {
+      markUserActive(activitySessionId);
+    }
 
     try {
-      const conversations = await db.getConversations(20, sessionId);
+      const conversations = await getHistory(20, effectiveSessionId);
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
@@ -231,7 +360,7 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
       })).filter(c => c.content && c.content.trim().length > 0).reverse();
 
       const toolContext = `Tool "${toolName}" was executed with parameters: ${JSON.stringify(params)}\n\nResult: ${JSON.stringify(toolResult, null, 2)}\n\nBased on this tool result, provide a natural, helpful response to the user. Do NOT call any tools.`;
-      const response = await dispatcher.dispatch(toolContext, conversationHistory, { mode: 'chat', sessionId });
+      const response = await dispatcher.dispatch(toolContext, conversationHistory, { mode: 'chat', sessionId: effectiveSessionId });
       const activeProvider = await db.getSetting('llm.provider');
       const activeModel = await db.getSetting('llm.model');
       const { runtime: runtimeConfig } = activeProvider && activeModel
@@ -239,9 +368,9 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         : { runtime: null };
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
 
-      await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
-      mainWindow.webContents.send('conversation-update', { sessionId });
-      return { ...response, content: cleanContent, sessionId };
+      await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
+      mainWindow.webContents.send('conversation-update', { sessionId: effectiveSessionId });
+      return { ...response, content: cleanContent, sessionId: effectiveSessionId };
     } catch (error) {
       console.error('Error interpreting tool result:', error);
       return {
@@ -249,15 +378,21 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         model: 'fallback'
       };
     } finally {
-      markUserIdle(activitySessionId);
+      if (!isTestSession) {
+        markUserIdle(activitySessionId);
+      }
     }
   });
 
   ipcMain.handle('handle-file-drop', async (event, filePath, sessionId = null) => {
     const fs = require('fs');
     const path = require('path');
-    const activitySessionId = sessionId || 'default';
-    markUserActive(activitySessionId);
+    const effectiveSessionId = testClientMode ? ensureTestSession(sessionId) : sessionId;
+    const isTestSession = isTestSessionId(effectiveSessionId);
+    const activitySessionId = effectiveSessionId || 'default';
+    if (!isTestSession) {
+      markUserActive(activitySessionId);
+    }
 
     try {
       const fileName = path.basename(filePath);
@@ -273,8 +408,8 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         message = `User dropped file "${fileName}". Content:\n\n---\n\n${content}`;
       }
 
-      await db.addConversation({ role: 'user', content: message }, sessionId);
-      const conversations = await db.getConversations(20, sessionId);
+      await persistMessage({ role: 'user', content: message }, effectiveSessionId);
+      const conversations = await getHistory(20, effectiveSessionId);
       const conversationHistory = conversations.map(c => ({
         role: c.role,
         content: c.role === 'assistant'
@@ -284,9 +419,9 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
 
       let response;
       if (chainController) {
-        response = await chainController.executeWithChaining(message, conversationHistory, { sessionId });
+        response = await chainController.executeWithChaining(message, conversationHistory, { sessionId: effectiveSessionId });
       } else {
-        response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId });
+        response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId: effectiveSessionId });
       }
 
       const activeProvider = await db.getSetting('llm.provider');
@@ -295,18 +430,35 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         ? await getModelRuntimeConfig(db, activeProvider, activeModel)
         : { runtime: null };
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
-      await db.addConversation({ role: 'assistant', content: cleanContent }, sessionId);
-      mainWindow.webContents.send('conversation-update', { sessionId });
+      await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
+      mainWindow.webContents.send('conversation-update', { sessionId: effectiveSessionId });
 
-      return { success: true, response: { ...response, content: cleanContent }, sessionId };
+      return { success: true, response: { ...response, content: cleanContent }, sessionId: effectiveSessionId };
     } catch (error) {
       console.error('Error handling file drop:', error);
-      await db.addConversation({ role: 'system', content: `Error processing file: ${error.message}` }, sessionId);
-      mainWindow.webContents.send('conversation-update', { sessionId });
+      await persistMessage({ role: 'system', content: `Error processing file: ${error.message}` }, effectiveSessionId);
+      mainWindow.webContents.send('conversation-update', { sessionId: effectiveSessionId });
       throw error;
     } finally {
-      markUserIdle(activitySessionId);
+      if (!isTestSession) {
+        markUserIdle(activitySessionId);
+      }
     }
+  });
+
+  ipcMain.handle('testclient:status', async () => {
+    return {
+      enabled: testClientMode,
+      currentSessionId: testClientStore.currentSessionId,
+      sessionCount: testClientStore.sessions.size
+    };
+  });
+
+  ipcMain.handle('testclient:reset', async () => {
+    if (!testClientMode) return { success: false, error: 'Not in --testclient mode' };
+    testClientStore.sessions.clear();
+    testClientStore.currentSessionId = null;
+    return { success: true };
   });
 
   ipcMain.handle('read-file', async (event, filePath) => {

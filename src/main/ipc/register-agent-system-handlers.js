@@ -12,7 +12,8 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     memoryDaemon,
     workflowScheduler,
     sessionInitManager,
-    db
+    db,
+    testClientMode
   } = runtime;
   const { syncDaemonEnabledSetting } = helpers;
 
@@ -191,6 +192,7 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
   aiService.initialize().catch(console.error);
 
   ipcMain.handle('daemon:memory-start', async () => {
+    if (testClientMode) return { error: 'Disabled in --testclient mode' };
     if (!memoryDaemon) return { error: 'Memory daemon not initialized' };
     await memoryDaemon.start();
     await syncDaemonEnabledSetting();
@@ -210,6 +212,7 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
   });
 
   ipcMain.handle('daemon:workflow-start', async () => {
+    if (testClientMode) return { error: 'Disabled in --testclient mode' };
     if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
     await workflowScheduler.start();
     await syncDaemonEnabledSetting();
@@ -229,6 +232,7 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
   });
 
   ipcMain.handle('daemon:add-schedule', async (event, workflowId, intervalMinutes, name) => {
+    if (testClientMode) return { error: 'Disabled in --testclient mode' };
     if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };
     return workflowScheduler.addSchedule(workflowId, intervalMinutes, name);
   });
