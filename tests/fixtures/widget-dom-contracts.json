@@ -1,0 +1,34 @@
+{
+  "widgets": [
+    {
+      "name": "calendar-widget",
+      "component": "src/renderer/components/calendar.js",
+      "requiredIds": [
+        "calendar-header",
+        "calendar-weekdays",
+        "calendar-days",
+        "add-event-btn",
+        "calendar-events"
+      ]
+    },
+    {
+      "name": "todo-widget",
+      "component": "src/renderer/components/todos.js",
+      "requiredIds": [
+        "todo-list",
+        "new-todo-input",
+        "add-todo-btn"
+      ]
+    },
+    {
+      "name": "plugin-widget",
+      "component": "src/renderer/components/plugin-panel.js",
+      "requiredIds": [
+        "plugins-list",
+        "manage-plugins-btn",
+        "toggle-plugins-widget",
+        "plugins-widget-content"
+      ]
+    }
+  ]
+}

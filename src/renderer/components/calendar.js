@@ -13,14 +13,19 @@ class CalendarWidget {
         this.loadEvents();
 
         // Add event button
-        document.getElementById('add-event-btn').addEventListener('click', () => {
-            this.showAddEventModal();
-        });
+        const addEventBtn = document.getElementById('add-event-btn');
+        if (addEventBtn) {
+            addEventBtn.addEventListener('click', () => {
+                this.showAddEventModal();
+            });
+        }
 
         // Listen for calendar updates
-        window.electronAPI.onCalendarUpdate(() => {
-            this.loadEvents();
-        });
+        if (typeof window.electronAPI?.onCalendarUpdate === 'function') {
+            window.electronAPI.onCalendarUpdate(() => {
+                this.loadEvents();
+            });
+        }
     }
 
     async loadEvents() {
@@ -35,10 +40,14 @@ class CalendarWidget {
 
     renderEvents() {
         const container = document.getElementById('calendar-events');
-        container.innerHTML = '';
+        if (!container) return;
+        container.replaceChildren();
 
         if (this.events.length === 0) {
-            container.innerHTML = '<p class="no-events">No upcoming events</p>';
+            const empty = document.createElement('p');
+            empty.className = 'no-events';
+            empty.textContent = 'No upcoming events';
+            container.appendChild(empty);
             return;
         }
 
@@ -60,7 +69,10 @@ class CalendarWidget {
         });
 
         if (container.children.length === 0) {
-            container.innerHTML = '<p class="no-events">No events in the next 7 days</p>';
+            const empty = document.createElement('p');
+            empty.className = 'no-events';
+            empty.textContent = 'No events in the next 7 days';
+            container.appendChild(empty);
         }
     }
 
@@ -149,21 +161,38 @@ class CalendarWidget {
         const startTime = new Date(event.start_time);
         const endTime = new Date(startTime.getTime() + event.duration_minutes * 60000);
 
-        element.innerHTML = `
-            <h4>${event.title}</h4>
-            <div class="time">
-                ${startTime.toLocaleDateString()} •
-                ${startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -
-                ${endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
-            ${event.description ? `<div class="description">${event.description}</div>` : ''}
-            <div class="event-actions">
-                <button class="icon-btn delete-event" data-id="${event.id}">🗑️</button>
-            </div>
-        `;
+        const title = document.createElement('h4');
+        title.textContent = event.title;
+        element.appendChild(title);
+
+        const time = document.createElement('div');
+        time.className = 'time';
+        time.textContent = [
+            startTime.toLocaleDateString(),
+            '•',
+            `${startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        ].join(' ');
+        element.appendChild(time);
+
+        if (event.description) {
+            const description = document.createElement('div');
+            description.className = 'description';
+            description.textContent = event.description;
+            element.appendChild(description);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'event-actions';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'icon-btn delete-event';
+        deleteBtn.dataset.id = String(event.id);
+        deleteBtn.textContent = '🗑️';
+        actions.appendChild(deleteBtn);
+        element.appendChild(actions);
 
         // Add delete event listener
-        element.querySelector('.delete-event').addEventListener('click', (e) => {
+        deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.deleteEvent(event.id);
         });

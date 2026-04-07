@@ -45,42 +45,63 @@
 
         render() {
             if (!this.listEl) return;
+            this.listEl.replaceChildren();
 
             if (this.plugins.length === 0) {
-                this.listEl.innerHTML = '<div class="no-plugins">No plugins installed</div>';
+                const empty = document.createElement('div');
+                empty.className = 'no-plugins';
+                empty.textContent = 'No plugins installed';
+                this.listEl.appendChild(empty);
                 return;
             }
 
-            this.listEl.innerHTML = this.plugins.map(p => `
-                <div class="plugin-item" data-id="${p.id}">
-                    <div class="plugin-info">
-                        <span class="plugin-status ${p.status}"></span>
-                        <span class="plugin-name">${p.name}</span>
-                    </div>
-                    <button class="plugin-toggle-btn ${p.status === 'enabled' ? 'active' : ''}" 
-                            data-id="${p.id}" data-status="${p.status}"
-                            title="${p.status === 'enabled' ? 'Disable' : 'Enable'}">
-                        ${p.status === 'enabled' ? 'ON' : 'OFF'}
-                    </button>
-                </div>
-            `).join('');
+            this.plugins.forEach((plugin) => {
+                const item = document.createElement('div');
+                item.className = 'plugin-item';
+                item.dataset.id = plugin.id;
 
-            // Bind toggle buttons
-            this.listEl.querySelectorAll('.plugin-toggle-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    const id = e.target.dataset.id;
-                    const currentStatus = e.target.dataset.status;
+                const info = document.createElement('div');
+                info.className = 'plugin-info';
+
+                const status = document.createElement('span');
+                status.className = `plugin-status ${plugin.status}`;
+                info.appendChild(status);
+
+                const name = document.createElement('span');
+                name.className = 'plugin-name';
+                name.textContent = plugin.name;
+                info.appendChild(name);
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = `plugin-toggle-btn ${plugin.status === 'enabled' ? 'active' : ''}`;
+                toggleBtn.dataset.id = plugin.id;
+                toggleBtn.dataset.status = plugin.status;
+                toggleBtn.title = plugin.status === 'enabled' ? 'Disable' : 'Enable';
+                toggleBtn.textContent = plugin.status === 'enabled' ? 'ON' : 'OFF';
+
+                toggleBtn.addEventListener('click', async () => {
+                    const id = toggleBtn.dataset.id;
+                    const currentStatus = toggleBtn.dataset.status;
                     try {
+                        let result;
                         if (currentStatus === 'enabled') {
-                            await ipcRenderer.invoke('plugins:disable', id);
+                            result = await ipcRenderer.invoke('plugins:disable', id);
                         } else {
-                            await ipcRenderer.invoke('plugins:enable', id);
+                            result = await ipcRenderer.invoke('plugins:enable', id);
+                        }
+                        if (!result?.success) {
+                            throw new Error(result?.error || 'Plugin toggle failed');
                         }
                         await this.load(); // Refresh
                     } catch (err) {
                         console.error('[PluginPanel] Toggle failed:', err);
+                        window.mainPanel?.showNotification?.(err.message || 'Plugin toggle failed', 'error');
                     }
                 });
+
+                item.appendChild(info);
+                item.appendChild(toggleBtn);
+                this.listEl.appendChild(item);
             });
         }
     }

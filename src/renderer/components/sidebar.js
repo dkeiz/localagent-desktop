@@ -704,30 +704,46 @@ class Sidebar {
             const container = document.getElementById('chat-sessions-list');
 
             if (!container) return;
+            container.replaceChildren();
 
             if (sessions.length === 0) {
-                container.innerHTML = '<div class="no-sessions">No chats</div>';
+                const empty = document.createElement('div');
+                empty.className = 'no-sessions';
+                empty.textContent = 'No chats';
+                container.appendChild(empty);
                 return;
             }
 
-            container.innerHTML = sessions.map(session => {
+            sessions.forEach((session) => {
                 const preview = session.first_message ?
                     (session.first_message.length > 15 ? session.first_message.substring(0, 15) + '...' : session.first_message) :
                     'Empty';
                 const time = new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-                return `
-                    <div class="chat-session-compact" data-session-id="${session.id}" title="${session.first_message || 'Empty chat'}">
-                        <span class="session-time">${time}</span>
-                        <span class="session-preview">${preview}</span>
-                        <button class="delete-session-btn" data-session-id="${session.id}" title="Delete chat">×</button>
-                    </div>
-                `;
-            }).join('');
+                const item = document.createElement('div');
+                item.className = 'chat-session-compact';
+                item.dataset.sessionId = String(session.id);
+                item.title = session.first_message || 'Empty chat';
 
-            // Add click handlers
-            container.querySelectorAll('.chat-session-compact').forEach(item => {
-                const sessionId = parseInt(item.dataset.sessionId);
+                const timeEl = document.createElement('span');
+                timeEl.className = 'session-time';
+                timeEl.textContent = time;
+                item.appendChild(timeEl);
+
+                const previewEl = document.createElement('span');
+                previewEl.className = 'session-preview';
+                previewEl.textContent = preview;
+                item.appendChild(previewEl);
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-session-btn';
+                deleteBtn.dataset.sessionId = String(session.id);
+                deleteBtn.title = 'Delete chat';
+                deleteBtn.textContent = '×';
+                item.appendChild(deleteBtn);
+
+                const rawSessionId = item.dataset.sessionId;
+                const sessionId = /^\d+$/.test(rawSessionId) ? parseInt(rawSessionId, 10) : rawSessionId;
 
                 // Click on item (not delete button)
                 item.addEventListener('click', (e) => {
@@ -738,13 +754,12 @@ class Sidebar {
                 });
 
                 // Delete button
-                const deleteBtn = item.querySelector('.delete-session-btn');
-                if (deleteBtn) {
-                    deleteBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.deleteSession(sessionId);
-                    });
-                }
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.deleteSession(sessionId);
+                });
+
+                container.appendChild(item);
             });
         } catch (error) {
             console.error('Error loading chat sessions:', error);

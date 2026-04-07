@@ -226,6 +226,7 @@ app.whenReady().then(async () => {
     }, async () => {
       return await knowledgeManager.getKnowledgeTree();
     });
+    capabilityManager.registerCustomTool('explore_knowledge', true);
 
     // Initialize Plugin System (after all core services are wired)
     const pluginManager = new PluginManager(container);

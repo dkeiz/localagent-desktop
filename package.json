@@ -10,6 +10,8 @@
     "build": "electron-builder",
     "watch": "nodemon --watch src --ext js,html,css --exec \"npm start\"",
     "check:skins": "node tools/check-skins.js",
+    "test:contracts": "node tests/run-suite.js contracts",
+    "test:quick": "node tests/run-suite.js quick",
     "test:skins:apply": "node tools/test-skin-apply.js",
     "test:headless": "npm run start:test:nowindow",
     "test:ipc-handlers": "node tools/test-ipc-registration.js",
@@ -19,8 +21,10 @@
     "test:tool-lifecycle": "node tools/test-tool-routing-lifecycle.js",
     "test:testclient-mode": "node tools/test-testclient-mode.js",
     "test:ollama-live": "node tools/test-ollama-live.js",
-    "test:core": "npm run test:headless && npm run test:ipc-handlers && npm run test:plugin-knowledge && npm run test:dispatcher-mocked && npm run test:ipc-flow-mocked && npm run test:tool-lifecycle && npm run test:testclient-mode",
-    "test:all": "npm run test:core && npm run test:ollama-live"
+    "test:live": "node tests/run-suite.js live",
+    "test:core": "node tests/run-suite.js core",
+    "test:all": "node tests/run-suite.js all",
+    "verify": "node tests/run-suite.js core"
   },
   "keywords": [
     "electron",

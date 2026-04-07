@@ -139,6 +139,14 @@ class CapabilityManager extends EventEmitter {
         this.customToolSafety.set(toolName, isSafe);
     }
 
+    unregisterCustomTool(toolName) {
+        const removed = this.customToolSafety.delete(toolName);
+        if (removed) {
+            this.emit('custom-tool-removed', { toolName });
+        }
+        return removed;
+    }
+
     setCustomToolSafe(toolName, isSafe) {
         this.customToolSafety.set(toolName, isSafe);
         this.emit('custom-tool-safety-changed', { toolName, isSafe });

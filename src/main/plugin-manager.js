@@ -19,6 +19,7 @@ class PluginManager extends EventEmitter {
         this.container = container;
         this.db = container.get('db');
         this.mcpServer = container.get('mcpServer');
+        this.capabilityManager = container.optional('capabilityManager');
         this.pluginsDir = path.join(__dirname, '../../agentin/plugins');
         this.plugins = new Map(); // id -> { manifest, status, module, handlers[] }
         this._ensureDir();
@@ -112,9 +113,17 @@ class PluginManager extends EventEmitter {
         // Build context for the plugin
         const context = this._buildPluginContext(pluginId, plugin);
 
-        // Call onEnable
-        if (typeof pluginModule.onEnable === 'function') {
-            await pluginModule.onEnable(context);
+        try {
+            // Call onEnable
+            if (typeof pluginModule.onEnable === 'function') {
+                await pluginModule.onEnable(context);
+            }
+        } catch (error) {
+            this._cleanupPluginHandlers(plugin);
+            plugin.module = null;
+            plugin.status = 'error';
+            this._updateDbStatus(pluginId, 'error', error.message);
+            throw error;
         }
 
         plugin.status = 'enabled';
@@ -141,14 +150,9 @@ class PluginManager extends EventEmitter {
             }
         }
 
-        // Unregister all handlers from MCPServer
-        for (const handler of plugin.handlers) {
-            this.mcpServer.tools.delete(handler.toolName);
-        }
-
+        this._cleanupPluginHandlers(plugin);
         plugin.status = 'disabled';
         plugin.module = null;
-        plugin.handlers = [];
         this._updateDbStatus(pluginId, 'disabled');
 
         this.emit('plugin-disabled', { id: pluginId });
@@ -184,6 +188,11 @@ class PluginManager extends EventEmitter {
                         throw e;
                     }
                 });
+
+                if (self.capabilityManager) {
+                    // Plugin enablement is already an explicit user action.
+                    self.capabilityManager.registerCustomTool(toolName, true);
+                }
 
                 // Track handler for cleanup on disable
                 plugin.handlers.push({ name, toolName, definition });
@@ -337,6 +346,16 @@ class PluginManager extends EventEmitter {
                 }
             }
         }
+    }
+
+    _cleanupPluginHandlers(plugin) {
+        for (const handler of plugin.handlers) {
+            this.mcpServer.tools.delete(handler.toolName);
+            if (this.capabilityManager) {
+                this.capabilityManager.unregisterCustomTool(handler.toolName);
+            }
+        }
+        plugin.handlers = [];
     }
 }
 

@@ -20,13 +20,20 @@ class TodoWidget {
         });
 
         // Listen for todo updates
-        window.electronAPI.onTodoUpdate(() => {
-            this.loadTodos();
-        });
+        if (typeof window.electronAPI?.onTodoUpdate === 'function') {
+            window.electronAPI.onTodoUpdate(() => {
+                this.loadTodos();
+            });
+        }
     }
 
     async loadTodos() {
         try {
+            if (typeof window.electronAPI?.getTodos !== 'function') {
+                this.todos = [];
+                this.renderTodos();
+                return;
+            }
             this.todos = await window.electronAPI.getTodos();
             this.renderTodos();
         } catch (error) {
@@ -36,10 +43,14 @@ class TodoWidget {
 
     renderTodos() {
         const container = document.getElementById('todo-list');
-        container.innerHTML = '';
+        if (!container) return;
+        container.replaceChildren();
 
         if (this.todos.length === 0) {
-            container.innerHTML = '<p class="no-todos">No tasks yet</p>';
+            const empty = document.createElement('p');
+            empty.className = 'no-todos';
+            empty.textContent = 'No tasks yet';
+            container.appendChild(empty);
             return;
         }
 
@@ -55,7 +66,9 @@ class TodoWidget {
         if (completedTodos.length > 0) {
             const completedHeader = document.createElement('div');
             completedHeader.className = 'completed-header';
-            completedHeader.innerHTML = '<h4>Completed</h4>';
+            const title = document.createElement('h4');
+            title.textContent = 'Completed';
+            completedHeader.appendChild(title);
             container.appendChild(completedHeader);
 
             completedTodos.forEach(todo => {
@@ -68,22 +81,44 @@ class TodoWidget {
     createTodoElement(todo) {
         const element = document.createElement('div');
         element.className = `todo-item ${todo.completed ? 'completed' : ''}`;
-        
-        element.innerHTML = `
-            <input type="checkbox" ${todo.completed ? 'checked' : ''} data-id="${todo.id}">
-            <span class="task">${todo.task}</span>
-            ${todo.priority > 1 ? `<span class="priority">P${todo.priority}</span>` : ''}
-            ${todo.due_date ? `<span class="due-date">${new Date(todo.due_date).toLocaleDateString()}</span>` : ''}
-            <button class="icon-btn delete-todo" data-id="${todo.id}">🗑️</button>
-        `;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = todo.completed === true;
+        checkbox.dataset.id = String(todo.id);
+        element.appendChild(checkbox);
+
+        const task = document.createElement('span');
+        task.className = 'task';
+        task.textContent = todo.task;
+        element.appendChild(task);
+
+        if (todo.priority > 1) {
+            const priority = document.createElement('span');
+            priority.className = 'priority';
+            priority.textContent = `P${todo.priority}`;
+            element.appendChild(priority);
+        }
+
+        if (todo.due_date) {
+            const dueDate = document.createElement('span');
+            dueDate.className = 'due-date';
+            dueDate.textContent = new Date(todo.due_date).toLocaleDateString();
+            element.appendChild(dueDate);
+        }
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'icon-btn delete-todo';
+        deleteBtn.dataset.id = String(todo.id);
+        deleteBtn.textContent = '🗑️';
+        element.appendChild(deleteBtn);
 
         // Add event listeners
-        const checkbox = element.querySelector('input[type="checkbox"]');
         checkbox.addEventListener('change', () => {
             this.toggleTodo(todo.id, checkbox.checked);
         });
 
-        element.querySelector('.delete-todo').addEventListener('click', (e) => {
+        deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.deleteTodo(todo.id);
         });
@@ -93,6 +128,7 @@ class TodoWidget {
 
     async addTodo() {
         const input = document.getElementById('new-todo-input');
+        if (!input) return;
         const task = input.value.trim();
         
         if (!task) return;

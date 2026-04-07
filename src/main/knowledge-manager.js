@@ -239,9 +239,15 @@ class KnowledgeManager {
     async rejectStaged(slug) {
         const item = this._getItem(slug);
         if (!item) throw new Error(`Knowledge item "${slug}" not found`);
+        if (item.status !== 'staged') {
+            throw new Error(`Item "${slug}" is not staged (status: ${item.status})`);
+        }
 
         // Remove from disk
-        const folderPath = path.join(this.stagingDir, slug);
+        const folderPath = path.resolve(item.folder_path || path.join(this.stagingDir, slug));
+        if (!this._isWithinDir(folderPath, this.stagingDir)) {
+            throw new Error(`Refusing to reject staged item outside staging directory: ${folderPath}`);
+        }
         if (fs.existsSync(folderPath)) {
             fs.rmSync(folderPath, { recursive: true, force: true });
         }
@@ -274,6 +280,11 @@ class KnowledgeManager {
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '')
             .substring(0, 60);
+    }
+
+    _isWithinDir(targetPath, parentDir) {
+        const relative = path.relative(path.resolve(parentDir), path.resolve(targetPath));
+        return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
     }
 
     async _writeContent(folderPath, content) {
