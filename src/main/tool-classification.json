@@ -25,7 +25,8 @@
       "list_directory",
       "file_exists",
       "end_answer",
-      "automemory"
+      "automemory",
+      "explore_knowledge"
     ]
   },
   "groups": {
@@ -62,7 +63,7 @@
       "name": "File Operations",
       "description": "Read and write files on disk",
       "icon": "📁",
-      "mode": "full",
+      "mode": "read",
       "modes": {
         "off": [],
         "read": [

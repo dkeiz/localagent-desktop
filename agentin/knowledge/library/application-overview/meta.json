@@ -1,0 +1,11 @@
+{
+  "slug": "application-overview",
+  "title": "Application Overview",
+  "category": "system",
+  "tags": ["system", "documentation", "capabilities"],
+  "source": "seed",
+  "confidence": 1.0,
+  "status": "active",
+  "createdAt": "2026-04-07T00:00:00Z",
+  "updatedAt": "2026-04-07T00:00:00Z"
+}

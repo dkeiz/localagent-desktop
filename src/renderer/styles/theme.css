@@ -208,6 +208,17 @@ select {
   transition: border-color 0.15s ease;
 }
 
+/* Keep checkbox/radio native-sized (prevents misaligned giant toggles) */
+input[type="checkbox"],
+input[type="radio"] {
+  min-height: 14px;
+  height: 14px;
+  width: 14px;
+  padding: 0;
+  margin: 0;
+  vertical-align: middle;
+}
+
 input:focus,
 textarea:focus,
 select:focus {
@@ -745,6 +756,98 @@ select:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* =====================================
+   API Tab Compact Fit
+   ===================================== */
+
+#api-tab {
+  padding: var(--space-2);
+}
+
+#api-tab h2 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--text-lg);
+}
+
+#api-tab .setting-section {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+#api-tab .setting-section h3 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--text-md);
+}
+
+#api-tab .slider-control {
+  gap: var(--space-2);
+}
+
+#api-tab .slider-labels {
+  font-size: var(--text-sm);
+}
+
+#api-tab #context-display {
+  font-size: var(--text-md);
+}
+
+#api-tab #context-slider,
+#api-tab #context-slider::-webkit-slider-track,
+#api-tab #context-slider::-moz-range-track {
+  height: 6px;
+}
+
+#api-tab #context-slider::-webkit-slider-thumb,
+#api-tab #context-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+}
+
+#api-tab hr,
+#api-tab > div[style*="margin: 20px 0"] {
+  display: none !important;
+}
+
+#api-tab .llm-settings {
+  gap: var(--space-2);
+}
+
+#api-tab .provider-config {
+  padding: var(--space-2);
+}
+
+#api-tab .provider-config h3 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--text-md);
+}
+
+#api-tab .provider-config label {
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+#api-tab .provider-config input,
+#api-tab .provider-config select,
+#api-tab .provider-config textarea {
+  min-height: var(--control-h-md);
+}
+
+#api-tab #llm-model-capabilities {
+  margin-bottom: var(--space-2) !important;
+  font-size: var(--text-sm) !important;
+  line-height: 1.25 !important;
+}
+
+#api-tab #llm-model-config-container > div {
+  margin-top: var(--space-2) !important;
+}
+
+#api-tab #current-config-display {
+  margin-top: var(--space-2) !important;
+  padding: var(--space-2) !important;
 }
 
 /* Light theme button colors */

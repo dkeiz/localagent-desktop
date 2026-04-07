@@ -1,0 +1,15 @@
+{
+  "slug": "plugin-test-plugin",
+  "title": "Plugin: Test Plugin",
+  "category": "plugins",
+  "tags": [
+    "plugin",
+    "test-plugin",
+    "auto-generated"
+  ],
+  "source": "plugin-manager",
+  "confidence": 1,
+  "status": "active",
+  "createdAt": "2026-04-07T18:02:46.985Z",
+  "updatedAt": "2026-04-07T18:02:46.986Z"
+}

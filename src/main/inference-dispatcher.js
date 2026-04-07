@@ -172,7 +172,15 @@ Read these files (use read_file tool):
 5. ${path.join(appDir, 'agentin', 'workflows', 'workflow.md')} — workflow system reference
 
 Do this silently as part of your first response. You must still answer the user's question in the same turn — chain the file reads then respond naturally.
-</memory_on_start>`;
+</memory_on_start>
+
+<knowledge_guidance>
+You have a personal knowledge store at ${path.join(appDir, 'agentin', 'knowledge')}.
+Use explore_knowledge to see what's available, then read_file to access specific items.
+Knowledge includes: user preferences, usage patterns, plugin guides, contacts, and more.
+Explore on-demand when the user's request suggests prior context would help.
+Each knowledge file is max 200 lines. Use existing file tools to read and search within.
+</knowledge_guidance>`;
         }
 
         // Active rules

@@ -12,8 +12,8 @@ class TodoWidget {
         const addTodoBtn = document.getElementById('add-todo-btn');
         const newTodoInput = document.getElementById('new-todo-input');
         
-        addTodoBtn.addEventListener('click', () => this.addTodo());
-        newTodoInput.addEventListener('keypress', (e) => {
+        if (addTodoBtn) addTodoBtn.addEventListener('click', () => this.addTodo());
+        if (newTodoInput) newTodoInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 this.addTodo();
             }

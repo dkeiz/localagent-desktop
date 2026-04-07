@@ -158,6 +158,31 @@ class DatabaseWrapper {
                 folder_path TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+
+            `CREATE TABLE IF NOT EXISTS plugins (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                version TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'disabled',
+                error TEXT,
+                installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+
+            `CREATE TABLE IF NOT EXISTS knowledge_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                category TEXT DEFAULT 'general',
+                status TEXT DEFAULT 'staged',
+                tags TEXT,
+                source TEXT,
+                confidence REAL DEFAULT 0.5,
+                folder_path TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                confirmed_at DATETIME
             )`
         ];
 

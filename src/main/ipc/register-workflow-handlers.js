@@ -1,0 +1,150 @@
+function registerWorkflowHandlers(ipcMain, runtime) {
+  const {
+    db,
+    aiService,
+    workflowManager,
+    mainWindow
+  } = runtime;
+
+  ipcMain.handle('get-workflows', async () => {
+    try {
+      if (workflowManager) {
+        return await workflowManager.getWorkflows();
+      }
+      return await db.getWorkflows();
+    } catch (error) {
+      console.error('[IPC] get-workflows error:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('save-workflow', async (event, workflow) => {
+    try {
+      const result = await workflowManager.captureWorkflow(
+        workflow.name || 'unnamed',
+        (workflow.tool_chain || []).map(s => ({ tool: s.tool, params: s.params || {} })),
+        workflow.name
+      );
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('[IPC] save-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('delete-workflow', async (event, workflowId) => {
+    try {
+      await workflowManager.deleteWorkflow(workflowId);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] delete-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('run-workflow', async (event, workflowId) => {
+    try {
+      const result = await workflowManager.executeWorkflow(workflowId);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('[IPC] run-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('execute-workflow', async (event, workflowId, paramOverrides = {}) => {
+    try {
+      const result = await workflowManager.executeWorkflow(workflowId, paramOverrides);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('[IPC] execute-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('capture-workflow', async (event, trigger, toolChain, name = null) => {
+    try {
+      const result = await workflowManager.captureWorkflow(trigger, toolChain, name);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('[IPC] capture-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('search-workflows', async (event, query) => {
+    try {
+      return await workflowManager.findMatchingWorkflows(query);
+    } catch (error) {
+      console.error('[IPC] search-workflows error:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('copy-workflow', async (event, workflowId, newName = null) => {
+    try {
+      const result = await workflowManager.copyWorkflow(workflowId, newName);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('[IPC] copy-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('update-workflow', async (event, workflowId, data) => {
+    try {
+      const result = await workflowManager.updateWorkflow(workflowId, data);
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, workflow: result };
+    } catch (error) {
+      console.error('[IPC] update-workflow error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('get-settings', async () => {
+    const settings = await db.getAllSettings();
+    const apiKeys = {};
+    for (const provider of aiService.getProviders()) {
+      apiKeys[provider] = await db.getAPIKey(provider);
+    }
+    return { ...settings, apiKeys };
+  });
+
+  ipcMain.handle('update-settings', async (event, settings) => {
+    for (const [key, value] of Object.entries(settings)) {
+      await db.setSetting(key, value);
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle('open-new-window', async () => {
+    const { BrowserWindow } = require('electron');
+    const path = require('path');
+    const win = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false
+      },
+      show: false
+    });
+    win.loadFile(path.join(__dirname, '../../renderer/index.html'));
+    win.once('ready-to-show', () => win.show());
+    return { success: true };
+  });
+
+  ipcMain.handle('set-api-key', async (event, provider, key) => {
+    await db.setAPIKey(provider, key);
+    return { success: true };
+  });
+}
+
+module.exports = { registerWorkflowHandlers };

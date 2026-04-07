@@ -11,7 +11,10 @@
     "watch": "nodemon --watch src --ext js,html,css --exec \"npm start\"",
     "check:skins": "node tools/check-skins.js",
     "test:skins:apply": "node tools/test-skin-apply.js",
-    "test:headless": "npm run start:test:nowindow"
+    "test:headless": "npm run start:test:nowindow",
+    "test:ipc-handlers": "node tools/test-ipc-registration.js",
+    "test:plugin-knowledge": "node tools/test-plugin-knowledge-managers.js",
+    "test:core": "npm run test:headless && npm run test:ipc-handlers && npm run test:plugin-knowledge"
   },
   "keywords": [
     "electron",

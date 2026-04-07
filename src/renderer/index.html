@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="styles/chat-tabs.css?v=1">
     <link rel="stylesheet" href="styles/commands.css?v=1">
     <link rel="stylesheet" href="styles/skin-manager.css?v=1">
+    <link rel="stylesheet" href="styles/plugins.css?v=1">
 </head>
 
 <body>
@@ -434,10 +435,17 @@
                 <div class="calendar-todos">
                     <h4 class="calendar-todos-header">Tasks</h4>
                     <div id="todo-list"></div>
-                    <div class="todo-input">
-                        <input type="text" id="new-todo-input" placeholder="Add task...">
-                        <button id="add-todo-btn" class="compact-btn">+</button>
-                    </div>
+                </div>
+            </div>
+
+            <div class="plugins-widget collapsible-widget">
+                <div class="widget-header" id="toggle-plugins-widget">
+                    <span>🧩 Plugins</span>
+                    <span class="collapse-arrow">▼</span>
+                </div>
+                <div class="widget-content" id="plugins-widget-content">
+                    <div id="plugins-list" class="plugins-list"></div>
+                    <button id="manage-plugins-btn" class="compact-btn">Manage</button>
                 </div>
             </div>
 
@@ -474,6 +482,7 @@
     <script src="components/workflow-editor.js?v=1"></script>
     <script src="components/capability-panel.js?v=1"></script>
     <script src="components/skin-manager.js?v=1"></script>
+    <script src="components/plugin-panel.js?v=1"></script>
     <script src="app.js?v=7"></script>
 </body>
 

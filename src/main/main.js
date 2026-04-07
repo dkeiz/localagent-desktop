@@ -21,30 +21,14 @@ const BackendEventBus = require('./backend-event-bus');
 const BackgroundMemoryDaemon = require('./background-memory-daemon');
 const BackgroundWorkflowScheduler = require('./background-workflow-scheduler');
 const SessionInitManager = require('./session-init-manager');
+const ServiceContainer = require('./service-container');
+const PluginManager = require('./plugin-manager');
+const KnowledgeManager = require('./knowledge-manager');
 const { runCheckSkins } = require('../../tools/check-skins');
 const { runApplySimulation } = require('../../tools/test-skin-apply');
 
 let mainWindow;
-let db;
-let aiService;
-let mcpServer;
-let chainController;
-let workflowManager;
-let embeddingService;
-let vectorStore;
-let capabilityManager;
-let portListenerManager;
-let agentMemory;
-let promptFileManager;
-let agentLoop;
-let connectorRuntime;
-let dispatcher;
-let sessionWorkspace;
-let agentManager;
-let eventBus;
-let memoryDaemon;
-let workflowScheduler;
-let sessionInitManager;
+const container = new ServiceContainer();
 
 const args = process.argv.slice(1);
 const isTestMode = args.includes('--test');
@@ -119,90 +103,131 @@ app.whenReady().then(async () => {
     }
 
     // Initialize services
-    db = new Database();
+    const db = new Database();
     await db.init();
+    container.register('db', db);
 
     // Create Event Bus (foundation for background architecture)
-    eventBus = new BackendEventBus();
+    const eventBus = new BackendEventBus();
+    container.register('eventBus', eventBus);
 
     // Create Capability Manager for tool permissions
-    capabilityManager = new CapabilityManager(db);
+    const capabilityManager = new CapabilityManager(db);
+    container.register('capabilityManager', capabilityManager);
 
     // Create MCP server first, then pass it to AI service
-    mcpServer = new MCPServer(db, capabilityManager);
-    aiService = new AIService(db, mcpServer);
+    const mcpServer = new MCPServer(db, capabilityManager);
+    const aiService = new AIService(db, mcpServer);
     mcpServer.setAIService(aiService);
     await mcpServer.loadCustomTools();
+    container.register('mcpServer', mcpServer);
+    container.register('aiService', aiService);
 
     // Create central inference dispatcher
-    dispatcher = new InferenceDispatcher(aiService, db, mcpServer);
+    const dispatcher = new InferenceDispatcher(aiService, db, mcpServer);
+    container.register('dispatcher', dispatcher);
 
     // Create chain controller for multi-tool execution (uses dispatcher)
-    chainController = new ToolChainController(dispatcher, mcpServer, db);
+    const chainController = new ToolChainController(dispatcher, mcpServer, db);
+    container.register('chainController', chainController);
 
     // Create workflow manager for learning tool chains
-    workflowManager = new WorkflowManager(db, mcpServer);
+    const workflowManager = new WorkflowManager(db, mcpServer);
     chainController.setWorkflowManager(workflowManager);
     mcpServer.setWorkflowManager(workflowManager);
+    container.register('workflowManager', workflowManager);
 
     // Create embedding service and vector store for semantic search
-    embeddingService = new EmbeddingService();
-    vectorStore = new VectorStore(db, embeddingService);
+    const embeddingService = new EmbeddingService();
+    const vectorStore = new VectorStore(db, embeddingService);
+    container.register('embeddingService', embeddingService);
+    container.register('vectorStore', vectorStore);
 
     // Create Port Listener Manager for external triggers (uses dispatcher)
-    portListenerManager = new PortListenerManager(dispatcher);
+    const portListenerManager = new PortListenerManager(dispatcher);
+    container.register('portListenerManager', portListenerManager);
 
     // Create Agent Memory manager
-    agentMemory = new AgentMemory();
+    const agentMemory = new AgentMemory();
+    container.register('agentMemory', agentMemory);
 
     // Create Session Workspace for per-session temp folders
-    sessionWorkspace = new SessionWorkspace();
+    const sessionWorkspace = new SessionWorkspace();
     sessionWorkspace.cleanupStale(30); // Purge workspaces older than 30 days
+    container.register('sessionWorkspace', sessionWorkspace);
 
     // Create Prompt File Manager for file-based prompts/rules
-    promptFileManager = new PromptFileManager(db);
+    const promptFileManager = new PromptFileManager(db);
     await promptFileManager.initialize();
     // Load system prompt from file into ai-service
     const systemPrompt = await promptFileManager.loadSystemPrompt();
     await aiService.setSystemPrompt(systemPrompt);
+    container.register('promptFileManager', promptFileManager);
 
     // Create Agent Loop for autonomous behaviors (uses dispatcher)
-    agentLoop = new AgentLoop(dispatcher, agentMemory, db, sessionWorkspace);
+    const agentLoop = new AgentLoop(dispatcher, agentMemory, db, sessionWorkspace);
     mcpServer.setAgentLoop(agentLoop);
     mcpServer.setSessionWorkspace(sessionWorkspace);
+    container.register('agentLoop', agentLoop);
 
     // Create Connector Runtime for dynamic external service connectors (uses dispatcher)
-    connectorRuntime = new ConnectorRuntime(dispatcher, db);
+    const connectorRuntime = new ConnectorRuntime(dispatcher, db);
     mcpServer.setConnectorRuntime(connectorRuntime);
+    container.register('connectorRuntime', connectorRuntime);
 
     // Create Agent Manager for multi-agent system
-    agentManager = new AgentManager(db, dispatcher, agentLoop, agentMemory);
+    const agentManager = new AgentManager(db, dispatcher, agentLoop, agentMemory);
     await agentManager.initialize();
     dispatcher.setAgentManager(agentManager);
+    container.register('agentManager', agentManager);
 
     // Create Session Init Manager
-    sessionInitManager = new SessionInitManager(db, agentMemory, eventBus);
+    const sessionInitManager = new SessionInitManager(db, agentMemory, eventBus);
+    container.register('sessionInitManager', sessionInitManager);
 
     // Create Background Memory Daemon (escalating tick schedule)
-    memoryDaemon = new BackgroundMemoryDaemon(dispatcher, agentMemory, db, eventBus);
+    const memoryDaemon = new BackgroundMemoryDaemon(dispatcher, agentMemory, db, eventBus);
+    container.register('memoryDaemon', memoryDaemon);
 
     // Create Background Workflow Scheduler (15-min fixed tick)
-    workflowScheduler = new BackgroundWorkflowScheduler(workflowManager, db, eventBus);
+    const workflowScheduler = new BackgroundWorkflowScheduler(workflowManager, db, eventBus);
+    container.register('workflowScheduler', workflowScheduler);
+    container.register('ollamaService', ollamaService);
 
     createWindow();
 
-    // Setup IPC handlers (pass all services)
-    require('./ipc-handlers')(ipcMain, db, aiService, mcpServer, mainWindow, ollamaService, chainController, workflowManager, vectorStore, capabilityManager, portListenerManager, agentMemory, promptFileManager, agentLoop, connectorRuntime, dispatcher, agentManager, eventBus, memoryDaemon, workflowScheduler, sessionInitManager);
+    // Update mainWindow reference now that it exists
+    container.register('mainWindow', mainWindow);
+
+    // Setup IPC handlers (pass container instead of 22 params)
+    require('./ipc-handlers')(ipcMain, container);
 
     // Late-bind EventBus dependencies (needs mainWindow)
     eventBus.init({ mainWindow, dispatcher, db });
 
+    // Initialize Knowledge System (before plugins, so plugins can write knowledge)
+    const knowledgeManager = new KnowledgeManager(db);
+    container.register('knowledgeManager', knowledgeManager);
+    await knowledgeManager.initialize();
+
+    // Register explore_knowledge tool in MCPServer
+    mcpServer.registerTool('explore_knowledge', {
+      name: 'explore_knowledge',
+      description: 'Get the knowledge file tree. Returns all knowledge items with metadata (titles, categories, tags, file paths, line counts). Use read_file to access specific knowledge content after exploring.',
+      userDescription: 'Explore the personal knowledge store',
+      inputSchema: { type: 'object' }
+    }, async () => {
+      return await knowledgeManager.getKnowledgeTree();
+    });
+
+    // Initialize Plugin System (after all core services are wired)
+    const pluginManager = new PluginManager(container);
+    container.register('pluginManager', pluginManager);
+    await pluginManager.initialize();
+
     // Auto-start background daemons if baseinit was completed
     const baseinitDone = await db.getSetting('baseinit.completed');
     const daemonEnabled = await db.getSetting('baseinit.daemonEnabled');
-    // Backward compatibility:
-    // - If daemonEnabled is explicitly false, respect it.
-    // - If daemonEnabled is missing (older installs) but baseinit is done, auto-start.
     const shouldAutoStartDaemons =
       daemonEnabled === 'true' || (baseinitDone === 'true' && daemonEnabled !== 'false');
     if (shouldAutoStartDaemons) {
@@ -246,33 +271,29 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  const pluginManager = container.optional('pluginManager');
+  const memoryDaemon = container.optional('memoryDaemon');
+  const workflowScheduler = container.optional('workflowScheduler');
+  const agentLoop = container.optional('agentLoop');
+  const agentManager = container.optional('agentManager');
+  const connectorRuntime = container.optional('connectorRuntime');
+  const portListenerManager = container.optional('portListenerManager');
+  const mcpServer = container.optional('mcpServer');
+  const db = container.optional('db');
+
+  // Disable all plugins
+  if (pluginManager) await pluginManager.disableAll();
   // Stop background daemons
-  if (memoryDaemon) {
-    memoryDaemon.stop();
-  }
-  if (workflowScheduler) {
-    workflowScheduler.stop();
-  }
+  if (memoryDaemon) memoryDaemon.stop();
+  if (workflowScheduler) workflowScheduler.stop();
   // Save all agent loop sessions on quit
-  if (agentLoop) {
-    await agentLoop.onAppQuit();
-  }
+  if (agentLoop) await agentLoop.onAppQuit();
   // Deactivate all agents
-  if (agentManager) {
-    await agentManager.onAppQuit();
-  }
+  if (agentManager) await agentManager.onAppQuit();
   // Stop all connectors
-  if (connectorRuntime) {
-    await connectorRuntime.stopAll();
-  }
+  if (connectorRuntime) await connectorRuntime.stopAll();
   // Cleanup resources
-  if (portListenerManager) {
-    await portListenerManager.stopAll();
-  }
-  if (mcpServer) {
-    await mcpServer.stop();
-  }
-  if (db) {
-    await db.close();
-  }
+  if (portListenerManager) await portListenerManager.stopAll();
+  if (mcpServer) await mcpServer.stop();
+  if (db) await db.close();
 });
