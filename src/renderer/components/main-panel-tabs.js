@@ -19,6 +19,8 @@
                 panel.chatTabs.delete(panel.activeTabId);
                 tab.title = 'New Chat';
                 tab.messagesHTML = '';
+                tab.scrollTop = 0;
+                tab.followOutput = true;
                 panel.chatTabs.set(newSessionId, tab);
             }
             panel.activeTabId = newSessionId;
@@ -45,7 +47,9 @@
                 title: `Chat ${panel.chatTabs.size + 1}`,
                 messagesHTML: '',
                 isSending: false,
-                loadingId: null
+                loadingId: null,
+                scrollTop: 0,
+                followOutput: true
             });
 
             panel.activeTabId = sessionId;
@@ -80,7 +84,9 @@
                 agentIcon: agent ? agent.icon : '🤖',
                 messagesHTML: '',
                 isSending: false,
-                loadingId: null
+                loadingId: null,
+                scrollTop: 0,
+                followOutput: true
             });
 
             panel.activeTabId = sessionId;
@@ -144,7 +150,9 @@
                     title: `Chat ${index + 1}`,
                     messagesHTML: '',
                     isSending: false,
-                    loadingId: null
+                    loadingId: null,
+                    scrollTop: 0,
+                    followOutput: true
                 });
             }
 
@@ -193,6 +201,8 @@
         const container = getMessagesContainer();
         if (container) {
             panel.chatTabs.get(panel.activeTabId).messagesHTML = container.innerHTML;
+            panel.chatTabs.get(panel.activeTabId).scrollTop = container.scrollTop;
+            panel.chatTabs.get(panel.activeTabId).followOutput = panel._isNearBottom(container);
         }
     }
 
@@ -216,7 +226,11 @@
             await loadTabConversations(panel, sessionId);
         }
 
-        container.scrollTop = container.scrollHeight;
+        if (tab.followOutput === false && typeof tab.scrollTop === 'number') {
+            container.scrollTop = tab.scrollTop;
+        } else {
+            container.scrollTop = container.scrollHeight;
+        }
         renderTabs(panel);
 
         await window.electronAPI.saveSetting('active_chat_tab', sessionId.toString());
@@ -232,13 +246,22 @@
                 return;
             }
 
+            panel._suspendMessageAutoscroll = true;
             container.innerHTML = '';
             conversations.forEach(conversation => {
                 panel.addMessage(conversation.role, conversation.content);
             });
-            container.scrollTop = container.scrollHeight;
+            const tab = panel.chatTabs.get(sessionId);
+            if (tab && tab.followOutput === false && typeof tab.scrollTop === 'number') {
+                container.scrollTop = tab.scrollTop;
+            } else {
+                container.scrollTop = container.scrollHeight;
+            }
         } catch (error) {
             console.error('Error loading tab conversations:', error);
+        } finally {
+            panel._suspendMessageAutoscroll = false;
+            panel._storeActiveTabScrollState();
         }
     }
 

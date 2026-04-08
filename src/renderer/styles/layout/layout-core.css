@@ -156,6 +156,9 @@
     padding: 1rem;
     background-color: var(--chat-bg);
     border-radius: var(--border-radius);
+    overscroll-behavior: contain;
+    scroll-behavior: smooth;
+    scroll-padding-bottom: 1rem;
 }
 
 .input-container {

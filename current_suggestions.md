@@ -35,6 +35,16 @@
     Split the monolithic stylesheet into imported domain files so the line-budget rule now applies across the renderer without exceptions.
 17. `tests/contracts/renderer-script-wiring-contract.test.js` and `tests/contracts/styles-layout-import-contract.test.js`
     Added explicit wiring checks for renderer helper scripts and stylesheet imports so the new modular structure is enforced by the contract suite.
+18. `src/main/agent-manager.js`, `src/main/subtask-runtime.js`, `src/main/tool-chain-controller.js`, `src/main/mcp-server.js`, and `src/main/mcp/register-agent-tools.js`
+    Reworked delegated sub-agent runs into an async, file-backed runtime: `delegate_to_subagent` now returns an immediate acknowledgment, delegated runs write durable files under `agentin/subtasks/`, completions autosend back to the parent session, and MCP now exposes `get_subagent_run` alongside the existing delegation tools.
+19. `src/renderer/components/message-formatter.js`, `src/renderer/components/main-panel.js`, `src/renderer/components/main-panel-tabs.js`, and chat styles
+    Reworked chat rendering and scrolling: assistant messages now go through a single formatter with markdown/thinking blocks, image/lightbox handling no longer uses inline click handlers, tab scroll position is preserved, and PageDown now advances the chat viewport without adding extra UI controls.
+20. `tests/contracts/subagent-contract.test.js`
+    Added a contract test covering sub-agent delegation, completion contract handling, artifact merging, and active/idle lifecycle updates.
+21. `subagent-architecture.md`
+    Added a short architecture note separating delegated subtask runs from direct user-opened subagent chats so later refactors keep those semantics distinct.
+22. `tests/contracts/mcp-session-context-contract.test.js`
+    Added a contract test for per-call MCP session context so delegated background runs keep their own workspace/session scope instead of leaking through the global active chat session.
 
 ## Still Not Clean
 1. `src/main/main.js`
@@ -42,7 +52,7 @@
 2. `src/main/ipc/register-workflow-handlers.js`
    The workflow popup window also uses `nodeIntegration: true` and `contextIsolation: false`, so it inherits the same renderer risk profile.
 3. `src/renderer/components/main-panel.js`
-   The file is now under the line budget, but the chat message/attachment rendering paths still use string-built HTML and lightbox attribute interpolation. That needs a dedicated hardening pass.
+   The file is now under the line budget and safer than before, but tab state still stores raw `messagesHTML`, which keeps restoration coupled to rendered markup instead of message data.
 4. `src/renderer/components/rule-manager.js`
    Rule names/content are still rendered through `innerHTML`, so user-authored prompt rules remain a stored injection surface.
 5. `src/renderer/components/sidebar.js`
@@ -50,10 +60,10 @@
 6. `src/main/plugin-manager.js` and `src/main/main.js`
    Dynamic tool registration is still ad hoc. A single registry API for core/plugin/custom tools would prevent future capability drift.
 7. `tests/contracts/`
-   The backbone now exists, but the highest-risk renderer surfaces still need deeper coverage: `main-panel` rendering branches, `rule-manager`, remaining `sidebar` HTML rendering, and workflow window security boundaries.
+   The backbone now exists, but the highest-risk surfaces still need deeper coverage: delegated sub-agent runs through the full chain controller, `main-panel` rendering branches, `rule-manager`, remaining `sidebar` HTML rendering, and workflow window security boundaries.
 
 ## Suggested Next Order
-1. Harden `src/renderer/components/main-panel.js` message rendering paths and add focused contracts for permission dialogs, tab restoration, and attachment rendering.
+1. Replace raw `messagesHTML` tab persistence with structured message state, then add focused contracts for tab restoration and scroll behavior.
 2. Harden `src/renderer/components/rule-manager.js` and the remaining string-built sections in `src/renderer/components/sidebar.js`.
 3. Replace ad hoc dynamic tool registration with a single registry surface shared by core, plugin, and custom tools.
 4. Replace insecure Electron renderer settings with a preload-based bridge once the renderer API surface is pinned by tests.

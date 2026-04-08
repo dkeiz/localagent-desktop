@@ -23,6 +23,7 @@ module.exports = {
     const required = [
       'components/main-panel-tabs.js',
       'components/main-panel-permissions.js',
+      'components/message-formatter.js',
       'components/api-provider-settings.js',
       'components/main-panel.js'
     ];

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const SubtaskRuntime = require('./subtask-runtime');
 
 /**
  * AgentManager — Manages agent lifecycle, folders, and session routing.
@@ -9,11 +10,17 @@ const path = require('path');
  *   sub  — ephemeral agents called by others, return result then go blank
  */
 class AgentManager {
-    constructor(db, dispatcher, agentLoop, agentMemory) {
+    constructor(db, dispatcher, agentLoop, agentMemory, sessionWorkspace = null, chainController = null, eventBus = null, subtaskRuntime = null) {
         this.db = db;
         this.dispatcher = dispatcher;
         this.agentLoop = agentLoop;
         this.agentMemory = agentMemory;
+        this.sessionWorkspace = sessionWorkspace;
+        this.chainController = chainController;
+        this.eventBus = eventBus;
+        this.subtaskRuntime = subtaskRuntime || new SubtaskRuntime(db, sessionWorkspace, eventBus);
+        this.pendingSubtasks = new Map();
+        this.activeSubtaskCounts = new Map();
         this.basePath = path.join(__dirname, '../../agentin/agents');
     }
 
@@ -39,6 +46,10 @@ class AgentManager {
         // Ensure folders exist for all agents
         for (const agent of await this.db.getAgents()) {
             this._ensureAgentFolder(agent);
+        }
+
+        if (this.subtaskRuntime) {
+            this.subtaskRuntime.initialize();
         }
     }
 
@@ -333,47 +344,452 @@ Dashboard-style reports with metrics, status indicators, and recommendations.`
         return null;
     }
 
+    _buildSubAgentTask(task, contractType, expectedOutput = '', run = null) {
+        const outputHint = expectedOutput && String(expectedOutput).trim()
+            ? String(expectedOutput).trim()
+            : 'Return the most useful structured fields for the task in the data object.';
+        const runGuidance = run
+            ? `Run files for this delegated task:
+- Run Folder: ${run.run_dir}
+- Status File: ${run.status_path}
+- Result File: ${run.result_path}
+- Trace File: ${run.trace_path}
+- Workspace Directory: ${run.workspace_dir}
+
+Your parent may inspect this run folder later if clarification is needed. Keep your work legible, and use workspace files for large intermediate output when useful.
+`
+            : '';
+
+        return `You are being invoked as a sub-agent by another agent.
+
+Complete only the requested task. Use available tools if needed. When finished, you MUST call the complete_subtask tool exactly once.
+
+Required completion contract:
+- status: "${contractType}" on success, or "task_failed" on failure
+- summary: short human-readable summary
+- data: structured object with the actual result
+- artifacts: array of files created or relied on for the result
+- notes: optional string
+
+Expected output details:
+${outputHint}
+
+${runGuidance}
+
+Task:
+${task}`;
+    }
+
+    _extractJsonObject(text) {
+        const content = String(text || '').trim();
+        if (!content) return null;
+
+        const fencedMatch = content.match(/```json\s*([\s\S]*?)```/i) || content.match(/```\s*([\s\S]*?)```/i);
+        const candidate = fencedMatch ? fencedMatch[1].trim() : content;
+
+        try {
+            return JSON.parse(candidate);
+        } catch (error) {
+            // Fall through to brace-depth extraction.
+        }
+
+        const start = candidate.indexOf('{');
+        if (start === -1) {
+            return null;
+        }
+
+        let depth = 0;
+        let inString = false;
+        let escapeNext = false;
+
+        for (let index = start; index < candidate.length; index++) {
+            const char = candidate[index];
+
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+
+            if (char === '"') {
+                inString = !inString;
+                continue;
+            }
+
+            if (inString) {
+                continue;
+            }
+
+            if (char === '{') {
+                depth++;
+            } else if (char === '}') {
+                depth--;
+                if (depth === 0) {
+                    try {
+                        return JSON.parse(candidate.slice(start, index + 1));
+                    } catch (error) {
+                        return null;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    _normalizeCompletionPayload(payload, contractType) {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            throw new Error('Sub-agent completion payload must be an object');
+        }
+
+        const status = String(payload.status || '').trim();
+        if (!status) {
+            throw new Error('Sub-agent completion payload is missing status');
+        }
+        if (status !== contractType && status !== 'task_failed') {
+            throw new Error(`Sub-agent returned invalid status "${status}" for contract "${contractType}"`);
+        }
+
+        const summary = String(payload.summary || '').trim();
+        if (!summary) {
+            throw new Error('Sub-agent completion payload is missing summary');
+        }
+
+        const data = payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+            ? payload.data
+            : {};
+
+        const artifacts = Array.isArray(payload.artifacts)
+            ? payload.artifacts.map(artifact => {
+                const normalizedPath = artifact?.path ? String(artifact.path) : '';
+                const normalizedName = artifact?.name
+                    ? String(artifact.name)
+                    : (normalizedPath ? path.basename(normalizedPath) : '');
+
+                return {
+                    ...artifact,
+                    path: normalizedPath,
+                    name: normalizedName
+                };
+            })
+            : [];
+
+        return {
+            status,
+            summary,
+            data,
+            artifacts,
+            notes: payload.notes ? String(payload.notes) : ''
+        };
+    }
+
+    _normalizeWorkspaceArtifacts(sessionId) {
+        if (!this.sessionWorkspace) {
+            return [];
+        }
+
+        return this.sessionWorkspace.listFiles(sessionId).map(file => ({
+            path: file.path,
+            name: file.name,
+            size: file.size,
+            created: file.created instanceof Date ? file.created.toISOString() : file.created,
+            description: 'Generated in sub-agent workspace',
+            source: 'workspace'
+        }));
+    }
+
+    _mergeArtifacts(contractArtifacts, workspaceArtifacts) {
+        const merged = new Map();
+
+        const pushArtifact = (artifact, fallbackSource) => {
+            if (!artifact || typeof artifact !== 'object') {
+                return;
+            }
+
+            const pathValue = artifact.path ? String(artifact.path) : '';
+            const nameValue = artifact.name ? String(artifact.name) : '';
+            const key = nameValue || pathValue;
+            if (!key) {
+                return;
+            }
+
+            const existing = merged.get(key) || {};
+            merged.set(key, {
+                ...existing,
+                ...artifact,
+                path: pathValue || existing.path || '',
+                name: nameValue || existing.name || '',
+                source: artifact.source || existing.source || fallbackSource
+            });
+        };
+
+        contractArtifacts.forEach(artifact => pushArtifact(artifact, 'contract'));
+        workspaceArtifacts.forEach(artifact => pushArtifact(artifact, 'workspace'));
+
+        return Array.from(merged.values());
+    }
+
+    async _completeSubagentRun(runId, response, sessionId, contractType) {
+        const completionPayload = response?.completionResult
+            ? response.completionResult
+            : this._extractJsonObject(response?.content || '');
+
+        const normalized = this._normalizeCompletionPayload(completionPayload, contractType);
+        const workspaceArtifacts = this._normalizeWorkspaceArtifacts(sessionId);
+        const artifacts = this._mergeArtifacts(normalized.artifacts, workspaceArtifacts);
+
+        return {
+            ...normalized,
+            artifacts
+        };
+    }
+
+    async _setSubagentActive(agentId, active) {
+        const current = this.activeSubtaskCounts.get(agentId) || 0;
+        const next = active ? current + 1 : Math.max(0, current - 1);
+        this.activeSubtaskCounts.set(agentId, next);
+        await this.db.updateAgent(agentId, { status: next > 0 ? 'active' : 'idle' });
+    }
+
+    _createTraceHooks(runId) {
+        if (!this.subtaskRuntime) {
+            return null;
+        }
+
+        return {
+            onAssistantMessage: async ({ content }) => {
+                this.subtaskRuntime.appendMessage(runId, {
+                    role: 'assistant',
+                    content
+                });
+            },
+            onToolResult: async ({ toolName, params, success, result, error }) => {
+                this.subtaskRuntime.appendToolEvent(runId, {
+                    tool_name: toolName,
+                    params,
+                    success,
+                    result,
+                    error
+                });
+            }
+        };
+    }
+
+    async getSubagentRun(runId) {
+        if (this.subtaskRuntime) {
+            return this.subtaskRuntime.getRun(runId);
+        }
+        return this.db.getSubagentRun(runId);
+    }
+
+    async listSubagentRuns(filters = {}) {
+        if (this.subtaskRuntime) {
+            return this.subtaskRuntime.listRuns(filters);
+        }
+        return this.db.listSubagentRuns(filters);
+    }
+
+    async waitForSubagentRun(runId, timeoutMs = 30000) {
+        const timeout = Math.max(100, Number(timeoutMs) || 30000);
+        const started = Date.now();
+
+        while (Date.now() - started < timeout) {
+            const pending = this.pendingSubtasks.get(runId);
+            if (pending) {
+                await Promise.race([
+                    pending.catch(() => null),
+                    new Promise(resolve => setTimeout(resolve, 25))
+                ]);
+            }
+
+            const run = await this.getSubagentRun(runId);
+            if (run && ['failed', 'task_failed'].includes(String(run.status))) {
+                if (pending) {
+                    await pending.catch(() => null);
+                }
+                return run;
+            }
+            if (run && run.result) {
+                if (pending) {
+                    await pending.catch(() => null);
+                    return this.getSubagentRun(runId);
+                }
+                return run;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+
+        throw new Error(`Timed out waiting for subagent run ${runId}`);
+    }
+
+    async _executeDelegatedRun(run, agent, task, contractType, expectedOutput) {
+        const traceHooks = this._createTraceHooks(run.run_id);
+        const taskPrompt = this._buildSubAgentTask(task, contractType, expectedOutput, run);
+        this.subtaskRuntime.appendMessage(run.run_id, {
+            role: 'user',
+            content: taskPrompt
+        });
+
+        this.subtaskRuntime.markRunning(run.run_id);
+        this.eventBus?.publish('subagent:started', {
+            runId: run.run_id,
+            parentSessionId: run.parent_session_id,
+            childSessionId: run.child_session_id,
+            subagentId: run.subagent_id,
+            agentName: run.agent_name
+        });
+
+        try {
+            const result = this.chainController
+                ? await this.chainController.executeWithChaining(
+                    taskPrompt,
+                    [],
+                    {
+                        mode: 'chat',
+                        sessionId: run.child_session_id,
+                        agentId: agent.id,
+                        includeTools: true,
+                        includeRules: false,
+                        completionTools: ['complete_subtask'],
+                        trace: traceHooks
+                    }
+                )
+                : await this.dispatcher.dispatch(
+                    taskPrompt,
+                    [],
+                    {
+                        mode: 'chat',
+                        sessionId: run.child_session_id,
+                        agentId: agent.id,
+                        includeTools: true,
+                        includeRules: false
+                    }
+                );
+
+            if (!this.chainController && result?.content) {
+                this.subtaskRuntime.appendMessage(run.run_id, {
+                    role: 'assistant',
+                    content: result.content
+                });
+            }
+
+            const contract = await this._completeSubagentRun(run.run_id, result, run.child_session_id, contractType);
+            const completedRun = this.subtaskRuntime.completeRun(run.run_id, {
+                contract,
+                artifacts: contract.artifacts,
+                raw_response: result?.content || ''
+            });
+            const delivery = await this.subtaskRuntime.deliverToParent(run.run_id, {
+                status: contract.status,
+                summary: contract.summary,
+                contract
+            });
+
+            this.eventBus?.publish('subagent:completed', {
+                runId: run.run_id,
+                parentSessionId: run.parent_session_id,
+                childSessionId: run.child_session_id,
+                subagentId: run.subagent_id,
+                agentName: run.agent_name,
+                summary: contract.summary,
+                status: contract.status,
+                deliveryPath: delivery?.delivery_path || null
+            });
+
+            return completedRun;
+        } catch (error) {
+            const failedRun = this.subtaskRuntime.failRun(run.run_id, error.message);
+            await this.subtaskRuntime.deliverToParent(run.run_id, {
+                status: 'failed',
+                summary: error.message,
+                contract: {
+                    status: 'task_failed',
+                    summary: error.message,
+                    data: {},
+                    artifacts: [],
+                    notes: ''
+                }
+            });
+            this.eventBus?.publish('subagent:failed', {
+                runId: run.run_id,
+                parentSessionId: run.parent_session_id,
+                childSessionId: run.child_session_id,
+                subagentId: run.subagent_id,
+                agentName: run.agent_name,
+                error: error.message
+            });
+            return failedRun;
+        } finally {
+            await this._setSubagentActive(agent.id, false);
+        }
+    }
+
     // ── Sub-Agent Invocation ──
 
-    async invokeSubAgent(parentSessionId, subAgentId, task) {
+    async invokeSubAgent(parentSessionId, subAgentId, task, options = {}) {
         const agent = await this.db.getAgent(subAgentId);
         if (!agent || agent.type !== 'sub') {
             throw new Error(`Sub-agent ${subAgentId} not found or not a sub-agent`);
         }
 
-        // Create temporary session
-        const session = await this.db.createAgentSession(subAgentId, `Sub: ${agent.name}`);
+        const contractType = options.contractType || 'task_complete';
+        const expectedOutput = options.expectedOutput || '';
+        const run = this.subtaskRuntime.createRun({
+            parentSessionId,
+            subagentId: subAgentId,
+            agentName: agent.name,
+            task,
+            contractType,
+            expectedOutput
+        });
 
-        try {
-            // Build agent-specific system prompt
-            const systemPrompt = this.getAgentSystemPrompt(agent);
+        await this._setSubagentActive(subAgentId, true);
+        this.eventBus?.publish('subagent:queued', {
+            runId: run.run_id,
+            parentSessionId,
+            childSessionId: run.child_session_id,
+            subagentId: subAgentId,
+            agentName: agent.name
+        });
 
-            // Dispatch task
-            const result = await this.dispatcher.dispatch(
-                task,
-                [],
-                {
-                    mode: 'chat',
-                    sessionId: session.id,
-                    agentId: subAgentId,
-                    includeTools: true,
-                    includeRules: false
-                }
-            );
+        const pending = this._executeDelegatedRun(run, agent, task, contractType, expectedOutput)
+            .catch(error => {
+                console.error('[AgentManager] Delegated subtask failed:', error.message);
+                return null;
+            })
+            .finally(() => {
+                this.pendingSubtasks.delete(run.run_id);
+            });
+        this.pendingSubtasks.set(run.run_id, pending);
 
-            return {
-                success: true,
-                agentName: agent.name,
-                result: result.content,
-                sessionId: session.id
-            };
-        } catch (e) {
-            return {
-                success: false,
-                agentName: agent.name,
-                error: e.message
-            };
-        }
+        return {
+            accepted: true,
+            success: true,
+            runId: run.run_id,
+            run_id: run.run_id,
+            agentId: subAgentId,
+            agentName: agent.name,
+            childSessionId: run.child_session_id,
+            child_session_id: run.child_session_id,
+            parentSessionId,
+            parent_session_id: parentSessionId,
+            contractType,
+            contract_type: contractType,
+            status: run.status,
+            runDir: run.run_dir,
+            run_dir: run.run_dir,
+            resultPath: run.result_path,
+            result_path: run.result_path,
+            tracePath: run.trace_path,
+            trace_path: run.trace_path,
+            workspaceDir: run.workspace_dir,
+            workspace_dir: run.workspace_dir
+        };
     }
 
     // ── Cleanup ──

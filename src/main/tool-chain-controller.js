@@ -41,6 +41,18 @@ class ToolChainController {
         console.log('[Chain] Chain stopped by user');
     }
 
+    async _emitTrace(trace, hookName, payload) {
+        if (!trace || typeof trace[hookName] !== 'function') {
+            return;
+        }
+
+        try {
+            await trace[hookName](payload);
+        } catch (error) {
+            console.error(`[Chain] Trace hook ${hookName} failed:`, error.message);
+        }
+    }
+
     /**
      * Strip TOOL: patterns from text (brace-depth aware)
      */
@@ -81,6 +93,8 @@ class ToolChainController {
         this.currentChain = [];
         this.stopped = false; // Reset stopped flag for new chain
         this.executedToolCalls = new Map(); // Track executed tool calls by ID
+        const completionTools = new Set(options.completionTools || []);
+        const trace = options.trace || null;
         let stepCount = 0;
         let currentMessage = message;
         let originalUserMessage = message; // Keep reference to user's actual question
@@ -98,13 +112,34 @@ class ToolChainController {
             stepCount++;
             console.log(`[Chain] Step ${stepCount}: Processing message`);
 
-            // Send message to LLM via dispatcher (mode=chat includes tools + rules)
-            // On continuation steps, currentMessage is null — tool results are in workingHistory
-            const response = await this.dispatcher.dispatch(currentMessage, workingHistory, { mode: 'chat', sessionId: options.sessionId, agentId: options.agentId });
+            // Send message to LLM via dispatcher.
+            // On continuation steps, currentMessage is null — tool results are in workingHistory.
+            const dispatchOptions = {
+                mode: options.mode || 'chat',
+                sessionId: options.sessionId,
+                agentId: options.agentId
+            };
+
+            if (options.includeTools !== undefined) {
+                dispatchOptions.includeTools = options.includeTools;
+            }
+            if (options.includeRules !== undefined) {
+                dispatchOptions.includeRules = options.includeRules;
+            }
+            if (options.preemptible !== undefined) {
+                dispatchOptions.preemptible = options.preemptible;
+            }
+
+            const response = await this.dispatcher.dispatch(currentMessage, workingHistory, dispatchOptions);
             lastLLMResponse = response;
 
             // Parse tool calls from response
             const toolCalls = this.mcpServer.parseToolCall(response.content);
+            await this._emitTrace(trace, 'onAssistantMessage', {
+                step: stepCount,
+                content: response.content,
+                toolCalls
+            });
 
             if (toolCalls.length === 0) {
                 // No tool calls - this is the final answer
@@ -140,8 +175,25 @@ class ToolChainController {
                     const result = await this.mcpServer.executeTool(
                         call.toolName,
                         call.params,
-                        call.toolCallId  // Pass the unique ID
+                        call.toolCallId,  // Pass the unique ID
+                        {
+                            context: {
+                                sessionId: options.sessionId
+                            }
+                        }
                     );
+
+                    if (completionTools.has(call.toolName)) {
+                        finalResponse = {
+                            content: this.stripToolPatterns(response.content) || response.content,
+                            model: response.model,
+                            usage: response.usage,
+                            chainComplete: true,
+                            completionTool: call.toolName,
+                            completionResult: result.result
+                        };
+                        break;
+                    }
 
                     // Check if it's the special end_answer tool
                     if (call.toolName === 'end_answer') {
@@ -182,6 +234,15 @@ class ToolChainController {
                         success: true,
                         result: result.result  // Unwrap the actual result
                     });
+                    await this._emitTrace(trace, 'onToolResult', {
+                        step: stepCount,
+                        toolCallId: call.toolCallId,
+                        toolName: call.toolName,
+                        params: call.params,
+                        success: true,
+                        result: result.result,
+                        timestamp: result.timestamp
+                    });
 
                     // Add to current chain for workflow learning
                     this.currentChain.push({
@@ -194,6 +255,14 @@ class ToolChainController {
                     toolResults.push({
                         toolCallId: call.toolCallId,
                         tool: call.toolName,
+                        params: call.params,
+                        success: false,
+                        error: error.message
+                    });
+                    await this._emitTrace(trace, 'onToolResult', {
+                        step: stepCount,
+                        toolCallId: call.toolCallId,
+                        toolName: call.toolName,
                         params: call.params,
                         success: false,
                         error: error.message

@@ -16,6 +16,7 @@ const ConnectorRuntime = require('./connector-runtime');
 const InferenceDispatcher = require('./inference-dispatcher');
 const SessionWorkspace = require('./session-workspace');
 const AgentManager = require('./agent-manager');
+const SubtaskRuntime = require('./subtask-runtime');
 const ollamaService = require('./ollama-service');
 const BackendEventBus = require('./backend-event-bus');
 const BackgroundMemoryDaemon = require('./background-memory-daemon');
@@ -163,6 +164,10 @@ app.whenReady().then(async () => {
     sessionWorkspace.cleanupStale(30); // Purge workspaces older than 30 days
     container.register('sessionWorkspace', sessionWorkspace);
 
+    // Create Subtask Runtime for delegated sub-agent runs
+    const subtaskRuntime = new SubtaskRuntime(db, sessionWorkspace, eventBus);
+    container.register('subtaskRuntime', subtaskRuntime);
+
     // Create Prompt File Manager for file-based prompts/rules
     const promptFileManager = new PromptFileManager(db);
     await promptFileManager.initialize();
@@ -183,9 +188,19 @@ app.whenReady().then(async () => {
     container.register('connectorRuntime', connectorRuntime);
 
     // Create Agent Manager for multi-agent system
-    const agentManager = new AgentManager(db, dispatcher, agentLoop, agentMemory);
+    const agentManager = new AgentManager(
+      db,
+      dispatcher,
+      agentLoop,
+      agentMemory,
+      sessionWorkspace,
+      chainController,
+      eventBus,
+      subtaskRuntime
+    );
     await agentManager.initialize();
     dispatcher.setAgentManager(agentManager);
+    mcpServer.setAgentManager(agentManager);
     container.register('agentManager', agentManager);
 
     // Create Session Init Manager

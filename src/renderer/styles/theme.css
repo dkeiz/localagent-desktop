@@ -234,7 +234,7 @@ select:focus {
   padding: 0.4rem 0.6rem;
   margin-bottom: 0.4rem;
   border-radius: var(--border-radius);
-  max-width: 85%;
+  max-width: min(92%, 88ch);
   font-size: 0.85rem;
 }
 
@@ -242,7 +242,7 @@ select:focus {
   background-color: var(--user-msg-bg);
   color: var(--user-msg-text);
   margin-left: auto;
-  text-align: right;
+  text-align: left;
 }
 
 .message.assistant {

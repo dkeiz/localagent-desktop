@@ -40,6 +40,7 @@ class MainPanel {
         const voiceBtn = document.getElementById('voice-btn');
         const speakBtn = document.getElementById('speak-btn');
         const dropZone = document.getElementById('drop-zone');
+        const messagesContainer = document.getElementById('messages-container');
 
         sendBtn.addEventListener('click', () => this.sendMessage());
 
@@ -114,6 +115,27 @@ class MainPanel {
             e.preventDefault();
             dropZone.classList.remove('active');
             this.handleFileDrop(e.dataTransfer.files);
+        });
+
+        if (messagesContainer) {
+            messagesContainer.addEventListener('scroll', () => this._storeActiveTabScrollState());
+            messagesContainer.addEventListener('click', (event) => {
+                const image = event.target.closest('.chat-image');
+                if (!image) return;
+
+                const lightboxSrc = image.getAttribute('data-lightbox-src') || image.getAttribute('src');
+                if (lightboxSrc) {
+                    this._openLightbox(lightboxSrc);
+                }
+            });
+        }
+
+        window.addEventListener('keydown', (event) => {
+            if (event.key !== 'PageDown') return;
+            if (this._shouldIgnorePagingTarget(event.target)) return;
+
+            event.preventDefault();
+            this._pageDownMessages();
         });
 
         // Settings tab events
@@ -246,10 +268,18 @@ class MainPanel {
         const container = document.querySelector('.input-container');
         const fileDiv = document.createElement('div');
         fileDiv.className = 'attached-file';
-        fileDiv.innerHTML = `
-            <span>📎 ${fileName}</span>
-            <span class="remove-file" onclick="this.parentElement.remove()">✕</span>
-        `;
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = `📎 ${fileName}`;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'remove-file';
+        removeBtn.textContent = '✕';
+        removeBtn.title = 'Remove attachment';
+        removeBtn.addEventListener('click', () => fileDiv.remove());
+
+        fileDiv.appendChild(nameSpan);
+        fileDiv.appendChild(removeBtn);
         container.insertBefore(fileDiv, container.firstChild);
     }
 
@@ -341,19 +371,9 @@ class MainPanel {
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
         messageDiv.className = `message ${role}${style === 'terminal' ? ' terminal-output' : ''}`;
+        const shouldFollow = !this._suspendMessageAutoscroll && this._shouldAutoScroll(role === 'user' || content === '...');
 
-        // Use preformatted text for terminal-style output
-        if (style === 'terminal') {
-            messageDiv.style.whiteSpace = 'pre-wrap';
-            messageDiv.style.fontFamily = 'monospace';
-        }
-
-        // Process content for assistant messages
-        if (role === 'assistant' && content !== '...') {
-            messageDiv.innerHTML = this._renderAssistantContent(content);
-        } else {
-            messageDiv.textContent = content;
-        }
+        this._renderMessageBody(messageDiv, role, content, style);
 
         messageWrapper.appendChild(messageDiv);
 
@@ -361,69 +381,22 @@ class MainPanel {
         if (role === 'assistant' && content !== '...') {
             const speakIcon = document.createElement('button');
             speakIcon.className = 'message-speak-btn';
-            speakIcon.innerHTML = '🔊';
+            speakIcon.textContent = '🔊';
             speakIcon.title = 'Speak this message';
-            speakIcon.onclick = (e) => {
+            speakIcon.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.speakText(content.replace(/<think>[\s\S]*?<\/think>/g, '').trim());
-            };
+            });
             messageWrapper.appendChild(speakIcon);
         }
 
         messagesContainer.appendChild(messageWrapper);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        return messageId;
-    }
-
-    /**
-     * Render assistant content with thinking blocks and image support.
-     */
-    _renderAssistantContent(content) {
-        let html = '';
-
-        // Extract <think>...</think> blocks
-        const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
-        let match;
-        let lastIndex = 0;
-        const vis = this._thinkingVisibility || 'show';
-
-        while ((match = thinkRegex.exec(content)) !== null) {
-            const before = content.substring(lastIndex, match.index).trim();
-            if (before) html += this._escapeAndRenderImages(before);
-
-            if (vis === 'show') {
-                html += `<details class="thinking-block" open><summary>\ud83d\udcad Thinking</summary><div class="thinking-content">${this._escapeHtml(match[1].trim())}</div></details>`;
-            } else if (vis === 'min') {
-                html += `<details class="thinking-block"><summary>\ud83d\udcad Thinking...</summary><div class="thinking-content">${this._escapeHtml(match[1].trim())}</div></details>`;
-            }
-            // vis === 'hide' → skip entirely
-            lastIndex = match.index + match[0].length;
+        if (shouldFollow) {
+            this._scrollMessagesToLatest(true);
+        } else {
+            this._storeActiveTabScrollState();
         }
-
-        const remaining = content.substring(lastIndex).trim();
-        if (remaining) html += this._escapeAndRenderImages(remaining);
-
-        return html || this._escapeHtml(content);
-    }
-
-    /**
-     * Escape HTML and render markdown images.
-     */
-    _escapeAndRenderImages(text) {
-        let escaped = this._escapeHtml(text);
-
-        // Render markdown images: ![alt](url)
-        escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
-            return `<img src="${url}" alt="${alt}" class="chat-image" onclick="window.mainPanel._openLightbox('${url}')" title="Click to enlarge">`;
-        });
-
-        return escaped;
-    }
-
-    _escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return messageId;
     }
 
     _openLightbox(src) {
@@ -434,8 +407,14 @@ class MainPanel {
         const overlay = document.createElement('div');
         overlay.id = 'image-lightbox';
         overlay.className = 'image-lightbox';
-        overlay.onclick = () => overlay.remove();
-        overlay.innerHTML = `<img src="${src}" alt="Enlarged image">`;
+        overlay.addEventListener('click', () => overlay.remove());
+
+        const image = document.createElement('img');
+        image.src = src;
+        image.alt = 'Enlarged image';
+        image.addEventListener('click', (event) => event.stopPropagation());
+
+        overlay.appendChild(image);
         document.body.appendChild(overlay);
     }
 
@@ -461,7 +440,18 @@ class MainPanel {
         completions.forEach(c => {
             const item = document.createElement('div');
             item.className = 'cmd-autocomplete-item';
-            item.innerHTML = `<span class="cmd-name">${c.name}</span> <span class="cmd-desc">${c.description}</span>`;
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'cmd-name';
+            nameSpan.textContent = c.name;
+
+            const descSpan = document.createElement('span');
+            descSpan.className = 'cmd-desc';
+            descSpan.textContent = c.description;
+
+            item.appendChild(nameSpan);
+            item.appendChild(document.createTextNode(' '));
+            item.appendChild(descSpan);
             item.addEventListener('click', () => {
                 document.getElementById('message-input').value = c.name + ' ';
                 document.getElementById('message-input').focus();
@@ -501,19 +491,46 @@ class MainPanel {
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
         messageDiv.className = `message ${role}`;
+        const shouldFollow = !this._suspendMessageAutoscroll && this._shouldAutoScroll(true);
 
         // For images, show inline preview
         if (attachment.type === 'image' && attachment.path) {
-            messageDiv.innerHTML = `<img src="file://${attachment.path}" class="chat-image" alt="${attachment.name}" onclick="window.mainPanel._openLightbox('file://${attachment.path}')" title="Click to enlarge"><br><span>${this._escapeHtml(content)}</span>`;
+            const image = document.createElement('img');
+            image.src = `file://${attachment.path}`;
+            image.className = 'chat-image';
+            image.alt = attachment.name || 'Attached image';
+            image.title = 'Click to enlarge';
+            image.dataset.lightboxSrc = image.src;
+
+            const text = document.createElement('span');
+            text.textContent = content;
+
+            messageDiv.appendChild(image);
+            messageDiv.appendChild(document.createElement('br'));
+            messageDiv.appendChild(text);
         } else {
             // Create attachment icon
             const icons = { image: '🖼️', audio: '🎵', document: '📄' };
-            messageDiv.innerHTML = `<span class="attachment-icon" title="${this._escapeHtml(attachment.name)}">${icons[attachment.type] || '📎'}</span> <span>${this._escapeHtml(content)}</span>`;
+            const icon = document.createElement('span');
+            icon.className = 'attachment-icon';
+            icon.title = attachment.name || 'Attachment';
+            icon.textContent = icons[attachment.type] || '📎';
+
+            const text = document.createElement('span');
+            text.textContent = content;
+
+            messageDiv.appendChild(icon);
+            messageDiv.appendChild(document.createTextNode(' '));
+            messageDiv.appendChild(text);
         }
 
         messageWrapper.appendChild(messageDiv);
         messagesContainer.appendChild(messageWrapper);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        if (shouldFollow) {
+            this._scrollMessagesToLatest(true);
+        } else {
+            this._storeActiveTabScrollState();
+        }
         return messageId;
     }
 
@@ -524,6 +541,113 @@ class MainPanel {
             const wrapper = messageDiv.closest('.message-wrapper');
             (wrapper || messageDiv).remove();
         }
+    }
+
+    _renderMessageBody(messageDiv, role, content, style) {
+        if (style === 'terminal') {
+            messageDiv.classList.add('terminal-output');
+        }
+
+        if (role === 'assistant' && content === '...') {
+            messageDiv.classList.add('loading');
+            messageDiv.textContent = content;
+            return;
+        }
+
+        messageDiv.classList.remove('loading');
+
+        if (window.messageFormatter) {
+            window.messageFormatter.renderInto(messageDiv, {
+                role,
+                content,
+                style,
+                thinkingVisibility: this._thinkingVisibility || 'show'
+            });
+            return;
+        }
+
+        messageDiv.textContent = String(content || '');
+    }
+
+    _getMessagesContainer() {
+        return document.getElementById('messages-container');
+    }
+
+    _isNearBottom(container) {
+        if (!container) return true;
+        const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
+        return distance <= 48;
+    }
+
+    _shouldAutoScroll(force = false) {
+        if (force) return true;
+
+        const tab = this.activeTabId ? this.chatTabs.get(this.activeTabId) : null;
+        if (tab && tab.followOutput === false) {
+            return false;
+        }
+
+        return this._isNearBottom(this._getMessagesContainer());
+    }
+
+    _storeActiveTabScrollState() {
+        if (!this.activeTabId || !this.chatTabs.has(this.activeTabId)) {
+            return;
+        }
+
+        const container = this._getMessagesContainer();
+        if (!container) {
+            return;
+        }
+
+        const tab = this.chatTabs.get(this.activeTabId);
+        tab.scrollTop = container.scrollTop;
+        tab.followOutput = this._isNearBottom(container);
+    }
+
+    _scrollMessagesToLatest(force = false) {
+        if (this._suspendMessageAutoscroll) {
+            return;
+        }
+
+        const container = this._getMessagesContainer();
+        if (!container) {
+            return;
+        }
+
+        if (!force && !this._shouldAutoScroll(false)) {
+            this._storeActiveTabScrollState();
+            return;
+        }
+
+        container.scrollTop = container.scrollHeight;
+        this._storeActiveTabScrollState();
+    }
+
+    _shouldIgnorePagingTarget(target) {
+        if (!target) return false;
+
+        const tagName = target.tagName ? target.tagName.toLowerCase() : '';
+        return tagName === 'input'
+            || tagName === 'textarea'
+            || tagName === 'select'
+            || target.isContentEditable === true;
+    }
+
+    _pageDownMessages() {
+        const container = this._getMessagesContainer();
+        if (!container) {
+            return;
+        }
+
+        const increment = Math.max(container.clientHeight - 72, 120);
+        container.scrollTop = Math.min(container.scrollTop + increment, container.scrollHeight);
+
+        if (this._isNearBottom(container)) {
+            container.scrollTop = container.scrollHeight;
+        }
+
+        this._storeActiveTabScrollState();
     }
 
     async updateContextUsage(response) {

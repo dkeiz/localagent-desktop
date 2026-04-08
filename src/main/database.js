@@ -119,6 +119,7 @@ class DatabaseWrapper {
             `CREATE TABLE IF NOT EXISTS chat_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT,
+                agent_id INTEGER,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_message_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
@@ -158,6 +159,26 @@ class DatabaseWrapper {
                 folder_path TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+
+            `CREATE TABLE IF NOT EXISTS subagent_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_session_id INTEGER,
+                child_session_id INTEGER NOT NULL,
+                subagent_id INTEGER NOT NULL,
+                task TEXT NOT NULL,
+                contract_type TEXT NOT NULL DEFAULT 'task_complete',
+                expected_output TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                result_summary TEXT,
+                result_payload TEXT,
+                artifacts_json TEXT,
+                error TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at DATETIME,
+                FOREIGN KEY (subagent_id) REFERENCES agents(id),
+                FOREIGN KEY (parent_session_id) REFERENCES chat_sessions(id),
+                FOREIGN KEY (child_session_id) REFERENCES chat_sessions(id)
             )`,
 
             `CREATE TABLE IF NOT EXISTS plugins (
@@ -205,6 +226,32 @@ class DatabaseWrapper {
     all(sql, params = []) {
         const stmt = this.db.prepare(sql);
         return stmt.all(...params);
+    }
+
+    _mapSubagentRun(row) {
+        if (!row) return null;
+
+        let resultPayload = null;
+        let artifacts = [];
+
+        try {
+            resultPayload = row.result_payload ? JSON.parse(row.result_payload) : null;
+        } catch (error) {
+            resultPayload = null;
+        }
+
+        try {
+            artifacts = row.artifacts_json ? JSON.parse(row.artifacts_json) : [];
+        } catch (error) {
+            artifacts = [];
+        }
+
+        return {
+            ...row,
+            result_payload: resultPayload,
+            artifacts,
+            artifacts_json: artifacts
+        };
     }
 
     close() {
@@ -649,6 +696,106 @@ class DatabaseWrapper {
             [sessionTitle, agentId]
         );
         return { id: result.id, title: sessionTitle, agent_id: agentId };
+    }
+
+    async createSubagentRun(run) {
+        const {
+            parentSessionId = null,
+            childSessionId,
+            subagentId,
+            task,
+            contractType = 'task_complete',
+            expectedOutput = ''
+        } = run;
+
+        const result = this.run(
+            `INSERT INTO subagent_runs (
+                parent_session_id,
+                child_session_id,
+                subagent_id,
+                task,
+                contract_type,
+                expected_output,
+                status
+            ) VALUES (?, ?, ?, ?, ?, ?, 'running')`,
+            [parentSessionId, childSessionId, subagentId, task, contractType, expectedOutput]
+        );
+
+        return this.getSubagentRun(result.id);
+    }
+
+    async completeSubagentRun(id, result) {
+        const {
+            status = 'completed',
+            summary = '',
+            payload = null,
+            artifacts = []
+        } = result;
+
+        this.run(
+            `UPDATE subagent_runs
+             SET status = ?, result_summary = ?, result_payload = ?, artifacts_json = ?, error = NULL, completed_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [
+                status,
+                summary,
+                payload ? JSON.stringify(payload) : null,
+                JSON.stringify(artifacts || []),
+                id
+            ]
+        );
+
+        return this.getSubagentRun(id);
+    }
+
+    async failSubagentRun(id, error) {
+        this.run(
+            `UPDATE subagent_runs
+             SET status = 'failed', error = ?, completed_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [String(error || 'Unknown error'), id]
+        );
+
+        return this.getSubagentRun(id);
+    }
+
+    async getSubagentRun(id) {
+        const row = this.get('SELECT * FROM subagent_runs WHERE id = ?', [id]);
+        return this._mapSubagentRun(row);
+    }
+
+    async listSubagentRuns(filters = {}) {
+        const {
+            parentSessionId = null,
+            subagentId = null,
+            limit = 20
+        } = filters;
+
+        const clauses = [];
+        const params = [];
+
+        if (parentSessionId !== null && parentSessionId !== undefined) {
+            clauses.push('parent_session_id = ?');
+            params.push(parentSessionId);
+        }
+
+        if (subagentId !== null && subagentId !== undefined) {
+            clauses.push('subagent_id = ?');
+            params.push(subagentId);
+        }
+
+        params.push(Math.max(1, Number(limit) || 20));
+
+        const where = clauses.length > 0
+            ? `WHERE ${clauses.join(' AND ')}`
+            : '';
+
+        const rows = this.all(
+            `SELECT * FROM subagent_runs ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
+            params
+        );
+
+        return rows.map(row => this._mapSubagentRun(row));
     }
 }
 

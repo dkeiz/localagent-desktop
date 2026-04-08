@@ -1,5 +1,6 @@
 const { EventEmitter } = require('events');
 const { registerConnectorTools } = require('./mcp/register-connector-tools');
+const { registerAgentTools } = require('./mcp/register-agent-tools');
 const { registerCoreTools } = require('./mcp/register-core-tools');
 const { registerFileTools } = require('./mcp/register-file-tools');
 const { registerMediaTools } = require('./mcp/register-media-tools');
@@ -10,6 +11,7 @@ const { registerWorkflowTools } = require('./mcp/register-workflow-tools');
 
 const BUILT_IN_TOOL_REGISTRARS = [
   registerCoreTools,
+  registerAgentTools,
   registerPromptTools,
   registerConnectorTools,
   registerWorkflowTools,
@@ -28,6 +30,7 @@ class MCPServer extends EventEmitter {
     this.tools = new Map();
     this.toolStates = new Map();
     this.proxyServers = new Map();
+    this._executionContextStack = [];
     this.initializeBuiltInTools();
   }
 
@@ -43,6 +46,14 @@ class MCPServer extends EventEmitter {
     this._currentSessionId = sessionId;
   }
 
+  getCurrentSessionId() {
+    const activeContext = this._executionContextStack[this._executionContextStack.length - 1];
+    if (activeContext && activeContext.sessionId !== undefined) {
+      return activeContext.sessionId;
+    }
+    return this._currentSessionId;
+  }
+
   setConnectorRuntime(connectorRuntime) {
     this._connectorRuntime = connectorRuntime;
   }
@@ -53,6 +64,10 @@ class MCPServer extends EventEmitter {
 
   setWorkflowManager(workflowManager) {
     this._workflowManager = workflowManager;
+  }
+
+  setAgentManager(agentManager) {
+    this._agentManager = agentManager;
   }
 
   initializeBuiltInTools() {
@@ -69,8 +84,18 @@ class MCPServer extends EventEmitter {
     this.tools.set(name, { definition, handler });
   }
 
+  async withExecutionContext(context, fn) {
+    this._executionContextStack.push(context || {});
+    try {
+      return await fn();
+    } finally {
+      this._executionContextStack.pop();
+    }
+  }
+
   async executeTool(toolName, params = {}, toolCallId = null, options = {}) {
     const bypassPermissions = options && options.bypassPermissions === true;
+    const executionContext = options && options.context ? options.context : null;
     const tool = this.tools.get(toolName);
     if (!tool) {
       this.emit('tool-executed', { toolName, success: false, error: 'Tool not found' });
@@ -116,7 +141,12 @@ class MCPServer extends EventEmitter {
       }
 
       const timeoutMs = parseInt(await this.db.getSetting('tool_timeout_ms') || '5000');
-      const result = await this.executeWithTimeout(tool.handler(params), timeoutMs, toolName);
+      const result = executionContext
+        ? await this.withExecutionContext(
+          executionContext,
+          () => this.executeWithTimeout(tool.handler(params), timeoutMs, toolName)
+        )
+        : await this.executeWithTimeout(tool.handler(params), timeoutMs, toolName);
 
       if (toolName.startsWith('calendar_')) this.emit('calendar-update');
       else if (toolName.startsWith('todo_')) this.emit('todo-update');
@@ -291,7 +321,13 @@ class MCPServer extends EventEmitter {
         throw new Error(`Unknown field: ${field}`);
       }
 
-      if (fieldSchema.type && typeof value !== fieldSchema.type) {
+      const actualType = Array.isArray(value)
+        ? 'array'
+        : value === null
+          ? 'null'
+          : typeof value;
+
+      if (fieldSchema.type && actualType !== fieldSchema.type) {
         throw new Error(`Field ${field} must be of type ${fieldSchema.type}`);
       }
 

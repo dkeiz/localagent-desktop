@@ -285,7 +285,7 @@ ${params.content || ''}`;
     }
   }, async (params) => {
     if (server._agentLoop) {
-      const sessionId = server._currentSessionId || 'default';
+      const sessionId = server.getCurrentSessionId() || 'default';
       return server._agentLoop.setAutoMemory(sessionId, params.enabled, params.idle_seconds || 60);
     }
     return { error: 'Agent loop not initialized' };

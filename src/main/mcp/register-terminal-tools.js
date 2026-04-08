@@ -37,7 +37,7 @@ function registerTerminalTools(server) {
       const fullOutput = (stdout || '') + (stderr ? '\n--- stderr ---\n' + stderr : '');
 
       if (server._sessionWorkspace && (params.output_to_file || fullOutput.length > outputThreshold)) {
-        const sessionId = server._currentSessionId || 'default';
+        const sessionId = server.getCurrentSessionId() || 'default';
         const label = params.command.split(/\s+/)[0];
         const result = server._sessionWorkspace.writeOutput(sessionId, label, fullOutput);
         const lineCount = fullOutput.split('\n').length;
@@ -69,7 +69,7 @@ function registerTerminalTools(server) {
       const fullOutput = (error.stdout || '') + (error.stderr ? '\n--- stderr ---\n' + error.stderr : error.message);
 
       if (server._sessionWorkspace && (params.output_to_file || fullOutput.length > outputThreshold)) {
-        const sessionId = server._currentSessionId || 'default';
+        const sessionId = server.getCurrentSessionId() || 'default';
         const label = params.command.split(/\s+/)[0] + '_error';
         const result = server._sessionWorkspace.writeOutput(sessionId, label, fullOutput);
         return {
@@ -176,7 +176,7 @@ function registerTerminalTools(server) {
     inputSchema: { type: 'object' }
   }, async () => {
     if (!server._sessionWorkspace) return { error: 'Session workspace not initialized' };
-    const sessionId = server._currentSessionId || 'default';
+    const sessionId = server.getCurrentSessionId() || 'default';
     const files = server._sessionWorkspace.listFiles(sessionId);
     return { sessionId, fileCount: files.length, files };
   });
@@ -195,7 +195,7 @@ function registerTerminalTools(server) {
     }
   }, async (params) => {
     if (!server._sessionWorkspace) return { error: 'Session workspace not initialized' };
-    const sessionId = server._currentSessionId || 'default';
+    const sessionId = server.getCurrentSessionId() || 'default';
     const results = server._sessionWorkspace.searchFiles(sessionId, params.query);
     return { sessionId, query: params.query, resultCount: results.length, results };
   });

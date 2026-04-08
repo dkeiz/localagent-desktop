@@ -62,6 +62,11 @@
             "tools": [
                 "conversation_history",
                 "search_conversations",
+                "list_subagents",
+                "delegate_to_subagent",
+                "get_subagent_run",
+                "list_subagent_runs",
+                "complete_subtask",
                 "get_system_prompt",
                 "list_active_rules",
                 "toggle_rule",
