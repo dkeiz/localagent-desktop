@@ -1,7 +1,7 @@
 function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
   const {
     mcpServer,
-    mainWindow,
+    windowManager,
     aiService,
     portListenerManager,
     agentMemory,
@@ -21,7 +21,7 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     if (!portListenerManager) return { error: 'PortListenerManager not initialized' };
     try {
       const result = await portListenerManager.register(config);
-      mainWindow.webContents.send('port-listener-update', portListenerManager.getListeners());
+      windowManager.send('port-listener-update', portListenerManager.getListeners());
       return result;
     } catch (error) {
       return { success: false, error: error.message };
@@ -32,7 +32,7 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     if (!portListenerManager) return { error: 'PortListenerManager not initialized' };
     try {
       const result = await portListenerManager.unregister(port);
-      mainWindow.webContents.send('port-listener-update', portListenerManager.getListeners());
+      windowManager.send('port-listener-update', portListenerManager.getListeners());
       return result;
     } catch (error) {
       return { success: false, error: error.message };
@@ -86,15 +86,15 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
   });
 
   mcpServer.on('calendar-update', () => {
-    mainWindow.webContents.send('calendar-update');
+    windowManager.send('calendar-update');
   });
 
   mcpServer.on('todo-update', () => {
-    mainWindow.webContents.send('todo-update');
+    windowManager.send('todo-update');
   });
 
   mcpServer.on('tool-executed', (eventData) => {
-    mainWindow.webContents.send('tool-update', eventData);
+    windowManager.send('tool-update', eventData);
   });
 
   ipcMain.handle('agent-loop:memory-start', async (event, sessionId) => {
@@ -133,7 +133,7 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     try { await connectorRuntime.stopConnector(name); } catch (e) {}
     const fs = require('fs');
     const path = require('path');
-    const filePath = path.join(__dirname, '../../../agentin/connectors', `${name}.js`);
+    const filePath = path.join(connectorRuntime.connectorsDir, `${name}.js`);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     return { success: true, name };
   });
@@ -151,35 +151,35 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
   ipcMain.handle('create-agent', async (event, data) => {
     if (!agentManager) throw new Error('AgentManager not initialized');
     const result = await agentManager.createAgent(data);
-    mainWindow.webContents.send('agent-update');
+    windowManager.send('agent-update');
     return result;
   });
 
   ipcMain.handle('update-agent', async (event, id, data) => {
     if (!agentManager) throw new Error('AgentManager not initialized');
     const result = await agentManager.updateAgent(id, data);
-    mainWindow.webContents.send('agent-update');
+    windowManager.send('agent-update');
     return result;
   });
 
   ipcMain.handle('delete-agent', async (event, id) => {
     if (!agentManager) throw new Error('AgentManager not initialized');
     const result = await agentManager.deleteAgent(id);
-    mainWindow.webContents.send('agent-update');
+    windowManager.send('agent-update');
     return result;
   });
 
   ipcMain.handle('activate-agent', async (event, id) => {
     if (!agentManager) throw new Error('AgentManager not initialized');
     const result = await agentManager.activateAgent(id);
-    mainWindow.webContents.send('agent-update');
+    windowManager.send('agent-update');
     return result;
   });
 
   ipcMain.handle('deactivate-agent', async (event, id) => {
     if (!agentManager) throw new Error('AgentManager not initialized');
     await agentManager.deactivateAgent(id);
-    mainWindow.webContents.send('agent-update');
+    windowManager.send('agent-update');
     return { success: true };
   });
 
@@ -188,9 +188,6 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     await agentManager.compactAgent(id);
     return { success: true };
   });
-
-  aiService.initialize().catch(console.error);
-
   ipcMain.handle('daemon:memory-start', async () => {
     if (testClientMode) return { error: 'Disabled in --testclient mode' };
     if (!memoryDaemon) return { error: 'Memory daemon not initialized' };

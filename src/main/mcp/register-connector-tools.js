@@ -1,4 +1,15 @@
 function registerConnectorTools(server) {
+  function getConnectorFilePath(name) {
+    const fs = require('fs');
+    const path = require('path');
+    const connectorsDir = server._connectorRuntime?.connectorsDir
+      || path.join(__dirname, '../../../agentin/connectors');
+    if (!fs.existsSync(connectorsDir)) {
+      fs.mkdirSync(connectorsDir, { recursive: true });
+    }
+    return path.join(connectorsDir, `${name}.js`);
+  }
+
   server.registerTool('create_connector', {
     name: 'create_connector',
     description: 'Create a new connector JS file in agentin/connectors/. The file should export {name, description, configSchema, start(context), stop()}. Use connector_config to store API keys BEFORE creating the file.',
@@ -14,8 +25,7 @@ function registerConnectorTools(server) {
     }
   }, async (params) => {
     const fs = require('fs');
-    const path = require('path');
-    const filePath = path.join(__dirname, '../../../agentin/connectors', `${params.name}.js`);
+    const filePath = getConnectorFilePath(params.name);
     fs.writeFileSync(filePath, params.code, 'utf-8');
     return { success: true, path: filePath, name: params.name };
   });

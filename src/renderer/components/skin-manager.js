@@ -25,6 +25,7 @@ class SkinManager {
         if (!this.elements.root) return;
         await this.loadConfigFiles();
         this.loadState();
+        this.syncDevControlsVisibility();
         this.bindEvents();
         this.observeThemeChanges();
         await this.applySelectedSkin();
@@ -58,14 +59,39 @@ class SkinManager {
     }
 
     loadState() {
-        // Safe startup: always boot with skin system disabled.
-        // User can re-enable instantly from Settings.
-        this.state.enabled = false;
+        this.state.enabled = this.readStoredBoolean(this.storage.enabled, false);
         this.state.skinId = localStorage.getItem(this.storage.activeSkin) || this.config.defaultSkinId || 'default';
-        this.themePreferences = JSON.parse(localStorage.getItem(this.storage.skinThemes) || '{}');
+        this.themePreferences = this.readStoredJson(this.storage.skinThemes, {});
         if (this.elements.enabled) {
             this.elements.enabled.checked = this.state.enabled;
         }
+    }
+
+    readStoredBoolean(key, fallback = false) {
+        const value = localStorage.getItem(key);
+        if (value === null) return fallback;
+        return value === 'true';
+    }
+
+    readStoredJson(key, fallback) {
+        try {
+            const raw = localStorage.getItem(key);
+            return raw ? JSON.parse(raw) : fallback;
+        } catch (error) {
+            console.warn(`[SkinManager] Failed to parse ${key}:`, error);
+            return fallback;
+        }
+    }
+
+    shouldShowAutoTestButton() {
+        const forcedVisible = this.readStoredBoolean('skinDevTools', false);
+        const argv = typeof process !== 'undefined' && Array.isArray(process.argv) ? process.argv : [];
+        return forcedVisible || argv.includes('--test') || argv.includes('--testclient');
+    }
+
+    syncDevControlsVisibility() {
+        if (!this.elements.runAutoTest) return;
+        this.elements.runAutoTest.hidden = !this.shouldShowAutoTestButton();
     }
 
     bindEvents() {
@@ -143,10 +169,11 @@ class SkinManager {
     }
 
     async onThemeChanged() {
+        const currentTheme = this.getTheme();
+        document.documentElement.setAttribute('data-skin-theme-token', currentTheme);
         if (!this.state.enabled) return;
         const skin = this.getSkin(this.state.skinId);
         if (!skin || skin.id === 'default') return;
-        const currentTheme = this.getTheme();
         const supported = skin.supportedThemes || [];
         if (!supported.includes(currentTheme)) {
             const fallback = skin.defaultTheme || supported[0] || 'dark';

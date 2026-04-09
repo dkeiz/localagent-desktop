@@ -1,5 +1,6 @@
 const path = require('path');
 const { getModelRuntimeConfig } = require('./llm-config');
+const { getEffectiveLlmSelection } = require('./llm-state');
 
 /**
  * InferenceDispatcher — Central routing layer for all LLM inference calls.
@@ -57,8 +58,8 @@ class InferenceDispatcher {
 
         // Resolve model once here (not in each adapter)
         if (!options.model) {
-            const savedModel = await this.db.getSetting('llm.model');
-            if (savedModel) options.model = savedModel;
+            const { model } = await getEffectiveLlmSelection(this.db);
+            if (model) options.model = model;
         }
 
         // Read thinking mode settings

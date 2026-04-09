@@ -13,9 +13,9 @@ const path = require('path');
  *   agentin/knowledge/staging/   — daemon-generated candidates
  */
 class KnowledgeManager {
-    constructor(db) {
+    constructor(db, options = {}) {
         this.db = db;
-        this.baseDir = path.join(__dirname, '../../agentin/knowledge');
+        this.baseDir = options.baseDir || path.join(__dirname, '../../agentin/knowledge');
         this.libraryDir = path.join(this.baseDir, 'library');
         this.stagingDir = path.join(this.baseDir, 'staging');
         this.MAX_LINES = 200;

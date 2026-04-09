@@ -60,6 +60,10 @@ class MCPServer extends EventEmitter {
     this._connectorRuntime = connectorRuntime;
   }
 
+  setPromptFileManager(promptFileManager) {
+    this._promptFileManager = promptFileManager;
+  }
+
   setSessionWorkspace(sessionWorkspace) {
     this._sessionWorkspace = sessionWorkspace;
   }

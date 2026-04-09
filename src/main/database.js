@@ -1,10 +1,22 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
+function resolveDbPath(options = {}) {
+    if (options.dbPath) {
+        return options.dbPath;
+    }
+
+    const electronApp = options.app || require('electron').app;
+    if (!electronApp || typeof electronApp.getPath !== 'function') {
+        throw new Error('Electron app context is unavailable. Pass dbPath when constructing DatabaseWrapper outside Electron.');
+    }
+
+    return path.join(electronApp.getPath('userData'), 'localagent.db');
+}
+
 class DatabaseWrapper {
-    constructor() {
-        const { app } = require('electron');
-        this.dbPath = path.join(app.getPath('userData'), 'localagent.db');
+    constructor(options = {}) {
+        this.dbPath = resolveDbPath(options);
         this.db = new Database(this.dbPath);
         this.db.pragma('journal_mode = WAL');
     }
@@ -141,6 +153,8 @@ class DatabaseWrapper {
                 trigger_pattern TEXT,
                 tool_chain TEXT NOT NULL,
                 embedding TEXT,
+                visual_data TEXT,
+                execution_count INTEGER DEFAULT 0,
                 success_count INTEGER DEFAULT 0,
                 failure_count INTEGER DEFAULT 0,
                 last_used DATETIME,

@@ -16,12 +16,14 @@ The goal is to catch seam breakage before large modules are split:
   Static and contract-level checks. Fastest signal.
 - `npm run test:quick`
   Contract suite plus fast legacy integration scripts.
+- `npm run test:skin`
+  Headless skin and theme compatibility checks only.
 - `npm run test:core`
-  Quick suite plus headless app smoke and mocked IPC flow.
+  Quick suite plus deeper local integration checks.
 - `npm run test:live`
   Environment-dependent live checks.
 - `npm run test:all`
-  Core plus live.
+  Core plus skin plus live.
 - `npm run verify`
   Alias for `test:core`.
 

@@ -13,7 +13,7 @@ const { EventEmitter } = require('events');
  * AutoMemory is OFF by default per session. User enables via automemory tool.
  */
 class AgentLoop extends EventEmitter {
-    constructor(dispatcher, agentMemory, db, sessionWorkspace = null) {
+    constructor(dispatcher, agentMemory, db, sessionWorkspace = null, options = {}) {
         super();
         this.dispatcher = dispatcher;
         this.agentMemory = agentMemory;
@@ -24,12 +24,13 @@ class AgentLoop extends EventEmitter {
         this.sessions = new Map();
 
         // Template paths
-        const basePath = path.join(__dirname, '../../agentin/prompts/templates');
+        const basePath = options.templateBasePath || path.join(__dirname, '../../agentin/prompts/templates');
         this.templates = {
             start: path.join(basePath, 'memory-start.md'),
             idle: path.join(basePath, 'memory-idle.md'),
             close: path.join(basePath, 'memory-close.md')
         };
+        this.userProfilePath = options.userProfilePath || path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
     }
 
     // ==================== Session Management ====================
@@ -124,11 +125,10 @@ class AgentLoop extends EventEmitter {
             const globalContent = globalResult.content || 'No preferences saved.';
 
             // Read user info
-            const userAboutPath = path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
             let userAbout = 'No user info stored.';
             try {
-                if (fs.existsSync(userAboutPath)) {
-                    userAbout = fs.readFileSync(userAboutPath, 'utf-8').trim() || userAbout;
+                if (fs.existsSync(this.userProfilePath)) {
+                    userAbout = fs.readFileSync(this.userProfilePath, 'utf-8').trim() || userAbout;
                 }
             } catch (e) { /* ignore */ }
 
@@ -165,6 +165,9 @@ class AgentLoop extends EventEmitter {
         session.idleTimer = setTimeout(async () => {
             await this._onIdle(sessionId);
         }, session.idleSeconds * 1000);
+        if (typeof session.idleTimer.unref === 'function') {
+            session.idleTimer.unref();
+        }
     }
 
     async _onIdle(sessionId) {

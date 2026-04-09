@@ -15,8 +15,10 @@ const externalSuites = {
     ['node', ['tools/test-testclient-mode.js']]
   ],
   core: [
-    ['node', ['src/main/main.js', '--test', '--nowindow']],
     ['node', ['tools/test-ipc-flow-mocked.js']]
+  ],
+  skin: [
+    ['node', ['src/main/main.js', '--test', '--nowindow']]
   ],
   live: [
     ['node', ['tools/test-ollama-live.js']]
@@ -47,6 +49,11 @@ function resolveSuite(name) {
         moduleTests: discoverContractTests(),
         commandTests: [...externalSuites.quick, ...externalSuites.core]
       };
+    case 'skin':
+      return {
+        moduleTests: [],
+        commandTests: externalSuites.skin
+      };
     case 'live':
       return {
         moduleTests: [],
@@ -55,10 +62,10 @@ function resolveSuite(name) {
     case 'all':
       return {
         moduleTests: discoverContractTests(),
-        commandTests: [...externalSuites.quick, ...externalSuites.core, ...externalSuites.live]
+        commandTests: [...externalSuites.quick, ...externalSuites.core, ...externalSuites.skin, ...externalSuites.live]
       };
     default:
-      throw new Error(`Unknown suite "${name}". Use contracts, quick, core, live, or all.`);
+      throw new Error(`Unknown suite "${name}". Use contracts, quick, core, skin, live, or all.`);
   }
 }
 

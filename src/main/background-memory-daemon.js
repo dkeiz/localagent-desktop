@@ -23,7 +23,7 @@ const ResourceMonitor = require('./resource-monitor');
  *   - Clean stale temp files
  */
 class BackgroundMemoryDaemon {
-    constructor(dispatcher, agentMemory, db, eventBus) {
+    constructor(dispatcher, agentMemory, db, eventBus, options = {}) {
         this.dispatcher = dispatcher;
         this.agentMemory = agentMemory;
         this.db = db;
@@ -47,12 +47,13 @@ class BackgroundMemoryDaemon {
         // Resource thresholds
         this.RESOURCE_THRESHOLD = 20; // percentage
         this.RETRY_DELAY = 5 * 60 * 1000; // 5 min retry if resources busy
-        this._resourceMonitor = new ResourceMonitor(this.RESOURCE_THRESHOLD);
+        this._resourceMonitor = options.resourceMonitor || new ResourceMonitor(this.RESOURCE_THRESHOLD);
 
         // Paths
-        this.basePath = path.join(__dirname, '../../agentin/agents/pro/background-daemon');
-        this.statePath = path.join(this.basePath, 'config', 'state.json');
-        this.systemPromptPath = path.join(this.basePath, 'system.md');
+        this.basePath = options.basePath || path.join(__dirname, '../../agentin/agents/pro/background-daemon');
+        this.statePath = options.statePath || path.join(this.basePath, 'config', 'state.json');
+        this.systemPromptPath = options.systemPromptPath || path.join(this.basePath, 'system.md');
+        this.userProfilePath = options.userProfilePath || path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
 
         // Listen for chat activity events from EventBus
         if (this.eventBus) {
@@ -99,6 +100,10 @@ class BackgroundMemoryDaemon {
      * Stop the daemon gracefully.
      */
     stop() {
+        if (!this.running) {
+            return;
+        }
+
         this.running = false;
         if (this._tickTimer) {
             clearTimeout(this._tickTimer);
@@ -141,6 +146,9 @@ class BackgroundMemoryDaemon {
         this._tickTimer = setTimeout(async () => {
             await this._onTick();
         }, delayMs);
+        if (typeof this._tickTimer.unref === 'function') {
+            this._tickTimer.unref();
+        }
     }
 
     _getNextTickDelay() {
@@ -161,6 +169,9 @@ class BackgroundMemoryDaemon {
         if (!resources.available) {
             console.log(`[MemoryDaemon] Resources busy (CPU: ${resources.cpu}%, GPU: ${resources.gpu}%), retrying in 5 min`);
             this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
+            if (typeof this._retryTimer.unref === 'function') {
+                this._retryTimer.unref();
+            }
             return;
         }
 
@@ -168,6 +179,9 @@ class BackgroundMemoryDaemon {
         if (this._userActive) {
             console.log('[MemoryDaemon] User is active, deferring tick');
             this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
+            if (typeof this._retryTimer.unref === 'function') {
+                this._retryTimer.unref();
+            }
             return;
         }
 
@@ -279,10 +293,10 @@ After completing the task, end with a brief summary of what you did in the forma
                 await this.agentMemory.append('daily', `[Daemon: Session Summary]\n${cleanContent}`);
             } else if (taskName.includes('persona') || taskName.includes('user')) {
                 // Persona updates go to user about file
-                const userAboutPath = path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
                 const timestamp = new Date().toISOString().split('T')[0];
                 const entry = `\n\n---\n[${timestamp}] Daemon Observation\n${cleanContent}\n`;
-                fs.appendFileSync(userAboutPath, entry);
+                fs.mkdirSync(path.dirname(this.userProfilePath), { recursive: true });
+                fs.appendFileSync(this.userProfilePath, entry);
             } else if (taskName.includes('consolidat')) {
                 // Consolidated memories go to global
                 await this.agentMemory.append('global', `[Daemon: Daily Consolidation]\n${cleanContent}`, 'daily-consolidation.md');
@@ -321,9 +335,8 @@ After completing the task, end with a brief summary of what you did in the forma
             }
 
             // User profile
-            const userAboutPath = path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
-            if (fs.existsSync(userAboutPath)) {
-                const userAbout = fs.readFileSync(userAboutPath, 'utf-8').trim();
+            if (fs.existsSync(this.userProfilePath)) {
+                const userAbout = fs.readFileSync(this.userProfilePath, 'utf-8').trim();
                 lines.push(`**User Profile:**\n${userAbout.substring(0, 300)}`);
             }
 

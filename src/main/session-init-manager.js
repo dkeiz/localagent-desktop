@@ -9,7 +9,7 @@ const path = require('path');
  * Warm Start: daemon running, recent activity → minimal system prompt, subchat mode
  */
 class SessionInitManager {
-    constructor(db, agentMemory, eventBus) {
+    constructor(db, agentMemory, eventBus, options = {}) {
         this.db = db;
         this.agentMemory = agentMemory;
         this.eventBus = eventBus;
@@ -18,8 +18,11 @@ class SessionInitManager {
         this.COLD_START_THRESHOLD = 8 * 60 * 60 * 1000;
 
         // Paths
-        this.agentinPath = path.join(__dirname, '../../agentin');
-        this.templatePath = path.join(this.agentinPath, 'prompts/templates/cold-start-discovery.md');
+        this.agentinPath = options.agentinPath || path.join(__dirname, '../../agentin');
+        this.templatePath = options.templatePath || path.join(this.agentinPath, 'prompts/templates/cold-start-discovery.md');
+        this.connectorsDir = options.connectorsDir || path.join(this.agentinPath, 'connectors');
+        this.userProfilePath = options.userProfilePath || path.join(this.agentinPath, 'userabout/memoryaboutuser.md');
+        this.memoryBasePath = options.memoryBasePath || path.join(this.agentinPath, 'memory');
     }
 
     /**
@@ -113,9 +116,8 @@ class SessionInitManager {
             lines.push(`- **Agents:** ${proAgents.length} pro (${proAgents.map(a => a.name).join(', ')}), ${subAgents.length} sub`);
 
             // Connectors
-            const connectorsDir = path.join(this.agentinPath, 'connectors');
-            if (fs.existsSync(connectorsDir)) {
-                const connectorFiles = fs.readdirSync(connectorsDir)
+            if (fs.existsSync(this.connectorsDir)) {
+                const connectorFiles = fs.readdirSync(this.connectorsDir)
                     .filter(f => f.endsWith('.js') && !f.startsWith('_'));
                 lines.push(`- **Connectors:** ${connectorFiles.length} available (${connectorFiles.map(f => f.replace('.js', '')).join(', ')})`);
             }
@@ -164,9 +166,8 @@ class SessionInitManager {
             result.agents.pro = agents.filter(a => a.type === 'pro').map(a => ({ name: a.name, icon: a.icon, status: a.status }));
             result.agents.sub = agents.filter(a => a.type === 'sub').map(a => ({ name: a.name, icon: a.icon }));
 
-            const connectorsDir = path.join(this.agentinPath, 'connectors');
-            if (fs.existsSync(connectorsDir)) {
-                result.connectors = fs.readdirSync(connectorsDir)
+            if (fs.existsSync(this.connectorsDir)) {
+                result.connectors = fs.readdirSync(this.connectorsDir)
                     .filter(f => f.endsWith('.js') && !f.startsWith('_'))
                     .map(f => f.replace('.js', ''));
             }
@@ -209,9 +210,8 @@ class SessionInitManager {
 
     async _getUserProfile() {
         try {
-            const userAboutPath = path.join(this.agentinPath, 'userabout/memoryaboutuser.md');
-            if (fs.existsSync(userAboutPath)) {
-                const content = fs.readFileSync(userAboutPath, 'utf-8').trim();
+            if (fs.existsSync(this.userProfilePath)) {
+                const content = fs.readFileSync(this.userProfilePath, 'utf-8').trim();
                 return content || 'No user profile data yet.';
             }
         } catch (e) { /* ignore */ }
@@ -261,15 +261,13 @@ class SessionInitManager {
             const stats = this.agentMemory.getStats();
 
             // Check if memory directories exist
-            const memDir = path.join(this.agentinPath, 'memory');
-            if (!fs.existsSync(memDir)) {
+            if (!fs.existsSync(this.memoryBasePath)) {
                 health.ok = false;
                 health.issues.push('Memory directory missing');
             }
 
             // Check user profile exists
-            const userAbout = path.join(this.agentinPath, 'userabout/memoryaboutuser.md');
-            if (!fs.existsSync(userAbout)) {
+            if (!fs.existsSync(this.userProfilePath)) {
                 health.issues.push('User profile file missing (will be created on first observation)');
             }
 

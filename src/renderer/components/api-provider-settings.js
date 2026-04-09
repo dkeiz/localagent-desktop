@@ -163,11 +163,31 @@
         let currentConfig = null;
         let currentModelProfile = null;
         let providerProfileMap = {};
+        let syncModelsToChat = null;
 
         const applyVisibilityToMainPanel = (runtimeConfig) => {
             if (mainPanel) {
                 mainPanel._thinkingVisibility = runtimeConfig?.reasoning?.visibility || 'show';
             }
+        };
+
+        const isPlaceholderModel = (model) => {
+            return !model
+                || model === 'Select a Model...'
+                || model === 'Select a provider first'
+                || model === 'No models found'
+                || model === 'Failed to load models';
+        };
+
+        const persistConfig = async (config, notificationMessage = null) => {
+            await window.electronAPI.llm.saveConfig(config);
+            currentConfig = await window.electronAPI.llm.getConfig();
+            applyVisibilityToMainPanel(currentConfig?.runtimeConfig || config.runtimeConfig);
+            setCurrentConfigLabel(currentConfigDisplay, currentConfigText, currentConfig);
+            if (notificationMessage) {
+                mainPanel.showNotification(notificationMessage, 'info');
+            }
+            return currentConfig;
         };
 
         const loadModelProfile = async (provider, model) => {
@@ -365,7 +385,7 @@
             const provider = chatProviderSelect?.value;
             const model = chatModelSelect?.value;
 
-            if (!provider || !model || model === 'Select a Model...' || model === 'Select a provider first') {
+            if (!provider || isPlaceholderModel(model)) {
                 return;
             }
 
@@ -378,11 +398,11 @@
                 }
             }
 
-            await window.electronAPI.llm.saveConfig(config);
-            currentConfig = await window.electronAPI.llm.getConfig();
-            applyVisibilityToMainPanel(currentConfig?.runtimeConfig);
-            setCurrentConfigLabel(currentConfigDisplay, currentConfigText, currentConfig);
-            mainPanel.showNotification(`Switched to ${model}`, 'info');
+            if (currentModelProfile?.spec?.model === model) {
+                config.runtimeConfig = collectRuntimeConfig();
+            }
+
+            await persistConfig(config, `Switched to ${model}`);
         };
 
         if (modelConfigContainer) {
@@ -412,9 +432,11 @@
         });
 
         llmModelSelect.addEventListener('change', async () => {
-            await loadModelProfile(llmProviderSelect.value, llmModelSelect.value);
+            const provider = llmProviderSelect.value;
+            const model = llmModelSelect.value;
+            await loadModelProfile(provider, model);
             if (chatModelSelect) {
-                chatModelSelect.value = llmModelSelect.value;
+                chatModelSelect.value = model;
             }
         });
 
@@ -448,7 +470,26 @@
 
                     llmModelSelect.value = modelName;
                     await loadModelProfile(provider, modelName);
-                    if (statusDiv) statusDiv.textContent = `Model responds as ${result.model}`;
+                    syncModelsToChat?.();
+                    if (chatProviderSelect) {
+                        chatProviderSelect.value = provider;
+                    }
+                    if (chatModelSelect && Array.from(chatModelSelect.options).some(o => o.value === modelName)) {
+                        chatModelSelect.value = modelName;
+                    }
+
+                    currentConfig = await window.electronAPI.llm.getConfig();
+                    setCurrentConfigLabel(currentConfigDisplay, currentConfigText, currentConfig);
+                    applyVisibilityToMainPanel(currentConfig?.runtimeConfig);
+                    const autoSaved = currentConfig?.provider === provider && currentConfig?.model === modelName;
+                    if (statusDiv) {
+                        statusDiv.textContent = autoSaved
+                            ? `Model responds as ${result.model}. Added to the list and remembered as workable.`
+                            : `Model responds as ${result.model}`;
+                    }
+                    if (autoSaved) {
+                        mainPanel.showNotification(`Remembered workable model ${modelName}`, 'info');
+                    }
                 } catch (error) {
                     if (statusDiv) statusDiv.textContent = `Test failed: ${error.message}`;
                 } finally {
@@ -578,7 +619,7 @@
                 chatProviderSelect.value = currentConfig.provider;
             }
 
-            const syncModelsToChat = () => {
+            syncModelsToChat = () => {
                 chatModelSelect.innerHTML = '';
                 Array.from(llmModelSelect.options).forEach(opt => {
                     const cloned = document.createElement('option');

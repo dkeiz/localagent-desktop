@@ -10,7 +10,7 @@ const SubtaskRuntime = require('./subtask-runtime');
  *   sub  — ephemeral agents called by others, return result then go blank
  */
 class AgentManager {
-    constructor(db, dispatcher, agentLoop, agentMemory, sessionWorkspace = null, chainController = null, eventBus = null, subtaskRuntime = null) {
+    constructor(db, dispatcher, agentLoop, agentMemory, sessionWorkspace = null, chainController = null, eventBus = null, subtaskRuntime = null, options = {}) {
         this.db = db;
         this.dispatcher = dispatcher;
         this.agentLoop = agentLoop;
@@ -21,7 +21,7 @@ class AgentManager {
         this.subtaskRuntime = subtaskRuntime || new SubtaskRuntime(db, sessionWorkspace, eventBus);
         this.pendingSubtasks = new Map();
         this.activeSubtaskCounts = new Map();
-        this.basePath = path.join(__dirname, '../../agentin/agents');
+        this.basePath = options.basePath || path.join(__dirname, '../../agentin/agents');
     }
 
     async initialize() {

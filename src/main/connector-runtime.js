@@ -13,12 +13,12 @@ const path = require('path');
  * main process for LLM invocation, config access, and logging.
  */
 class ConnectorRuntime extends EventEmitter {
-    constructor(dispatcher, db) {
+    constructor(dispatcher, db, options = {}) {
         super();
         this.dispatcher = dispatcher;
         this.db = db;
         this.connectors = new Map(); // name -> { worker, config, status, meta, logs }
-        this.connectorsDir = path.join(__dirname, '../../agentin/connectors');
+        this.connectorsDir = options.connectorsDir || path.join(__dirname, '../../agentin/connectors');
         this.workerPath = path.join(__dirname, 'connector-worker.js');
         this.maxLogs = 100;
 

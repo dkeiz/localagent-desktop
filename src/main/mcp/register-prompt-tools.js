@@ -1,4 +1,39 @@
 function registerPromptTools(server) {
+  function getPromptFileManager() {
+    return server._promptFileManager || null;
+  }
+
+  function getPromptPaths() {
+    const fs = require('fs');
+    const path = require('path');
+    const promptFileManager = getPromptFileManager();
+    if (promptFileManager) {
+      promptFileManager.ensureDirectories();
+      return {
+        promptPath: promptFileManager.systemPromptPath,
+        rulesPath: promptFileManager.rulesPath,
+        getSafeFilename(name, priority = 1) {
+          return promptFileManager.getSafeFilename(name, priority);
+        }
+      };
+    }
+
+    const promptPath = path.join(process.cwd(), 'agentin', 'prompts', 'system.md');
+    const rulesPath = path.join(process.cwd(), 'agentin', 'prompts', 'rules');
+    if (!fs.existsSync(rulesPath)) {
+      fs.mkdirSync(rulesPath, { recursive: true });
+    }
+
+    return {
+      promptPath,
+      rulesPath,
+      getSafeFilename(name, priority = 1) {
+        const safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        return `${String(priority).padStart(3, '0')}-${safeName}.md`;
+      }
+    };
+  }
+
   server.registerTool('get_system_prompt', {
     name: 'get_system_prompt',
     description: 'Get the current system prompt',
@@ -25,8 +60,8 @@ function registerPromptTools(server) {
     }
   }, async (params) => {
     const fs = require('fs');
-    const path = require('path');
-    const promptPath = path.join(process.cwd(), 'agentin', 'prompts', 'system.md');
+    const promptFileManager = getPromptFileManager();
+    const { promptPath } = getPromptPaths();
 
     let newContent = params.content;
     if (params.append) {
@@ -34,7 +69,11 @@ function registerPromptTools(server) {
       newContent = existing + '\n\n' + params.content;
     }
 
-    fs.writeFileSync(promptPath, newContent, 'utf-8');
+    if (promptFileManager) {
+      await promptFileManager.saveSystemPrompt(newContent, false);
+    } else {
+      fs.writeFileSync(promptPath, newContent, 'utf-8');
+    }
     await server.aiService.setSystemPrompt(newContent);
     await server.db.setSetting('system_prompt', newContent);
 
@@ -60,15 +99,11 @@ function registerPromptTools(server) {
   }, async (params) => {
     const fs = require('fs');
     const path = require('path');
-    const rulesPath = path.join(process.cwd(), 'agentin', 'prompts', 'rules');
-
-    if (!fs.existsSync(rulesPath)) {
-      fs.mkdirSync(rulesPath, { recursive: true });
-    }
+    const { rulesPath, getSafeFilename } = getPromptPaths();
 
     const safeName = params.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const priority = params.priority || 1;
-    const filename = `${String(priority).padStart(3, '0')}-${safeName}.md`;
+    const filename = getSafeFilename(params.name, priority);
     const filePath = path.join(rulesPath, filename);
 
     switch (params.action) {

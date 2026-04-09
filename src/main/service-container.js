@@ -10,14 +10,23 @@ class ServiceContainer {
     }
 
     register(name, instance) {
+        if (this._services.has(name)) {
+            throw new Error(`[ServiceContainer] Service "${name}" is already registered`);
+        }
+        this._services.set(name, instance);
+        return this;
+    }
+
+    replace(name, instance) {
         this._services.set(name, instance);
         return this;
     }
 
     get(name) {
-        const svc = this._services.get(name);
-        if (!svc) throw new Error(`[ServiceContainer] Service "${name}" not registered`);
-        return svc;
+        if (!this._services.has(name)) {
+            throw new Error(`[ServiceContainer] Service "${name}" not registered`);
+        }
+        return this._services.get(name);
     }
 
     has(name) {
@@ -29,7 +38,11 @@ class ServiceContainer {
      * Useful for optional services.
      */
     optional(name) {
-        return this._services.get(name) || null;
+        return this._services.has(name) ? this._services.get(name) : null;
+    }
+
+    keys() {
+        return Array.from(this._services.keys()).sort();
     }
 }
 

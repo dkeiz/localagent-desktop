@@ -2,7 +2,7 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
   const {
     db,
     mcpServer,
-    mainWindow,
+    windowManager,
     capabilityManager
   } = runtime;
 
@@ -46,7 +46,7 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
     try {
       const result = await mcpServer.executeTool(toolName, params);
       if (result.needsPermission) {
-        mainWindow.webContents.send('tool-permission-request', result);
+        windowManager.send('tool-permission-request', result);
         return { needsPermission: true, toolName, params };
       }
       return { success: true, result };
@@ -86,9 +86,9 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
           capabilityManager.setGroupEnabled(groupId, true);
           console.log(`[IPC] Auto-enabled capability group '${groupId}' because tool '${toolName}' was enabled`);
         }
-        mainWindow.webContents.send('capability-update', capabilityManager.getState());
+        windowManager.send('capability-update', capabilityManager.getState());
       } else if (!active && capabilityManager) {
-        mainWindow.webContents.send('capability-update', capabilityManager.getState());
+        windowManager.send('capability-update', capabilityManager.getState());
       }
 
       console.log(`[IPC] Tool ${toolName} ${active ? 'enabled' : 'disabled'} (DB + memory)`);
@@ -103,7 +103,7 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
     try {
       await mcpServer.executeTool('create_tool', toolData);
       if (capabilityManager) {
-        mainWindow.webContents.send('capability-update', capabilityManager.getState());
+        windowManager.send('capability-update', capabilityManager.getState());
       }
       return { success: true };
     } catch (error) {
@@ -145,14 +145,14 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
   ipcMain.handle('capability:set-main', async (event, enabled) => {
     if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
     const result = capabilityManager.setMainEnabled(enabled);
-    mainWindow.webContents.send('capability-update', capabilityManager.getState());
+    windowManager.send('capability-update', capabilityManager.getState());
     return { success: true, mainEnabled: result };
   });
 
   ipcMain.handle('capability:set-group', async (event, groupId, enabled) => {
     if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
     const result = capabilityManager.setGroupEnabled(groupId, enabled);
-    mainWindow.webContents.send('capability-update', capabilityManager.getState());
+    windowManager.send('capability-update', capabilityManager.getState());
     return { success: result };
   });
 
@@ -160,7 +160,7 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
     if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
     try {
       const result = capabilityManager.setFilesMode(mode);
-      mainWindow.webContents.send('capability-update', capabilityManager.getState());
+      windowManager.send('capability-update', capabilityManager.getState());
       return { success: true, mode: result };
     } catch (error) {
       return { success: false, error: error.message };

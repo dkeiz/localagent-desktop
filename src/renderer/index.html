@@ -5,6 +5,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LocalAgent Desktop</title>
+    <script>
+        (() => {
+            try {
+                const savedTheme = localStorage.getItem('theme') || 'light';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                document.documentElement.setAttribute('data-active-skin', 'default');
+                document.documentElement.setAttribute('data-skin-contract-token', 'default');
+                document.documentElement.setAttribute('data-skin-theme-token', savedTheme);
+            } catch (error) {
+                document.documentElement.setAttribute('data-theme', 'light');
+                document.documentElement.setAttribute('data-active-skin', 'default');
+                document.documentElement.setAttribute('data-skin-contract-token', 'default');
+                document.documentElement.setAttribute('data-skin-theme-token', 'light');
+            }
+        })();
+    </script>
     <link rel="stylesheet" href="styles/layout.css?v=7">
     <link rel="stylesheet" href="styles/theme.css?v=7">
     <link rel="stylesheet" href="styles/buttons.css?v=7">
@@ -206,7 +222,7 @@
                     <div id="skin-picker-status" class="skin-picker-status"></div>
                     <div id="skin-picker" class="skin-picker"></div>
                     <div id="skin-theme-options" class="skin-theme-options"></div>
-                    <button id="run-skin-autotest-btn" class="secondary-btn">Run Auto Skin Test</button>
+                    <button id="run-skin-autotest-btn" class="secondary-btn" hidden>Run Auto Skin Test</button>
                     <button id="run-skin-diagnostics-btn" class="secondary-btn">Run Skin Diagnostics</button>
                     <pre id="skin-diagnostics-output" class="skin-diagnostics-output"></pre>
                 </div>

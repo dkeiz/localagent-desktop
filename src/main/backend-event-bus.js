@@ -7,7 +7,7 @@ const path = require('path');
  *
  * Three responsibilities:
  *   1. Route typed events between backend subsystems (Memory Daemon, Workflow Scheduler, Chat)
- *   2. Bridge events to the renderer via IPC (mainWindow.webContents.send)
+ *   2. Bridge events to the renderer via the current window manager
  *   3. For events that need inference, dispatch to the LLM with a behavior prompt —
  *      the LLM decides whether the user should be notified.
  *
@@ -15,9 +15,9 @@ const path = require('path');
  * The bus handles routing, inference, and renderer notification asynchronously.
  */
 class BackendEventBus extends EventEmitter {
-    constructor() {
+    constructor(options = {}) {
         super();
-        this.mainWindow = null;
+        this.windowManager = null;
         this.dispatcher = null;
         this.db = null;
         this._notifyPromptCache = null;
@@ -27,17 +27,38 @@ class BackendEventBus extends EventEmitter {
         this._maxLogSize = 200;
 
         // Behavior prompt path
-        this._notifyPromptPath = path.join(__dirname, '../../agentin/prompts/templates/background-notify.md');
+        this._notifyPromptPath = options.notifyPromptPath || path.join(__dirname, '../../agentin/prompts/templates/background-notify.md');
+
+        Object.defineProperty(this, 'mainWindow', {
+            configurable: true,
+            enumerable: false,
+            get: () => this.windowManager?.getMainWindow?.() || null
+        });
     }
 
     /**
      * Late-bind dependencies (called from main.js after all services are created)
      */
-    init({ mainWindow, dispatcher, db }) {
-        this.mainWindow = mainWindow;
+    init({ windowManager = null, mainWindow = null, dispatcher, db }) {
+        this.windowManager = windowManager || {
+            getMainWindow: () => mainWindow || null,
+            send(channel, payload) {
+                if (!mainWindow?.webContents?.send) return false;
+                try {
+                    mainWindow.webContents.send(channel, payload);
+                    return true;
+                } catch (error) {
+                    return false;
+                }
+            }
+        };
         this.dispatcher = dispatcher;
         this.db = db;
         console.log('[EventBus] Initialized');
+    }
+
+    sendToRenderer(channel, payload) {
+        return this.windowManager?.send?.(channel, payload) === true;
     }
 
     // ==================== Event Catalog ====================
@@ -119,12 +140,8 @@ class BackendEventBus extends EventEmitter {
         this.emit(`category:${eventDef.category}`, event);
 
         // Relay to renderer UI
-        if (eventDef.uiRelay && this.mainWindow) {
-            try {
-                this.mainWindow.webContents.send('background-event', event);
-            } catch (e) {
-                // Window may be destroyed
-            }
+        if (eventDef.uiRelay) {
+            this.sendToRenderer('background-event', event);
         }
 
         // Inference dispatch (async, non-blocking)
@@ -166,9 +183,9 @@ class BackendEventBus extends EventEmitter {
                     content.toLowerCase() === s || content.length < 5
                 );
 
-                if (!isSilent && this.mainWindow) {
+                if (!isSilent) {
                     // Send as a background notification message to renderer
-                    this.mainWindow.webContents.send('background-notification', {
+                    this.sendToRenderer('background-notification', {
                         type: event.type,
                         category: event.category,
                         message: content,

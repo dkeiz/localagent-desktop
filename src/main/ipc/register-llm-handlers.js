@@ -5,6 +5,13 @@ const {
   getModelRuntimeConfig,
   saveModelRuntimeConfig
 } = require('../llm-config');
+const {
+  getEffectiveLlmSelection,
+  getKnownModelsForProvider,
+  rememberLastWorkingModel,
+  rememberTestedModel,
+  saveActiveSelection
+} = require('../llm-state');
 
 function registerLlmHandlers(ipcMain, runtime) {
   const {
@@ -13,9 +20,33 @@ function registerLlmHandlers(ipcMain, runtime) {
     promptFileManager
   } = runtime;
 
+  async function syncResolvedRuntime(provider, model, runtimeConfig = null) {
+    let resolvedRuntime = null;
+    if (!provider || !model) {
+      return resolvedRuntime;
+    }
+
+    if (runtimeConfig) {
+      const savedRuntime = await saveModelRuntimeConfig(db, provider, model, runtimeConfig);
+      resolvedRuntime = savedRuntime.runtime;
+    } else {
+      const currentRuntime = await getModelRuntimeConfig(db, provider, model);
+      resolvedRuntime = currentRuntime.runtime;
+    }
+
+    if (resolvedRuntime) {
+      await db.saveSetting('llm.thinkingMode', resolvedRuntime.reasoning?.enabled ? 'think' : 'off');
+      await db.saveSetting('llm.showThinking', resolvedRuntime.reasoning?.visibility === 'hide' ? 'false' : 'true');
+      await db.saveSetting('llm.thinkingVisibility', resolvedRuntime.reasoning?.visibility || 'show');
+    }
+
+    return resolvedRuntime;
+  }
+
   ipcMain.handle('getProviderModels', async (event, provider) => {
     try {
-      const models = await aiService.getModels(provider);
+      const discovered = await aiService.getModels(provider);
+      const models = await getKnownModelsForProvider(db, provider, discovered);
       return { status: 'success', models };
     } catch (error) {
       return { status: 'error', message: error.message };
@@ -39,7 +70,8 @@ function registerLlmHandlers(ipcMain, runtime) {
   ipcMain.handle('llm:get-models', async (event, provider, forceRefresh = false) => {
     console.log('llm:get-models called with provider:', provider, 'forceRefresh:', forceRefresh);
     try {
-      const models = await aiService.getModels(provider.toLowerCase(), forceRefresh);
+      const discovered = await aiService.getModels(provider.toLowerCase(), forceRefresh);
+      const models = await getKnownModelsForProvider(db, provider, discovered);
       console.log(`Models from ${provider}:`, models);
       return models;
     } catch (error) {
@@ -51,15 +83,7 @@ function registerLlmHandlers(ipcMain, runtime) {
   ipcMain.handle('llm:save-config', async (event, config) => {
     try {
       console.log('Saving config:', config);
-      await db.saveSetting('llm.provider', config.provider);
-
-      if (config.model) {
-        await db.saveSetting('llm.model', config.model);
-        if (config.provider === 'ollama') {
-          const isCloudModel = config.model.includes('-cloud');
-          await db.saveSetting('llm.modelType', isCloudModel ? 'cloud' : 'local');
-        }
-      }
+      await saveActiveSelection(db, config.provider, config.model);
 
       if (config.apiKey) {
         await db.saveSetting(`llm.${config.provider}.apiKey`, config.apiKey);
@@ -85,19 +109,8 @@ function registerLlmHandlers(ipcMain, runtime) {
 
       let resolvedRuntime = null;
       if (config.model) {
-        if (config.runtimeConfig) {
-          const savedRuntime = await saveModelRuntimeConfig(db, config.provider, config.model, config.runtimeConfig);
-          resolvedRuntime = savedRuntime.runtime;
-        } else {
-          const currentRuntime = await getModelRuntimeConfig(db, config.provider, config.model);
-          resolvedRuntime = currentRuntime.runtime;
-        }
-      }
-
-      if (resolvedRuntime) {
-        await db.saveSetting('llm.thinkingMode', resolvedRuntime.reasoning?.enabled ? 'think' : 'off');
-        await db.saveSetting('llm.showThinking', resolvedRuntime.reasoning?.visibility === 'hide' ? 'false' : 'true');
-        await db.saveSetting('llm.thinkingVisibility', resolvedRuntime.reasoning?.visibility || 'show');
+        await rememberTestedModel(db, config.provider, config.model);
+        resolvedRuntime = await syncResolvedRuntime(config.provider, config.model, config.runtimeConfig || null);
       }
 
       aiService.getModels(config.provider)
@@ -140,9 +153,9 @@ function registerLlmHandlers(ipcMain, runtime) {
 
   ipcMain.handle('llm:get-config', async () => {
     try {
-      const provider = await db.getSetting('llm.provider');
-      const model = await db.getSetting('llm.model');
+      const { provider, model, source } = await getEffectiveLlmSelection(db);
       const config = { provider, model };
+      config.selectionSource = source;
 
       if (provider) {
         const apiKey = await db.getSetting(`llm.${provider}.apiKey`);
@@ -215,15 +228,25 @@ function registerLlmHandlers(ipcMain, runtime) {
         [{ role: 'user', content: 'hello' }],
         { model, max_tokens: 10 }
       );
-      return { success: true, model: result.model, content: result.content };
+      await rememberTestedModel(db, provider, model);
+      await rememberLastWorkingModel(db, provider, model);
+      await saveActiveSelection(db, provider, model);
+      await aiService.setProvider(provider);
+      const runtimeConfig = await syncResolvedRuntime(provider, model);
+      return {
+        success: true,
+        model: result.model,
+        content: result.content,
+        remembered: true,
+        runtimeConfig
+      };
     } catch (err) {
       return { success: false, error: err.message };
     }
   });
 
   ipcMain.handle('llm:set-thinking-mode', async (event, mode) => {
-    const provider = await db.getSetting('llm.provider');
-    const model = await db.getSetting('llm.model');
+    const { provider, model } = await getEffectiveLlmSelection(db);
 
     if (provider && model) {
       const profile = await getModelRuntimeConfig(db, provider, model);
@@ -241,8 +264,7 @@ function registerLlmHandlers(ipcMain, runtime) {
   });
 
   ipcMain.handle('llm:get-thinking-mode', async () => {
-    const provider = await db.getSetting('llm.provider');
-    const model = await db.getSetting('llm.model');
+    const { provider, model } = await getEffectiveLlmSelection(db);
 
     if (provider && model) {
       const { runtime } = await getModelRuntimeConfig(db, provider, model);
@@ -259,8 +281,7 @@ function registerLlmHandlers(ipcMain, runtime) {
   });
 
   ipcMain.handle('llm:set-show-thinking', async (event, show) => {
-    const provider = await db.getSetting('llm.provider');
-    const model = await db.getSetting('llm.model');
+    const { provider, model } = await getEffectiveLlmSelection(db);
 
     if (provider && model) {
       const profile = await getModelRuntimeConfig(db, provider, model);

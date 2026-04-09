@@ -3,7 +3,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
     db,
     aiService,
     workflowManager,
-    mainWindow
+    windowManager
   } = runtime;
 
   ipcMain.handle('get-workflows', async () => {
@@ -25,7 +25,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
         (workflow.tool_chain || []).map(s => ({ tool: s.tool, params: s.params || {} })),
         workflow.name
       );
-      mainWindow.webContents.send('workflow-update');
+      windowManager.send('workflow-update');
       return { success: true, workflow: result };
     } catch (error) {
       console.error('[IPC] save-workflow error:', error);
@@ -36,7 +36,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
   ipcMain.handle('delete-workflow', async (event, workflowId) => {
     try {
       await workflowManager.deleteWorkflow(workflowId);
-      mainWindow.webContents.send('workflow-update');
+      windowManager.send('workflow-update');
       return { success: true };
     } catch (error) {
       console.error('[IPC] delete-workflow error:', error);
@@ -47,7 +47,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
   ipcMain.handle('run-workflow', async (event, workflowId) => {
     try {
       const result = await workflowManager.executeWorkflow(workflowId);
-      mainWindow.webContents.send('workflow-update');
+      windowManager.send('workflow-update');
       return { success: true, ...result };
     } catch (error) {
       console.error('[IPC] run-workflow error:', error);
@@ -58,7 +58,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
   ipcMain.handle('execute-workflow', async (event, workflowId, paramOverrides = {}) => {
     try {
       const result = await workflowManager.executeWorkflow(workflowId, paramOverrides);
-      mainWindow.webContents.send('workflow-update');
+      windowManager.send('workflow-update');
       return { success: true, ...result };
     } catch (error) {
       console.error('[IPC] execute-workflow error:', error);
@@ -73,7 +73,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
         paramOverrides: options.paramOverrides || {},
         requestedBySessionId: options.sessionId || null
       });
-      mainWindow.webContents.send('workflow-update');
+      windowManager.send('workflow-update');
       return { success: true, ...result };
     } catch (error) {
       console.error('[IPC] run-workflow-advanced error:', error);
@@ -102,7 +102,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
   ipcMain.handle('capture-workflow', async (event, trigger, toolChain, name = null) => {
     try {
       const result = await workflowManager.captureWorkflow(trigger, toolChain, name);
-      mainWindow.webContents.send('workflow-update');
+      windowManager.send('workflow-update');
       return { success: true, workflow: result };
     } catch (error) {
       console.error('[IPC] capture-workflow error:', error);
@@ -122,7 +122,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
   ipcMain.handle('copy-workflow', async (event, workflowId, newName = null) => {
     try {
       const result = await workflowManager.copyWorkflow(workflowId, newName);
-      mainWindow.webContents.send('workflow-update');
+      windowManager.send('workflow-update');
       return { success: true, workflow: result };
     } catch (error) {
       console.error('[IPC] copy-workflow error:', error);
@@ -133,7 +133,7 @@ function registerWorkflowHandlers(ipcMain, runtime) {
   ipcMain.handle('update-workflow', async (event, workflowId, data) => {
     try {
       const result = await workflowManager.updateWorkflow(workflowId, data);
-      mainWindow.webContents.send('workflow-update');
+      windowManager.send('workflow-update');
       return { success: true, workflow: result };
     } catch (error) {
       console.error('[IPC] update-workflow error:', error);
@@ -158,19 +158,10 @@ function registerWorkflowHandlers(ipcMain, runtime) {
   });
 
   ipcMain.handle('open-new-window', async () => {
-    const { BrowserWindow } = require('electron');
-    const path = require('path');
-    const win = new BrowserWindow({
-      width: 1200,
-      height: 800,
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
-      },
-      show: false
-    });
-    win.loadFile(path.join(__dirname, '../../renderer/index.html'));
-    win.once('ready-to-show', () => win.show());
+    if (!windowManager?.openAuxWindow) {
+      return { success: false, error: 'Window manager not initialized' };
+    }
+    windowManager.openAuxWindow();
     return { success: true };
   });
 

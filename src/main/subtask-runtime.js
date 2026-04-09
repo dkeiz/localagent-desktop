@@ -324,7 +324,7 @@ class SubtaskRuntime {
                     delivery_path: deliveryPath
                 });
                 try {
-                    this.eventBus?.mainWindow?.webContents?.send('conversation-update', { sessionId: numericParentId });
+                    this.eventBus?.sendToRenderer?.('conversation-update', { sessionId: numericParentId });
                 } catch (error) {
                     console.error('[SubtaskRuntime] Failed to relay conversation update:', error.message);
                 }

@@ -58,6 +58,10 @@ class BackgroundWorkflowScheduler {
     }
 
     stop() {
+        if (!this.running) {
+            return;
+        }
+
         this.running = false;
         if (this._tickTimer) {
             clearTimeout(this._tickTimer);
@@ -91,6 +95,9 @@ class BackgroundWorkflowScheduler {
         this._tickTimer = setTimeout(async () => {
             await this._onTick();
         }, delay);
+        if (typeof this._tickTimer.unref === 'function') {
+            this._tickTimer.unref();
+        }
     }
 
     async _onTick() {

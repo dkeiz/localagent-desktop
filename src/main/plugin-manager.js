@@ -14,13 +14,13 @@ const { EventEmitter } = require('events');
  * describing the plugin's available handlers for LLM discovery.
  */
 class PluginManager extends EventEmitter {
-    constructor(container) {
+    constructor(container, options = {}) {
         super();
         this.container = container;
         this.db = container.get('db');
         this.mcpServer = container.get('mcpServer');
         this.capabilityManager = container.optional('capabilityManager');
-        this.pluginsDir = path.join(__dirname, '../../agentin/plugins');
+        this.pluginsDir = options.pluginsDir || path.join(__dirname, '../../agentin/plugins');
         this.plugins = new Map(); // id -> { manifest, status, module, handlers[] }
         this._ensureDir();
     }

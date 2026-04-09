@@ -1,4 +1,5 @@
 const { getModelRuntimeConfig } = require('../llm-config');
+const { getEffectiveLlmSelection, rememberLastWorkingModel } = require('../llm-state');
 const {
   stripToolPatterns,
   stripReasoningBlocks,
@@ -9,7 +10,7 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
   const {
     db,
     mcpServer,
-    mainWindow,
+    windowManager,
     chainController,
     agentLoop,
     dispatcher,
@@ -85,19 +86,19 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
 
   ipcMain.handle('add-calendar-event', async (event, calendarEvent) => {
     const result = await db.addCalendarEvent(calendarEvent);
-    mainWindow.webContents.send('calendar-update');
+    windowManager.send('calendar-update');
     return result;
   });
 
   ipcMain.handle('update-calendar-event', async (event, id, calendarEvent) => {
     const result = await db.updateCalendarEvent(id, calendarEvent);
-    mainWindow.webContents.send('calendar-update');
+    windowManager.send('calendar-update');
     return result;
   });
 
   ipcMain.handle('delete-calendar-event', async (event, id) => {
     const result = await db.deleteCalendarEvent(id);
-    mainWindow.webContents.send('calendar-update');
+    windowManager.send('calendar-update');
     return result;
   });
 
@@ -105,19 +106,19 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
 
   ipcMain.handle('add-todo', async (event, todo) => {
     const result = await db.addTodo(todo);
-    mainWindow.webContents.send('todo-update');
+    windowManager.send('todo-update');
     return result;
   });
 
   ipcMain.handle('update-todo', async (event, id, todo) => {
     const result = await db.updateTodo(id, todo);
-    mainWindow.webContents.send('todo-update');
+    windowManager.send('todo-update');
     return result;
   });
 
   ipcMain.handle('delete-todo', async (event, id) => {
     const result = await db.deleteTodo(id);
-    mainWindow.webContents.send('todo-update');
+    windowManager.send('todo-update');
     return result;
   });
 
@@ -127,7 +128,7 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
 
   ipcMain.handle('add-conversation', async (event, message) => {
     const result = await persistMessage(message, null);
-    mainWindow.webContents.send('conversation-update');
+    windowManager.send('conversation-update');
     return result;
   });
 
@@ -137,12 +138,12 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         const sid = ensureTestSession();
         const session = testClientStore.sessions.get(sid);
         session.messages = [];
-        mainWindow.webContents.send('conversation-update', { sessionId: sid });
+        windowManager.send('conversation-update', { sessionId: sid });
         return { cleared: true, sessionId: sid };
       }
       const newSession = await db.createChatSession();
       await db.setCurrentSession(newSession.id);
-      mainWindow.webContents.send('conversation-update');
+      windowManager.send('conversation-update');
       return { cleared: true, sessionId: newSession.id };
     } catch (error) {
       console.error('Error clearing conversations:', error);
@@ -241,11 +242,11 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         if (testClientStore.currentSessionId === sessionId) {
           testClientStore.currentSessionId = null;
         }
-        mainWindow.webContents.send('conversation-update');
+        windowManager.send('conversation-update');
         return { success: true };
       }
       await db.deleteChatSession(sessionId);
-      mainWindow.webContents.send('conversation-update');
+      windowManager.send('conversation-update');
       return { success: true };
     } catch (error) {
       console.error('Error deleting chat session:', error);
@@ -258,11 +259,11 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
       if (testClientMode) {
         testClientStore.sessions.clear();
         testClientStore.currentSessionId = null;
-        mainWindow.webContents.send('conversation-update');
+        windowManager.send('conversation-update');
         return { success: true, message: 'All test conversations deleted' };
       }
       await db.deleteAllConversations();
-      mainWindow.webContents.send('conversation-update');
+      windowManager.send('conversation-update');
       return { success: true, message: 'All conversations deleted' };
     } catch (error) {
       console.error('Error deleting all conversations:', error);
@@ -309,7 +310,7 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         console.log('[IPC] Using tool chain controller');
         response = await chainController.executeWithChaining(message, conversationHistory, { sessionId: effectiveSessionId, agentId });
         if (response && response.needsPermission) {
-          mainWindow.webContents.send('tool-permission-request', { ...response.permissionRequest, sessionId: effectiveSessionId });
+          windowManager.send('tool-permission-request', { ...response.permissionRequest, sessionId: effectiveSessionId });
           return { needsPermission: true, sessionId: effectiveSessionId, ...response.permissionRequest };
         }
       } else {
@@ -321,15 +322,17 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         response = { content: 'Sorry, I was unable to generate a response. Please try again.', model: 'unknown' };
       }
 
-      const activeProvider = await db.getSetting('llm.provider');
-      const activeModel = await db.getSetting('llm.model');
+      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
       const { runtime: runtimeConfig } = activeProvider && activeModel
         ? await getModelRuntimeConfig(db, activeProvider, activeModel)
         : { runtime: null };
 
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
       await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
-      mainWindow.webContents.send('conversation-update', { sessionId: effectiveSessionId });
+      if (activeProvider && activeModel) {
+        await rememberLastWorkingModel(db, activeProvider, activeModel);
+      }
+      windowManager.send('conversation-update', { sessionId: effectiveSessionId });
 
       return { ...response, content: cleanContent, sessionId: effectiveSessionId };
     } catch (error) {
@@ -361,15 +364,17 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
 
       const toolContext = `Tool "${toolName}" was executed with parameters: ${JSON.stringify(params)}\n\nResult: ${JSON.stringify(toolResult, null, 2)}\n\nBased on this tool result, provide a natural, helpful response to the user. Do NOT call any tools.`;
       const response = await dispatcher.dispatch(toolContext, conversationHistory, { mode: 'chat', sessionId: effectiveSessionId });
-      const activeProvider = await db.getSetting('llm.provider');
-      const activeModel = await db.getSetting('llm.model');
+      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
       const { runtime: runtimeConfig } = activeProvider && activeModel
         ? await getModelRuntimeConfig(db, activeProvider, activeModel)
         : { runtime: null };
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
 
       await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
-      mainWindow.webContents.send('conversation-update', { sessionId: effectiveSessionId });
+      if (activeProvider && activeModel) {
+        await rememberLastWorkingModel(db, activeProvider, activeModel);
+      }
+      windowManager.send('conversation-update', { sessionId: effectiveSessionId });
       return { ...response, content: cleanContent, sessionId: effectiveSessionId };
     } catch (error) {
       console.error('Error interpreting tool result:', error);
@@ -424,20 +429,22 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId: effectiveSessionId });
       }
 
-      const activeProvider = await db.getSetting('llm.provider');
-      const activeModel = await db.getSetting('llm.model');
+      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
       const { runtime: runtimeConfig } = activeProvider && activeModel
         ? await getModelRuntimeConfig(db, activeProvider, activeModel)
         : { runtime: null };
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
       await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
-      mainWindow.webContents.send('conversation-update', { sessionId: effectiveSessionId });
+      if (activeProvider && activeModel) {
+        await rememberLastWorkingModel(db, activeProvider, activeModel);
+      }
+      windowManager.send('conversation-update', { sessionId: effectiveSessionId });
 
       return { success: true, response: { ...response, content: cleanContent }, sessionId: effectiveSessionId };
     } catch (error) {
       console.error('Error handling file drop:', error);
       await persistMessage({ role: 'system', content: `Error processing file: ${error.message}` }, effectiveSessionId);
-      mainWindow.webContents.send('conversation-update', { sessionId: effectiveSessionId });
+      windowManager.send('conversation-update', { sessionId: effectiveSessionId });
       throw error;
     } finally {
       if (!isTestSession) {

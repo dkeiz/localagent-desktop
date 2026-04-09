@@ -4,14 +4,18 @@ const { registerToolsCapabilityHandlers } = require('./register-tools-capability
 const { registerWorkflowHandlers } = require('./register-workflow-handlers');
 const { registerAgentSystemHandlers } = require('./register-agent-system-handlers');
 const { registerPluginKnowledgeHandlers } = require('./register-plugin-knowledge-handlers');
+const { createStaticWindowManager } = require('../window-manager');
 
 function buildRuntime(container) {
+  const windowManager = container.optional('windowManager')
+    || createStaticWindowManager(container.optional('mainWindow'));
+
   return {
     container,
     db: container.get('db'),
     aiService: container.get('aiService'),
     mcpServer: container.get('mcpServer'),
-    mainWindow: container.get('mainWindow'),
+    windowManager,
     ollamaService: container.optional('ollamaService'),
     chainController: container.get('chainController'),
     workflowManager: container.get('workflowManager'),
@@ -29,7 +33,8 @@ function buildRuntime(container) {
     workflowScheduler: container.get('workflowScheduler'),
     sessionInitManager: container.get('sessionInitManager'),
     testClientMode: container.optional('testClientMode') === true,
-    testClientStore: container.optional('testClientStore') || { sessions: new Map(), currentSessionId: null }
+    testClientStore: container.optional('testClientStore') || { sessions: new Map(), currentSessionId: null },
+    userIdleDebounceMs: container.optional('userIdleDebounceMs')
   };
 }
 
@@ -37,7 +42,10 @@ function registerAllHandlers(ipcMain, container) {
   const runtime = buildRuntime(container);
   const { db, eventBus, memoryDaemon, workflowScheduler } = runtime;
 
-  const USER_IDLE_DEBOUNCE_MS = 20 * 1000;
+  const configuredDebounceMs = Number(runtime.userIdleDebounceMs);
+  const USER_IDLE_DEBOUNCE_MS = Number.isFinite(configuredDebounceMs) && configuredDebounceMs >= 0
+    ? configuredDebounceMs
+    : 20 * 1000;
   let activeUserRequests = 0;
   let userIdleTimer = null;
 
@@ -70,6 +78,9 @@ function registerAllHandlers(ipcMain, container) {
         eventBus.publish('chat:user-idle', { sessionId });
       }
     }, USER_IDLE_DEBOUNCE_MS);
+    if (typeof userIdleTimer.unref === 'function') {
+      userIdleTimer.unref();
+    }
   }
 
   async function syncDaemonEnabledSetting() {

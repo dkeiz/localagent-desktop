@@ -164,10 +164,11 @@ function buildContainer() {
       connectorRuntime: { listConnectors: async () => [], startConnector: async () => ({}), stopConnector: async () => ({}), getLogs: () => [] },
       dispatcher,
       agentManager: { getAgents: async () => [], getAgent: async () => null, createAgent: async () => ({}), updateAgent: async () => ({}), deleteAgent: async () => ({}), activateAgent: async () => ({}), deactivateAgent: async () => {}, compactAgent: async () => {} },
-      eventBus: { publish() {}, getLog: () => [] },
+      eventBus: null,
       memoryDaemon: { running: false, start: async () => {}, stop() {}, getStatus: () => ({ running: false }) },
       workflowScheduler: { running: false, start: async () => {}, stop() {}, getStatus: () => ({ running: false }), addSchedule: async () => ({}), removeSchedule: async () => ({}), toggleSchedule: async () => ({}), _getAllSchedules: () => [] },
-      sessionInitManager: { recordActivity: async () => {}, detectStartType: async () => ({ isColdStart: false }), buildColdStartPrompt: async () => null, buildBaseInitReport: async () => ({}) }
+      sessionInitManager: { recordActivity: async () => {}, detectStartType: async () => ({ isColdStart: false }), buildColdStartPrompt: async () => null, buildBaseInitReport: async () => ({}) },
+      userIdleDebounceMs: 5
     }),
     conversations,
     sentEvents

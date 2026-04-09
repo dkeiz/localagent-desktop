@@ -2,6 +2,7 @@ const OllamaAdapter = require('./providers/ollama-adapter');
 const LMStudioAdapter = require('./providers/lmstudio-adapter');
 const OpenRouterAdapter = require('./providers/openrouter-adapter');
 const QwenAdapter = require('./providers/qwen-adapter');
+const { getEffectiveLlmSelection } = require('./llm-state');
 
 /**
  * AIService — Manages LLM provider adapters and routing.
@@ -48,10 +49,8 @@ class AIService {
   }
 
   async initialize() {
-    // Load provider setting
-    const provider = await this.db.getSetting('llm.provider') ||
-      await this.db.getSetting('ai_provider') || 'ollama';
-    this.currentProvider = provider;
+    const { provider } = await getEffectiveLlmSelection(this.db);
+    this.currentProvider = provider || 'ollama';
     console.log('AI Service initialized with provider:', this.currentProvider);
 
     // Load system prompt
