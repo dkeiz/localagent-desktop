@@ -49,8 +49,17 @@ TOOL:create_workflow{"name":"System Check","tool_chain":[{"tool":"get_memory_usa
 ### `execute_workflow`
 Run by ID with optional parameter overrides.
 ```
-TOOL:execute_workflow{"id":1,"param_overrides":{"search_web":{"query":"new topic"}}}
+TOOL:execute_workflow{"id":1,"param_overrides":{"search_web_bing":{"query":"new topic"}}}
 ```
+
+### `run_workflow`
+Run a workflow in `auto`, `sync`, or `async` mode.
+```
+TOOL:run_workflow{"id":1,"mode":"auto"}
+```
+
+### `get_workflow_run` / `list_workflow_runs`
+Inspect async workflow runs and poll for completion.
 
 ### `copy_workflow`
 Clone a workflow — creates a new file and DB entry.

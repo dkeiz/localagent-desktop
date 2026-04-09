@@ -52,6 +52,76 @@ function registerWorkflowTools(server) {
     return await server._workflowManager.executeWorkflow(params.id, params.param_overrides || {});
   });
 
+  server.registerTool('run_workflow', {
+    name: 'run_workflow',
+    description: 'Run a workflow using sync, async, or auto mode. Auto chooses async for longer or high-latency chains and sync for short deterministic chains.',
+    userDescription: 'Run a workflow with auto/sync/async execution modes',
+    example: 'TOOL:run_workflow{"id":1,"mode":"auto"}',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Workflow ID to run' },
+        mode: {
+          type: 'string',
+          description: 'Execution mode: auto, sync, or async',
+          default: 'auto'
+        },
+        param_overrides: {
+          type: 'object',
+          description: 'Optional parameter overrides keyed by tool name',
+          default: {}
+        }
+      },
+      required: ['id']
+    }
+  }, async (params) => {
+    if (!server._workflowManager) return { error: 'Workflow manager not initialized' };
+    return server._workflowManager.runWorkflow(params.id, {
+      mode: params.mode || 'auto',
+      paramOverrides: params.param_overrides || {},
+      requestedBySessionId: server.getCurrentSessionId?.() || null
+    });
+  });
+
+  server.registerTool('get_workflow_run', {
+    name: 'get_workflow_run',
+    description: 'Get a workflow run by run_id, including current status, trace path, and result payload if completed.',
+    userDescription: 'Get current state of a workflow run',
+    example: 'TOOL:get_workflow_run{"run_id":"workflow-20260409-ab12cd"}',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        run_id: { type: 'string', description: 'Workflow run identifier returned by run_workflow' }
+      },
+      required: ['run_id']
+    }
+  }, async (params) => {
+    if (!server._workflowManager) return null;
+    return server._workflowManager.getWorkflowRun(params.run_id);
+  });
+
+  server.registerTool('list_workflow_runs', {
+    name: 'list_workflow_runs',
+    description: 'List recent workflow runs and their statuses. Useful for polling async workflow execution.',
+    userDescription: 'List recent workflow runs',
+    example: 'TOOL:list_workflow_runs{"limit":10}',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Maximum runs to return', default: 20 },
+        workflow_id: { type: 'number', description: 'Optional workflow ID filter' },
+        status: { type: 'string', description: 'Optional status filter' }
+      }
+    }
+  }, async (params) => {
+    if (!server._workflowManager) return [];
+    return server._workflowManager.listWorkflowRuns({
+      limit: params.limit || 20,
+      workflowId: params.workflow_id,
+      status: params.status
+    });
+  });
+
   server.registerTool('create_workflow', {
     name: 'create_workflow',
     description: 'Create a new workflow from a name, description, and tool chain. The tool_chain is an array of steps, each with a tool name and its parameters.',

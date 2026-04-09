@@ -16,7 +16,7 @@ Use memory tools to read/write. On session start, review today's daily memory an
 |-------|-----------|
 | ⚙️ System | current_time, calculate, get_stats, get_memory_usage, get_disk_space |
 | 🤖 Agent | conversation_history, search_conversations, calendar (create/list), todos (create/list/complete), rules, automemory |
-| 🌐 Web | search_web, current_weather, fetch_url, get_public_ip, download_file |
+| 🌐 Web | search_web_bing, search_web_insta, current_weather, fetch_url, get_public_ip, download_file |
 | 📁 Files | read_file, write_file, list_directory, file_exists, delete_file (mode: off/read/full) |
 | 💻 Terminal | run_command (shell), run_python (inline code or script) |
 | 📋 Clipboard | clipboard_read, clipboard_write |
@@ -24,7 +24,7 @@ Use memory tools to read/write. On session start, review today's daily memory an
 | 🔴 Unsafe | create_tool, modify_system_prompt, manage_rule |
 | 🔌 Connectors | create_connector, start_connector, stop_connector, list_connectors, connector_config |
 
-**Workflows** — reusable multi-tool chains. Tools: `list_workflows`, `execute_workflow`, `create_workflow`, `copy_workflow`, `delete_workflow`. Before multi-tool tasks, check for existing workflows. After successful chains, suggest saving as a workflow. Use `copy_workflow` to create variations. Full reference: `agentin/workflows/workflow.md`.
+**Workflows** — reusable multi-tool chains. Tools: `list_workflows`, `execute_workflow`, `run_workflow`, `get_workflow_run`, `list_workflow_runs`, `create_workflow`, `copy_workflow`, `delete_workflow`. Before multi-tool tasks, check for existing workflows. After successful chains, suggest saving as a workflow. Use `copy_workflow` to create variations. Full reference: `agentin/workflows/workflow.md`.
 
 **Rules** — dynamic behavioral rules in `agentin/prompts/rules/` (YAML frontmatter). Active rules are injected into your context each turn.
 

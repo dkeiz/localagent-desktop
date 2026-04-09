@@ -5,6 +5,7 @@ const AIService = require('./ai-service');
 const MCPServer = require('./mcp-server');
 const ToolChainController = require('./tool-chain-controller');
 const WorkflowManager = require('./workflow-manager');
+const WorkflowRuntime = require('./workflow-runtime');
 const EmbeddingService = require('./embedding-service');
 const VectorStore = require('./vector-store');
 const CapabilityManager = require('./capability-manager');
@@ -25,6 +26,7 @@ const SessionInitManager = require('./session-init-manager');
 const ServiceContainer = require('./service-container');
 const PluginManager = require('./plugin-manager');
 const KnowledgeManager = require('./knowledge-manager');
+const ResearchRuntime = require('./research-runtime');
 const { runCheckSkins } = require('../../tools/check-skins');
 const { runApplySimulation } = require('../../tools/test-skin-apply');
 
@@ -141,9 +143,13 @@ app.whenReady().then(async () => {
 
     // Create workflow manager for learning tool chains
     const workflowManager = new WorkflowManager(db, mcpServer);
+    const workflowRuntime = new WorkflowRuntime(workflowManager, eventBus);
+    workflowRuntime.initialize();
+    workflowManager.setWorkflowRuntime(workflowRuntime);
     chainController.setWorkflowManager(workflowManager);
     mcpServer.setWorkflowManager(workflowManager);
     container.register('workflowManager', workflowManager);
+    container.register('workflowRuntime', workflowRuntime);
 
     // Create embedding service and vector store for semantic search
     const embeddingService = new EmbeddingService();
@@ -231,6 +237,12 @@ app.whenReady().then(async () => {
     const knowledgeManager = new KnowledgeManager(db);
     container.register('knowledgeManager', knowledgeManager);
     await knowledgeManager.initialize();
+    mcpServer.setKnowledgeManager(knowledgeManager);
+
+    const researchRuntime = new ResearchRuntime(workflowManager, knowledgeManager, eventBus);
+    researchRuntime.initialize();
+    mcpServer.setResearchRuntime(researchRuntime);
+    container.register('researchRuntime', researchRuntime);
 
     // Register explore_knowledge tool in MCPServer
     mcpServer.registerTool('explore_knowledge', {

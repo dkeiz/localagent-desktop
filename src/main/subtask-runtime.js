@@ -1,5 +1,16 @@
 const fs = require('fs');
 const path = require('path');
+const {
+    appendJsonLine,
+    appendTraceSection,
+    ensureDir,
+    generateRunId,
+    initRunBase,
+    listRunDirectories,
+    readJson,
+    writeJson,
+    writeTraceFile
+} = require('./run-store-utils');
 
 class SubtaskRuntime {
     constructor(db, sessionWorkspace = null, eventBus = null, basePath = null) {
@@ -12,9 +23,7 @@ class SubtaskRuntime {
     }
 
     initialize() {
-        this._ensureDir(this.basePath);
-        this._ensureDir(this.runsPath);
-        this._ensureDir(this.inboxesPath);
+        initRunBase(this.basePath, ['runs', 'inboxes']);
         this.cleanupStale(24);
     }
 
@@ -33,9 +42,9 @@ class SubtaskRuntime {
         const messagesPath = path.join(runDir, 'messages.jsonl');
         const tracePath = path.join(runDir, 'trace.md');
 
-        this._ensureDir(runDir);
-        this._ensureDir(artifactsDir);
-        this._ensureDir(workspaceDir);
+        ensureDir(runDir);
+        ensureDir(artifactsDir);
+        ensureDir(workspaceDir);
 
         const createdAt = new Date().toISOString();
         const request = {
@@ -79,8 +88,8 @@ class SubtaskRuntime {
             trace_path: tracePath
         };
 
-        this._writeJson(requestPath, request);
-        this._writeJson(statusPath, status);
+        writeJson(requestPath, request);
+        writeJson(statusPath, status);
         this._writeTraceHeader(tracePath, request);
 
         return this.getRun(runId);
@@ -92,10 +101,10 @@ class SubtaskRuntime {
             return null;
         }
 
-        const request = this._readJson(requestPath) || {};
-        const status = this._readJson(request.status_path) || {};
+        const request = readJson(requestPath) || {};
+        const status = readJson(request.status_path) || {};
         const result = fs.existsSync(request.result_path)
-            ? this._readJson(request.result_path)
+            ? readJson(request.result_path)
             : null;
 
         return {
@@ -136,13 +145,13 @@ class SubtaskRuntime {
         }
 
         const nextStatus = {
-            ...this._readJson(run.status_path),
+            ...readJson(run.status_path),
             ...patch,
             run_id: run.run_id,
             updated_at: new Date().toISOString()
         };
 
-        this._writeJson(run.status_path, nextStatus);
+        writeJson(run.status_path, nextStatus);
         return this.getRun(runId);
     }
 
@@ -167,8 +176,8 @@ class SubtaskRuntime {
             metadata: message.metadata || null
         };
 
-        this._appendJsonLine(run.messages_path, entry);
-        this._appendTraceSection(run.trace_path, `${entry.role} @ ${entry.timestamp}`, entry.content);
+        appendJsonLine(run.messages_path, entry);
+        appendTraceSection(run.trace_path, `${entry.role} @ ${entry.timestamp}`, entry.content);
         return entry;
     }
 
@@ -188,11 +197,11 @@ class SubtaskRuntime {
             error: event.error || null
         };
 
-        this._appendJsonLine(run.messages_path, entry);
+        appendJsonLine(run.messages_path, entry);
         const body = entry.success
             ? `Params:\n\n\`\`\`json\n${JSON.stringify(entry.params, null, 2)}\n\`\`\`\n\nResult:\n\n\`\`\`json\n${JSON.stringify(entry.result, null, 2)}\n\`\`\``
             : `Params:\n\n\`\`\`json\n${JSON.stringify(entry.params, null, 2)}\n\`\`\`\n\nError:\n\n${entry.error}`;
-        this._appendTraceSection(run.trace_path, `tool ${entry.tool_name} @ ${entry.timestamp}`, body);
+        appendTraceSection(run.trace_path, `tool ${entry.tool_name} @ ${entry.timestamp}`, body);
         return entry;
     }
 
@@ -211,7 +220,7 @@ class SubtaskRuntime {
             summary: completion.contract?.summary || ''
         };
 
-        this._writeJson(run.result_path, payload);
+        writeJson(run.result_path, payload);
         this.updateStatus(runId, {
             status: completion.contract?.status || 'completed',
             summary: completion.contract?.summary || '',
@@ -219,7 +228,7 @@ class SubtaskRuntime {
             completed_at: payload.completed_at
         });
 
-        this._appendTraceSection(
+        appendTraceSection(
             run.trace_path,
             `completion @ ${payload.completed_at}`,
             `\`\`\`json\n${JSON.stringify(payload.contract, null, 2)}\n\`\`\``
@@ -242,7 +251,7 @@ class SubtaskRuntime {
             error: message
         };
 
-        this._writeJson(run.result_path, payload);
+        writeJson(run.result_path, payload);
         this.updateStatus(runId, {
             status: 'failed',
             summary: '',
@@ -250,7 +259,7 @@ class SubtaskRuntime {
             completed_at: completedAt
         });
 
-        this._appendTraceSection(run.trace_path, `failure @ ${completedAt}`, message);
+        appendTraceSection(run.trace_path, `failure @ ${completedAt}`, message);
         return this.getRun(runId);
     }
 
@@ -262,7 +271,7 @@ class SubtaskRuntime {
 
         const parentSessionId = String(run.parent_session_id);
         const inboxDir = path.join(this.inboxesPath, parentSessionId);
-        this._ensureDir(inboxDir);
+        ensureDir(inboxDir);
 
         const deliveryId = `delivery-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const deliveryPath = path.join(inboxDir, `${deliveryId}.json`);
@@ -284,7 +293,7 @@ class SubtaskRuntime {
             contract: delivery.contract
         };
 
-        this._writeJson(deliveryPath, record);
+        writeJson(deliveryPath, record);
 
         let deliveredToParent = false;
         const numericParentId = String(run.parent_session_id).match(/^\d+$/)
@@ -309,7 +318,7 @@ class SubtaskRuntime {
                 }, numericParentId);
                 deliveredToParent = true;
                 record.delivered_to_parent = true;
-                this._writeJson(deliveryPath, record);
+                writeJson(deliveryPath, record);
                 this.updateStatus(run.run_id, {
                     delivered_to_parent: true,
                     delivery_path: deliveryPath
@@ -348,12 +357,7 @@ class SubtaskRuntime {
         let cleaned = 0;
         const cutoff = Date.now() - (Math.max(1, Number(maxAgeHours) || 24) * 60 * 60 * 1000);
 
-        for (const entry of fs.readdirSync(this.runsPath, { withFileTypes: true })) {
-            if (!entry.isDirectory()) {
-                continue;
-            }
-
-            const runId = entry.name;
+        for (const runId of listRunDirectories(this.runsPath)) {
             const runDir = path.join(this.runsPath, runId);
             try {
                 const stat = fs.statSync(runDir);
@@ -404,36 +408,33 @@ class SubtaskRuntime {
             'The parent may inspect this run folder if clarification is needed.',
             ''
         ];
-        fs.writeFileSync(tracePath, `${lines.join('\n')}\n`, 'utf-8');
-    }
-
-    _appendTraceSection(tracePath, title, body) {
-        const content = `## ${title}\n\n${body}\n\n`;
-        fs.appendFileSync(tracePath, content, 'utf-8');
-    }
-
-    _ensureDir(dirPath) {
-        if (!fs.existsSync(dirPath)) {
-            fs.mkdirSync(dirPath, { recursive: true });
-        }
+        writeTraceFile(tracePath, lines);
     }
 
     _generateRunId() {
-        const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-        return `subtask-${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+        return generateRunId('subtask');
     }
 
     _readJson(filePath) {
-        return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        return readJson(filePath);
     }
 
     _writeJson(filePath, payload) {
-        fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
+        writeJson(filePath, payload);
     }
 
     _appendJsonLine(filePath, payload) {
-        fs.appendFileSync(filePath, `${JSON.stringify(payload)}\n`, 'utf-8');
+        appendJsonLine(filePath, payload);
     }
+
+    _appendTraceSection(tracePath, title, body) {
+        appendTraceSection(tracePath, title, body);
+    }
+
+    _ensureDir(dirPath) {
+        ensureDir(dirPath);
+    }
+
 }
 
 module.exports = SubtaskRuntime;

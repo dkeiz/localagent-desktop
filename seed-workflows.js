@@ -29,7 +29,7 @@ module.exports = async ({ db, workflowManager }) => {
             description: 'Searches the web for a topic and fetches the top result',
             trigger_pattern: 'research search lookup',
             tool_chain: [
-                { tool: 'search_web', params: { query: 'example search' } },
+                { tool: 'search_web_bing', params: { query: 'example search' } },
                 { tool: 'current_time', params: {} }
             ]
         }

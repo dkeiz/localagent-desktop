@@ -80,9 +80,15 @@
                 "automemory",
                 "list_workflows",
                 "execute_workflow",
+                "run_workflow",
+                "get_workflow_run",
+                "list_workflow_runs",
                 "create_workflow",
                 "copy_workflow",
-                "delete_workflow"
+                "delete_workflow",
+                "start_research",
+                "get_research_run",
+                "list_research_runs"
             ],
             "defaultActive": true
         },

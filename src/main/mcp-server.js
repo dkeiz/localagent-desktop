@@ -8,6 +8,7 @@ const { registerPromptTools } = require('./mcp/register-prompt-tools');
 const { registerTerminalTools } = require('./mcp/register-terminal-tools');
 const { registerWebSystemTools } = require('./mcp/register-web-system-tools');
 const { registerWorkflowTools } = require('./mcp/register-workflow-tools');
+const { registerResearchTools } = require('./mcp/register-research-tools');
 
 const BUILT_IN_TOOL_REGISTRARS = [
   registerCoreTools,
@@ -15,6 +16,7 @@ const BUILT_IN_TOOL_REGISTRARS = [
   registerPromptTools,
   registerConnectorTools,
   registerWorkflowTools,
+  registerResearchTools,
   registerFileTools,
   registerWebSystemTools,
   registerMediaTools,
@@ -68,6 +70,14 @@ class MCPServer extends EventEmitter {
 
   setAgentManager(agentManager) {
     this._agentManager = agentManager;
+  }
+
+  setKnowledgeManager(knowledgeManager) {
+    this._knowledgeManager = knowledgeManager;
+  }
+
+  setResearchRuntime(researchRuntime) {
+    this._researchRuntime = researchRuntime;
   }
 
   initializeBuiltInTools() {

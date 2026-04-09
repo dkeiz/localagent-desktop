@@ -12,8 +12,13 @@ class WorkflowManager {
     constructor(db, mcpServer) {
         this.db = db;
         this.mcpServer = mcpServer;
+        this.workflowRuntime = null;
         this.workflowsDir = path.join(process.cwd(), 'agentin', 'workflows');
         this._ensureDir();
+    }
+
+    setWorkflowRuntime(runtime) {
+        this.workflowRuntime = runtime;
     }
 
     _ensureDir() {
@@ -55,6 +60,12 @@ class WorkflowManager {
 
                 if (!wf.name || !wf.tool_chain) {
                     console.log(`[WorkflowManager] Skipping ${file}: missing name or tool_chain`);
+                    continue;
+                }
+
+                const validation = this.validateToolChain(wf.tool_chain);
+                if (!validation.valid) {
+                    console.log(`[WorkflowManager] Skipping ${file}: invalid tools (${validation.invalidTools.join(', ')})`);
                     continue;
                 }
 
@@ -152,6 +163,11 @@ class WorkflowManager {
             throw new Error('Cannot capture empty tool chain');
         }
 
+        const validation = this.validateToolChain(toolChain);
+        if (!validation.valid) {
+            throw new Error(`Workflow includes unknown tools: ${validation.invalidTools.join(', ')}`);
+        }
+
         const workflowName = name || this.generateWorkflowName(toolChain);
         const cleanChain = toolChain.map(step => ({
             tool: step.tool,
@@ -176,40 +192,130 @@ class WorkflowManager {
      * Execute a saved workflow
      */
     async executeWorkflow(workflowId, paramOverrides = {}) {
-        const workflow = await this.db.getWorkflowById(workflowId);
+        const execution = await this.executeWorkflowSteps(workflowId, paramOverrides);
+        return {
+            workflow: execution.workflow.name,
+            success: execution.success,
+            results: execution.results
+        };
+    }
+
+    async executeWorkflowSteps(workflowId, paramOverrides = {}, options = {}) {
+        const workflow = await this.getWorkflowByIdWithChain(workflowId);
         if (!workflow) {
             throw new Error(`Workflow not found: ${workflowId}`);
         }
 
-        const toolChain = typeof workflow.tool_chain === 'string'
-            ? JSON.parse(workflow.tool_chain)
-            : workflow.tool_chain;
+        const validation = this.validateToolChain(workflow.tool_chain);
+        if (!validation.valid) {
+            throw new Error(`Workflow "${workflow.name}" contains unknown tools: ${validation.invalidTools.join(', ')}`);
+        }
+
         const results = [];
         let success = true;
-
         console.log(`[WorkflowManager] Executing workflow: ${workflow.name}`);
 
-        for (const step of toolChain) {
+        for (const step of workflow.tool_chain) {
             try {
                 const params = { ...step.params, ...(paramOverrides[step.tool] || {}) };
                 const result = await this.mcpServer.executeTool(step.tool, params);
 
                 if (result && result.needsPermission) {
                     success = false;
-                    results.push({ tool: step.tool, success: false, needsPermission: true, error: 'Permission required' });
+                    const stepResult = { tool: step.tool, success: false, needsPermission: true, error: 'Permission required' };
+                    results.push(stepResult);
+                    if (typeof options.onStep === 'function') {
+                        await options.onStep({ ...stepResult });
+                    }
                     break;
                 }
 
-                results.push({ tool: step.tool, success: true, result });
+                const stepResult = { tool: step.tool, success: true, result };
+                results.push(stepResult);
+                if (typeof options.onStep === 'function') {
+                    await options.onStep({ ...stepResult });
+                }
             } catch (error) {
                 success = false;
-                results.push({ tool: step.tool, success: false, error: error.message });
+                const stepResult = { tool: step.tool, success: false, error: error.message };
+                results.push(stepResult);
+                if (typeof options.onStep === 'function') {
+                    await options.onStep({ ...stepResult });
+                }
                 break;
             }
         }
 
         await this.db.updateWorkflowStats(workflowId, success);
-        return { workflow: workflow.name, success, results };
+        return { workflow, success, results };
+    }
+
+    resolveRunMode(toolChain, mode = 'auto') {
+        const requested = String(mode || 'auto').toLowerCase();
+        if (requested === 'sync' || requested === 'async') {
+            return requested;
+        }
+
+        const chain = Array.isArray(toolChain) ? toolChain : [];
+        const asyncHintTools = new Set([
+            'delegate_to_subagent',
+            'run_command',
+            'run_python',
+            'fetch_url',
+            'download_file'
+        ]);
+        if (chain.length >= 3) {
+            return 'async';
+        }
+        if (chain.some(step => asyncHintTools.has(step.tool))) {
+            return 'async';
+        }
+        return 'sync';
+    }
+
+    async runWorkflow(workflowId, options = {}) {
+        const mode = options.mode || 'auto';
+        const paramOverrides = options.paramOverrides || {};
+        const requestedBySessionId = options.requestedBySessionId || null;
+
+        if (!this.workflowRuntime) {
+            const result = await this.executeWorkflow(workflowId, paramOverrides);
+            return {
+                accepted: true,
+                immediate: true,
+                status: result.success ? 'completed' : 'failed',
+                mode: this.resolveRunMode([], mode),
+                result
+            };
+        }
+
+        return this.workflowRuntime.startRun({
+            workflowId,
+            mode,
+            paramOverrides,
+            requestedBySessionId
+        });
+    }
+
+    async getWorkflowRun(runId) {
+        if (!this.workflowRuntime) {
+            return null;
+        }
+        return this.workflowRuntime.getRun(runId);
+    }
+
+    async listWorkflowRuns(filters = {}) {
+        if (!this.workflowRuntime) {
+            return [];
+        }
+        return this.workflowRuntime.listRuns(filters);
+    }
+
+    async waitForWorkflowRun(runId, timeoutMs = 30000) {
+        if (!this.workflowRuntime) {
+            return null;
+        }
+        return this.workflowRuntime.waitForRun(runId, timeoutMs);
     }
 
     /**
@@ -288,7 +394,13 @@ class WorkflowManager {
         if (data.name !== undefined) updates.name = data.name;
         if (data.description !== undefined) updates.description = data.description;
         if (data.trigger_pattern !== undefined) updates.trigger_pattern = data.trigger_pattern;
-        if (data.tool_chain !== undefined) updates.tool_chain = JSON.stringify(data.tool_chain);
+        if (data.tool_chain !== undefined) {
+            const validation = this.validateToolChain(data.tool_chain);
+            if (!validation.valid) {
+                throw new Error(`Workflow includes unknown tools: ${validation.invalidTools.join(', ')}`);
+            }
+            updates.tool_chain = JSON.stringify(data.tool_chain);
+        }
         if (data.visual_data !== undefined) updates.visual_data = JSON.stringify(data.visual_data);
 
         if (Object.keys(updates).length === 0) return workflow;
@@ -314,6 +426,37 @@ class WorkflowManager {
     extractTriggerPattern(trigger) {
         const words = trigger.toLowerCase().split(/\s+/).slice(0, 5);
         return words.join(' ');
+    }
+
+    async getWorkflowByIdWithChain(id) {
+        const workflow = await this.db.getWorkflowById(id);
+        if (!workflow) return null;
+        return {
+            ...workflow,
+            tool_chain: typeof workflow.tool_chain === 'string'
+                ? JSON.parse(workflow.tool_chain)
+                : (workflow.tool_chain || [])
+        };
+    }
+
+    validateToolChain(toolChain) {
+        if (!Array.isArray(toolChain) || toolChain.length === 0) {
+            return { valid: false, invalidTools: ['<empty>'] };
+        }
+
+        const toolDefs = this.mcpServer?.getTools?.();
+        if (!Array.isArray(toolDefs) || toolDefs.length === 0) {
+            return { valid: true, invalidTools: [] };
+        }
+        const available = new Set(toolDefs.map(tool => tool.name));
+        const invalidTools = toolChain
+            .map(step => String(step?.tool || '').trim())
+            .filter(name => !name || !available.has(name));
+
+        return {
+            valid: invalidTools.length === 0,
+            invalidTools: Array.from(new Set(invalidTools))
+        };
     }
 }
 

@@ -66,6 +66,39 @@ function registerWorkflowHandlers(ipcMain, runtime) {
     }
   });
 
+  ipcMain.handle('run-workflow-advanced', async (event, workflowId, options = {}) => {
+    try {
+      const result = await workflowManager.runWorkflow(workflowId, {
+        mode: options.mode || 'auto',
+        paramOverrides: options.paramOverrides || {},
+        requestedBySessionId: options.sessionId || null
+      });
+      mainWindow.webContents.send('workflow-update');
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('[IPC] run-workflow-advanced error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('get-workflow-run', async (event, runId) => {
+    try {
+      return await workflowManager.getWorkflowRun(runId);
+    } catch (error) {
+      console.error('[IPC] get-workflow-run error:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('list-workflow-runs', async (event, filters = {}) => {
+    try {
+      return await workflowManager.listWorkflowRuns(filters || {});
+    } catch (error) {
+      console.error('[IPC] list-workflow-runs error:', error);
+      return [];
+    }
+  });
+
   ipcMain.handle('capture-workflow', async (event, trigger, toolChain, name = null) => {
     try {
       const result = await workflowManager.captureWorkflow(trigger, toolChain, name);
