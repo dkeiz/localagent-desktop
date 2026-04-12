@@ -74,7 +74,8 @@ module.exports = {
       assert.equal(fs.readFileSync(promptPath, 'utf-8'), 'Temp runtime prompt', 'Expected prompt tool to update the injected prompt file');
       assert.equal(settings.get('system_prompt'), 'Temp runtime prompt', 'Expected prompt tool to persist DB state');
 
-      const connectorResult = await server.executeTool('create_connector', {
+      const connectorResult = await server.executeTool('connector_op', {
+        action: 'create',
         name: 'temp-connector',
         code: 'module.exports = { name: "temp-connector" };'
       });

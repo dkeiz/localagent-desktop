@@ -3,13 +3,43 @@ const path = require('path');
 const { bootstrapApplication } = require('./bootstrap');
 const { runCheckSkins } = require('../../tools/check-skins');
 const { runApplySimulation } = require('../../tools/test-skin-apply');
+const { createExternalTestControl } = require('./external-test-control');
 
 let runtime = null;
+let externalTestControl = null;
 
 const args = process.argv.slice(1);
 const isTestMode = args.includes('--test');
 const isNoWindowMode = args.includes('--nowindow');
 const isTestClientMode = args.includes('--testclient');
+const isExternalTestMode = args.includes('--external-test');
+const isWindowlessMode = args.includes('--windowless') || args.includes('-windowless') || isNoWindowMode;
+const externalPortArgIdx = args.indexOf('--external-port');
+const externalPort = externalPortArgIdx !== -1 && args[externalPortArgIdx + 1]
+  ? Number(args[externalPortArgIdx + 1])
+  : 8788;
+
+class IpcBridge {
+  constructor(realIpcMain) {
+    this.realIpcMain = realIpcMain;
+    this.handlers = new Map();
+  }
+
+  handle(channel, fn) {
+    this.handlers.set(channel, fn);
+    this.realIpcMain.handle(channel, fn);
+  }
+
+  async invoke(channel, ...args) {
+    const handler = this.handlers.get(channel);
+    if (!handler) {
+      throw new Error(`Unknown IPC channel: ${channel}`);
+    }
+    return handler({}, ...args);
+  }
+}
+
+const ipcBridge = new IpcBridge(ipcMain);
 
 if (!app || typeof app.whenReady !== 'function') {
   if (isTestMode && isNoWindowMode) {
@@ -88,10 +118,34 @@ app.whenReady().then(async () => {
     runtime = await bootstrapApplication({
       app,
       BrowserWindow,
-      ipcMain,
+      ipcMain: ipcBridge,
       args,
-      isTestClientMode
+      isTestClientMode,
+      createInitialWindow: isExternalTestMode ? !isWindowlessMode : true,
+      autoStartDaemons: !isExternalTestMode
     });
+
+    if (isExternalTestMode) {
+      externalTestControl = createExternalTestControl({
+        invokeIpc: (channel, ...invokeArgs) => ipcBridge.invoke(channel, ...invokeArgs),
+        shutdownRuntime: async () => {
+          if (runtime) {
+            await runtime.shutdown();
+          }
+          app.exit(0);
+        },
+        getWindowCount: () => {
+          try {
+            return BrowserWindow.getAllWindows().length;
+          } catch (_) {
+            return -1;
+          }
+        },
+        port: Number.isFinite(externalPort) ? externalPort : 8788,
+        host: '127.0.0.1'
+      });
+      await externalTestControl.start();
+    }
 
     if (isTestClientMode) {
       console.log('[TestClient] Enabled transient chat mode (--testclient)');
@@ -115,6 +169,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  if (externalTestControl) {
+    await externalTestControl.stop();
+    externalTestControl = null;
+  }
   if (runtime) {
     await runtime.shutdown();
   }

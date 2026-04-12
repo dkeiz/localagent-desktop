@@ -170,7 +170,7 @@ module.exports = {
     assert.includes(traceText, 'parent may inspect this run folder', 'Expected delegated-run guidance in trace');
     assert.includes(traceText, 'Searching sources', 'Expected assistant trace entry');
 
-    assert.includes(capturedPrompt, 'complete_subtask', 'Expected completion contract instructions in prompt');
+    assert.includes(capturedPrompt, 'Required completion contract', 'Expected completion contract instructions in prompt');
     assert.includes(capturedPrompt, 'Include findings and sources', 'Expected output instructions in prompt');
     assert.includes(capturedPrompt, ack.runDir, 'Expected run directory guidance in prompt');
     assert.equal(capturedOptions.sessionId, ack.childSessionId, 'Expected child session id to be passed to chain controller');

@@ -70,7 +70,7 @@ class PluginManager extends EventEmitter {
                 }
 
                 // Ensure DB row exists
-                const existing = this.db.get('SELECT id FROM plugins WHERE id = ?', [manifest.id]);
+                const existing = this.db.get('SELECT id, status FROM plugins WHERE id = ?', [manifest.id]);
                 if (!existing) {
                     this.db.run(
                         'INSERT INTO plugins (id, name, version, status) VALUES (?, ?, ?, ?)',
@@ -83,6 +83,7 @@ class PluginManager extends EventEmitter {
                     dir: path.join(this.pluginsDir, dir.name),
                     status: existing?.status || 'disabled',
                     module: null,
+                    context: null,
                     handlers: []
                 });
             } catch (e) {
@@ -112,6 +113,7 @@ class PluginManager extends EventEmitter {
 
         // Build context for the plugin
         const context = this._buildPluginContext(pluginId, plugin);
+        plugin.context = context;
 
         try {
             // Call onEnable
@@ -121,6 +123,7 @@ class PluginManager extends EventEmitter {
         } catch (error) {
             this._cleanupPluginHandlers(plugin);
             plugin.module = null;
+            plugin.context = null;
             plugin.status = 'error';
             this._updateDbStatus(pluginId, 'error', error.message);
             throw error;
@@ -153,6 +156,7 @@ class PluginManager extends EventEmitter {
         this._cleanupPluginHandlers(plugin);
         plugin.status = 'disabled';
         plugin.module = null;
+        plugin.context = null;
         this._updateDbStatus(pluginId, 'disabled');
 
         this.emit('plugin-disabled', { id: pluginId });
@@ -204,7 +208,9 @@ class PluginManager extends EventEmitter {
             },
 
             getConfig(key) {
-                return config[key];
+                const latest = self._loadPluginConfig(pluginId);
+                if (typeof key === 'undefined') return latest;
+                return latest[key];
             },
 
             async setConfig(key, value) {
@@ -287,6 +293,11 @@ class PluginManager extends EventEmitter {
             'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
             [settingKey, String(value)]
         );
+
+        const plugin = this.plugins.get(pluginId);
+        if (plugin?.context?.config) {
+            plugin.context.config[key] = String(value);
+        }
     }
 
     async getPluginConfig(pluginId) {
@@ -332,6 +343,23 @@ class PluginManager extends EventEmitter {
             })),
             config: this._loadPluginConfig(pluginId)
         };
+    }
+
+    async runPluginAction(pluginId, action, params = {}) {
+        const plugin = this.plugins.get(pluginId);
+        if (!plugin) throw new Error(`Plugin "${pluginId}" not found`);
+        if (plugin.status !== 'enabled') throw new Error(`Plugin "${pluginId}" must be enabled to run actions`);
+        if (!plugin.module) throw new Error(`Plugin "${pluginId}" module is not loaded`);
+
+        if (typeof plugin.module.runAction === 'function') {
+            return plugin.module.runAction(action, params, plugin.context);
+        }
+
+        if (plugin.module.actions && typeof plugin.module.actions[action] === 'function') {
+            return plugin.module.actions[action](params, plugin.context);
+        }
+
+        throw new Error(`Plugin "${pluginId}" does not implement action "${action}"`);
     }
 
     // ==================== Shutdown ====================

@@ -69,11 +69,7 @@ Tools are organized in groups toggled via the capability panel. Check `tool-clas
 Workflows are reusable multi-tool sequences stored in the database. They automate repetitive tasks.
 
 ### Tools
-- `list_workflows` — list all saved workflows with stats
-- `create_workflow` — create from name + tool chain array
-- `execute_workflow` — run by ID with optional param overrides
-- `copy_workflow` — clone a workflow as a base for a new one
-- `delete_workflow` — remove by ID
+- `workflow_op` — unified workflow operations via action parameter
 
 ### Auto-Capture
 Successful multi-tool chains can be auto-captured as workflows (when enabled via settings). Captured workflows include:
@@ -82,7 +78,7 @@ Successful multi-tool chains can be auto-captured as workflows (when enabled via
 - Auto-generated name
 
 ### Copy Pattern
-Use `copy_workflow` to clone a proven workflow, then modify it for a different purpose. This is the recommended way to create variations.
+Use `workflow_op` with `action:"copy"` to clone a proven workflow, then modify it for a different purpose.
 
 ### Visual Editor
 Users can also build workflows in the Workflows tab using a drag-and-drop node editor with tool connections.
@@ -139,17 +135,13 @@ module.exports = {
 ### Creation Flow
 1. User requests integration (e.g., "add my Telegram")
 2. Ask user for required config (API tokens, usernames)
-3. Store config via `connector_config` tool (secrets in DB, never in file)
+3. Store config via `connector_op` with `action:"config_set"` (secrets in DB, never in file)
 4. Write connector JS file via `write_file`
 5. Install dependencies if needed (ask user, then `run_command`)
-6. Start via `start_connector`
+6. Start via `connector_op` with `action:"start"`
 
 ### Tools
-- `create_connector` — write file + store config
-- `start_connector` — start in worker thread
-- `stop_connector` — stop running connector
-- `list_connectors` — all connectors with status (running/stopped/error)
-- `connector_config` — get/set config values
+- `connector_op` — unified connector actions: create/start/stop/list/config_get/config_set
 
 ### Pre-built
 `telegram-bot.js` — Telegram bot relay. Needs `node-telegram-bot-api` + bot token.

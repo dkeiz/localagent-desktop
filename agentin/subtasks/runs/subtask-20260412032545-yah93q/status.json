@@ -1,0 +1,22 @@
+{
+  "run_id": "subtask-20260412032545-yah93q",
+  "status": "task_complete",
+  "created_at": "2026-04-12T03:25:45.611Z",
+  "updated_at": "2026-04-12T03:26:33.315Z",
+  "parent_session_id": 1,
+  "child_session_id": "subtask-20260412032545-yah93q",
+  "subagent_id": 6,
+  "agent_name": "Live Subagent",
+  "contract_type": "task_complete",
+  "summary": "Task completed successfully",
+  "error": null,
+  "delivered_to_parent": true,
+  "delivery_path": "C:\\Users\\dkeiz\\Documents\\qwen\\antigravity\\localagent\\agentin\\subtasks\\inboxes\\1\\delivery-1775964393314-zwvrc5.json",
+  "run_dir": "C:\\Users\\dkeiz\\Documents\\qwen\\antigravity\\localagent\\agentin\\subtasks\\runs\\subtask-20260412032545-yah93q",
+  "workspace_dir": "C:\\Users\\dkeiz\\Documents\\qwen\\antigravity\\localagent\\agentin\\workspaces\\subtask-20260412032545-yah93q",
+  "result_path": "C:\\Users\\dkeiz\\Documents\\qwen\\antigravity\\localagent\\agentin\\subtasks\\runs\\subtask-20260412032545-yah93q\\result.json",
+  "messages_path": "C:\\Users\\dkeiz\\Documents\\qwen\\antigravity\\localagent\\agentin\\subtasks\\runs\\subtask-20260412032545-yah93q\\messages.jsonl",
+  "trace_path": "C:\\Users\\dkeiz\\Documents\\qwen\\antigravity\\localagent\\agentin\\subtasks\\runs\\subtask-20260412032545-yah93q\\trace.md",
+  "started_at": "2026-04-12T03:25:45.625Z",
+  "completed_at": "2026-04-12T03:26:33.290Z"
+}

@@ -362,7 +362,7 @@ Your parent may inspect this run folder later if clarification is needed. Keep y
 
         return `You are being invoked as a sub-agent by another agent.
 
-Complete only the requested task. Use available tools if needed. When finished, you MUST call the complete_subtask tool exactly once.
+Complete only the requested task. Use available tools if needed. When finished, return a strict JSON object (no wrappers, no markdown) matching the completion contract below.
 
 Required completion contract:
 - status: "${contractType}" on success, or "task_failed" on failure

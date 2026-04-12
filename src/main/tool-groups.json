@@ -62,33 +62,15 @@
             "tools": [
                 "conversation_history",
                 "search_conversations",
-                "list_subagents",
-                "delegate_to_subagent",
-                "get_subagent_run",
-                "list_subagent_runs",
-                "complete_subtask",
+                "run_subagent",
                 "get_system_prompt",
                 "list_active_rules",
                 "toggle_rule",
-                "create_calendar_event",
-                "calendar_write",
-                "list_calendar_events",
-                "calendar_read",
-                "todo_create",
-                "todo_list",
-                "todo_complete",
+                "calendar_op",
+                "todo_op",
                 "automemory",
-                "list_workflows",
-                "execute_workflow",
-                "run_workflow",
-                "get_workflow_run",
-                "list_workflow_runs",
-                "create_workflow",
-                "copy_workflow",
-                "delete_workflow",
-                "start_research",
-                "get_research_run",
-                "list_research_runs"
+                "workflow_op",
+                "research_op"
             ],
             "defaultActive": true
         },
@@ -132,11 +114,7 @@
             "description": "External service connectors and listeners",
             "icon": "🔌",
             "tools": [
-                "create_connector",
-                "start_connector",
-                "stop_connector",
-                "list_connectors",
-                "connector_config"
+                "connector_op"
             ],
             "defaultActive": true
         },

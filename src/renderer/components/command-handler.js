@@ -169,6 +169,32 @@ class CommandHandler {
             }
         });
 
+        // /plugin <name> — quick setup and open Plugin Studio
+        this.commands.set('/plugin', {
+            description: 'Quick setup plugin and open Plugin Studio (e.g. /plugin searxng)',
+            execute: async (args) => {
+                try {
+                    const pluginName = (args[0] || '').trim();
+                    if (!pluginName) {
+                        await window.electronAPI.plugins.openStudio({});
+                        return { output: 'Opened Plugin Studio.', style: 'system' };
+                    }
+
+                    const result = await window.electronAPI.plugins.quickSetup(pluginName);
+                    if (!result?.success) {
+                        return { output: `Plugin setup failed: ${result?.error || 'unknown error'}`, style: 'system' };
+                    }
+
+                    return {
+                        output: `Plugin ready: ${result.pluginId} (enabled: ${result.enabled ? 'yes' : 'no'}).`,
+                        style: 'system'
+                    };
+                } catch (e) {
+                    return { output: `Plugin command error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
         // /memory [list|read <type> [filename]]
         this.commands.set('/memory', {
             description: 'View or list agent memory files',

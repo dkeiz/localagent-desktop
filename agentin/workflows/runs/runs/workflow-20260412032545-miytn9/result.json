@@ -1,0 +1,21 @@
+{
+  "run_id": "workflow-20260412032545-miytn9",
+  "workflow_id": 1,
+  "workflow_name": "Live Workflow Test",
+  "completed_at": "2026-04-12T03:25:45.581Z",
+  "success": true,
+  "results": [
+    {
+      "tool": "current_time",
+      "success": true,
+      "result": {
+        "toolCallId": "call_1775964345580_gio9tect5",
+        "toolName": "current_time",
+        "timestamp": "2026-04-12T03:25:45.580Z",
+        "success": true,
+        "result": "2026-04-12T03:25:45.580Z"
+      }
+    }
+  ],
+  "summary": "Workflow completed (1 step)"
+}

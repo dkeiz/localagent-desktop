@@ -1,88 +1,56 @@
 function registerResearchTools(server) {
-  server.registerTool('start_research', {
-    name: 'start_research',
-    description: 'Start an empirical research run that executes baseline and variant workflows, measures outcomes, ranks candidates, and produces artifacts.',
-    userDescription: 'Start an experimental workflow-based research run',
-    example: 'TOOL:start_research{"goal":"Find best workflow variant","baseline_workflow_id":1,"variants":[{"id":"V1","workflow_id":2}]}',
+  server.registerTool('research_op', {
+    name: 'research_op',
+    description: 'Unified research operations. Actions: start, get, list.',
+    userDescription: 'Run research operations',
+    example: 'TOOL:research_op{"action":"list","limit":10}',
     inputSchema: {
       type: 'object',
       properties: {
-        goal: { type: 'string', description: 'Research goal statement' },
-        baseline_workflow_id: { type: 'number', description: 'Workflow ID used as baseline' },
+        action: { type: 'string', description: 'Operation: start | get | list' },
+        run_id: { type: 'string', description: 'Research run identifier for get action' },
+        limit: { type: 'number', description: 'Max runs for list action', default: 20 },
+        status: { type: 'string', description: 'Optional status filter for list action' },
+        goal: { type: 'string', description: 'Research goal for start action' },
+        baseline_workflow_id: { type: 'number', description: 'Baseline workflow ID for start action' },
         baseline_param_overrides: { type: 'object', description: 'Optional baseline overrides', default: {} },
-        variants: {
-          type: 'array',
-          description: 'Variant workflow configs',
-          default: []
-        },
-        workflow_mode: {
-          type: 'string',
-          description: 'Default workflow execution mode for experiments',
-          default: 'auto'
-        },
-        scoring_method: {
-          type: 'string',
-          description: 'Scoring method label to record in artifacts',
-          default: 'model-selected'
-        },
-        auto_save_knowledge: {
-          type: 'boolean',
-          description: 'Persist summarized research outcome to knowledge store',
-          default: true
-        }
+        variants: { type: 'array', description: 'Variant workflow configs', default: [] },
+        workflow_mode: { type: 'string', description: 'Workflow mode label', default: 'auto' },
+        scoring_method: { type: 'string', description: 'Scoring method label', default: 'model-selected' },
+        auto_save_knowledge: { type: 'boolean', description: 'Persist research summary to knowledge', default: true }
       },
-      required: ['goal', 'baseline_workflow_id']
+      required: ['action']
     }
   }, async (params) => {
-    if (!server._researchRuntime) {
-      return { error: 'Research runtime not initialized' };
-    }
-    return server._researchRuntime.startResearch({
-      ...params,
-      session_id: server.getCurrentSessionId?.() || null
-    });
-  });
+    const runtime = server._researchRuntime;
+    if (!runtime) return { error: 'Research runtime not initialized' };
 
-  server.registerTool('get_research_run', {
-    name: 'get_research_run',
-    description: 'Get an empirical research run by run_id including status and final result if available.',
-    userDescription: 'Get current state of a research run',
-    example: 'TOOL:get_research_run{"run_id":"research-20260409-ab12cd"}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        run_id: { type: 'string', description: 'Research run identifier' }
-      },
-      required: ['run_id']
-    }
-  }, async (params) => {
-    if (!server._researchRuntime) {
-      return null;
-    }
-    return server._researchRuntime.getRun(params.run_id);
-  });
-
-  server.registerTool('list_research_runs', {
-    name: 'list_research_runs',
-    description: 'List recent research runs and statuses for polling and tracking.',
-    userDescription: 'List recent research runs',
-    example: 'TOOL:list_research_runs{"limit":10}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'number', description: 'Maximum runs to return', default: 20 },
-        status: { type: 'string', description: 'Optional status filter' }
+    const action = String(params.action || '').toLowerCase();
+    if (action === 'start') {
+      if (!params.goal || !params.baseline_workflow_id) {
+        return { error: 'goal and baseline_workflow_id are required for start action' };
       }
+      return runtime.startResearch({
+        ...params,
+        session_id: server.getCurrentSessionId?.() || null
+      });
     }
-  }, async (params) => {
-    if (!server._researchRuntime) {
-      return [];
+
+    if (action === 'get') {
+      if (!params.run_id) return { error: 'run_id is required for get action' };
+      return runtime.getRun(params.run_id);
     }
-    return server._researchRuntime.listRuns({
-      limit: params.limit || 20,
-      status: params.status
-    });
+
+    if (action === 'list') {
+      return runtime.listRuns({
+        limit: params.limit || 20,
+        status: params.status
+      });
+    }
+
+    return { error: `Unknown research action: ${params.action}` };
   });
 }
 
 module.exports = { registerResearchTools };
+

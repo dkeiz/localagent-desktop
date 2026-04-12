@@ -21,19 +21,6 @@
     min-height: 280px;
 }
 
-.calendar-todos {
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border-color);
-}
-
-.calendar-todos-header {
-    margin: 0 0 0.3rem 0;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    font-weight: 600;
-}
-
 /* Agent Picker Widget */
 .agent-picker-widget {
     background-color: var(--main-bg);
@@ -333,24 +320,11 @@
     transform: scale(0.95);
 }
 
-#calendar-events,
-#todo-list {
+#calendar-events {
     flex: 1;
     overflow-y: auto;
     margin-bottom: 0.5rem;
     font-size: 0.8rem;
-}
-
-.todo-input {
-    display: flex;
-    gap: 0.5rem;
-}
-
-#new-todo-input {
-    flex: 1;
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
 }
 
 /* Utility classes */

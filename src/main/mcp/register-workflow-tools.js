@@ -1,197 +1,103 @@
 function registerWorkflowTools(server) {
-  server.registerTool('list_workflows', {
-    name: 'list_workflows',
-    description: 'List all saved workflows with their names, descriptions, tool chains, and execution stats. Use this to discover available workflows before executing them.',
-    userDescription: 'List all saved automation workflows',
-    example: 'TOOL:list_workflows{}',
-    inputSchema: { type: 'object' }
-  }, async () => {
-    if (!server._workflowManager) return { error: 'Workflow manager not initialized' };
-    const workflows = await server._workflowManager.getWorkflows();
-    return workflows.map(workflow => {
-      let tools = [];
-      try {
-        const chain = typeof workflow.tool_chain === 'string'
-          ? JSON.parse(workflow.tool_chain)
-          : (workflow.tool_chain || []);
-        tools = chain.map(step => step.tool);
-      } catch {}
+  server.registerTool('workflow_op', {
+    name: 'workflow_op',
+    description: 'Unified workflow operations. Actions: list, execute, run, get_run, list_runs, create, copy, delete.',
+    userDescription: 'Run workflow operations',
+    example: 'TOOL:workflow_op{"action":"list"}',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          description: 'Operation: list | execute | run | get_run | list_runs | create | copy | delete'
+        },
+        id: { type: 'number', description: 'Workflow ID for execute/run/delete' },
+        run_id: { type: 'string', description: 'Workflow run identifier for get_run' },
+        mode: { type: 'string', description: 'Run mode for action=run', default: 'auto' },
+        param_overrides: { type: 'object', description: 'Optional tool parameter overrides', default: {} },
+        limit: { type: 'number', description: 'Max runs for list_runs', default: 20 },
+        workflow_id: { type: 'number', description: 'Optional filter for list_runs' },
+        status: { type: 'string', description: 'Optional status filter for list_runs' },
+        name: { type: 'string', description: 'Workflow name for create' },
+        description: { type: 'string', description: 'Workflow description for create' },
+        tool_chain: { type: 'array', description: 'Tool chain for create' },
+        source_id: { type: 'number', description: 'Source workflow ID for copy' },
+        new_name: { type: 'string', description: 'New name for copied workflow' }
+      },
+      required: ['action']
+    }
+  }, async (params) => {
+    const wm = server._workflowManager;
+    if (!wm) return { error: 'Workflow manager not initialized' };
 
-      return {
+    const action = String(params.action || '').toLowerCase();
+    if (action === 'list') {
+      const workflows = await wm.getWorkflows();
+      return workflows.map(workflow => ({
         id: workflow.id,
         name: workflow.name,
         description: workflow.description,
-        tools,
+        tools: (workflow.tool_chain || []).map(step => step.tool),
         success_count: workflow.success_count || 0,
         failure_count: workflow.failure_count || 0,
         last_used: workflow.last_used,
         created_at: workflow.created_at
-      };
-    });
-  });
-
-  server.registerTool('execute_workflow', {
-    name: 'execute_workflow',
-    description: 'Execute a saved workflow by its ID. Optionally override parameters for specific tools. The workflow runs each tool in sequence and returns all results.',
-    userDescription: 'Run a saved workflow with optional parameter overrides',
-    example: 'TOOL:execute_workflow{"id":1}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'number', description: 'Workflow ID to execute' },
-        param_overrides: {
-          type: 'object',
-          description: 'Optional parameter overrides keyed by tool name, e.g. {"search_web_bing": {"query": "new query"}}',
-          default: {}
-        }
-      },
-      required: ['id']
+      }));
     }
-  }, async (params) => {
-    if (!server._workflowManager) return { error: 'Workflow manager not initialized' };
-    return await server._workflowManager.executeWorkflow(params.id, params.param_overrides || {});
-  });
 
-  server.registerTool('run_workflow', {
-    name: 'run_workflow',
-    description: 'Run a workflow using sync, async, or auto mode. Auto chooses async for longer or high-latency chains and sync for short deterministic chains.',
-    userDescription: 'Run a workflow with auto/sync/async execution modes',
-    example: 'TOOL:run_workflow{"id":1,"mode":"auto"}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'number', description: 'Workflow ID to run' },
-        mode: {
-          type: 'string',
-          description: 'Execution mode: auto, sync, or async',
-          default: 'auto'
-        },
-        param_overrides: {
-          type: 'object',
-          description: 'Optional parameter overrides keyed by tool name',
-          default: {}
-        }
-      },
-      required: ['id']
+    if (action === 'execute') {
+      if (!params.id) return { error: 'id is required for execute action' };
+      return wm.executeWorkflow(params.id, params.param_overrides || {});
     }
-  }, async (params) => {
-    if (!server._workflowManager) return { error: 'Workflow manager not initialized' };
-    return server._workflowManager.runWorkflow(params.id, {
-      mode: params.mode || 'auto',
-      paramOverrides: params.param_overrides || {},
-      requestedBySessionId: server.getCurrentSessionId?.() || null
-    });
-  });
 
-  server.registerTool('get_workflow_run', {
-    name: 'get_workflow_run',
-    description: 'Get a workflow run by run_id, including current status, trace path, and result payload if completed.',
-    userDescription: 'Get current state of a workflow run',
-    example: 'TOOL:get_workflow_run{"run_id":"workflow-20260409-ab12cd"}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        run_id: { type: 'string', description: 'Workflow run identifier returned by run_workflow' }
-      },
-      required: ['run_id']
+    if (action === 'run') {
+      if (!params.id) return { error: 'id is required for run action' };
+      return wm.runWorkflow(params.id, {
+        mode: params.mode || 'auto',
+        paramOverrides: params.param_overrides || {},
+        requestedBySessionId: server.getCurrentSessionId?.() || null
+      });
     }
-  }, async (params) => {
-    if (!server._workflowManager) return null;
-    return server._workflowManager.getWorkflowRun(params.run_id);
-  });
 
-  server.registerTool('list_workflow_runs', {
-    name: 'list_workflow_runs',
-    description: 'List recent workflow runs and their statuses. Useful for polling async workflow execution.',
-    userDescription: 'List recent workflow runs',
-    example: 'TOOL:list_workflow_runs{"limit":10}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'number', description: 'Maximum runs to return', default: 20 },
-        workflow_id: { type: 'number', description: 'Optional workflow ID filter' },
-        status: { type: 'string', description: 'Optional status filter' }
+    if (action === 'get_run') {
+      if (!params.run_id) return { error: 'run_id is required for get_run action' };
+      return wm.getWorkflowRun(params.run_id);
+    }
+
+    if (action === 'list_runs') {
+      return wm.listWorkflowRuns({
+        limit: params.limit || 20,
+        workflowId: params.workflow_id,
+        status: params.status
+      });
+    }
+
+    if (action === 'create') {
+      if (!params.name || !Array.isArray(params.tool_chain)) {
+        return { error: 'name and tool_chain are required for create action' };
       }
+      const result = await wm.captureWorkflow(
+        params.name,
+        params.tool_chain.map(step => ({ tool: step.tool, params: step.params || {} })),
+        params.name
+      );
+      return { success: true, id: result.id, name: params.name };
     }
-  }, async (params) => {
-    if (!server._workflowManager) return [];
-    return server._workflowManager.listWorkflowRuns({
-      limit: params.limit || 20,
-      workflowId: params.workflow_id,
-      status: params.status
-    });
-  });
 
-  server.registerTool('create_workflow', {
-    name: 'create_workflow',
-    description: 'Create a new workflow from a name, description, and tool chain. The tool_chain is an array of steps, each with a tool name and its parameters.',
-    userDescription: 'Create a new automation workflow',
-    example: 'TOOL:create_workflow{"name":"System Health Check","description":"Checks memory and disk","tool_chain":[{"tool":"get_memory_usage","params":{}},{"tool":"get_disk_space","params":{}}]}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Workflow name' },
-        description: { type: 'string', description: 'What this workflow does' },
-        tool_chain: {
-          type: 'array',
-          description: 'Array of tool steps: [{"tool": "tool_name", "params": {...}}, ...]',
-          items: {
-            type: 'object',
-            properties: {
-              tool: { type: 'string', description: 'Tool name' },
-              params: { type: 'object', description: 'Tool parameters', default: {} }
-            },
-            required: ['tool']
-          }
-        }
-      },
-      required: ['name', 'tool_chain']
+    if (action === 'copy') {
+      if (!params.source_id) return { error: 'source_id is required for copy action' };
+      return wm.copyWorkflow(params.source_id, params.new_name);
     }
-  }, async (params) => {
-    if (!server._workflowManager) return { error: 'Workflow manager not initialized' };
-    const result = await server._workflowManager.captureWorkflow(
-      params.name,
-      params.tool_chain.map(step => ({ tool: step.tool, params: step.params || {} })),
-      params.name
-    );
-    return { success: true, id: result.id, name: params.name, tools: params.tool_chain.map(step => step.tool) };
-  });
 
-  server.registerTool('copy_workflow', {
-    name: 'copy_workflow',
-    description: 'Clone an existing workflow to create a new one based on it. Useful for creating variations of proven workflows.',
-    userDescription: 'Copy/clone a workflow as a starting point for a new one',
-    example: 'TOOL:copy_workflow{"source_id":1,"new_name":"Extended System Check"}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        source_id: { type: 'number', description: 'ID of the workflow to copy' },
-        new_name: { type: 'string', description: 'Name for the copy (defaults to "Original (copy)")' }
-      },
-      required: ['source_id']
+    if (action === 'delete') {
+      if (!params.id) return { error: 'id is required for delete action' };
+      await wm.deleteWorkflow(params.id);
+      return { success: true, deleted_id: params.id };
     }
-  }, async (params) => {
-    if (!server._workflowManager) return { error: 'Workflow manager not initialized' };
-    return await server._workflowManager.copyWorkflow(params.source_id, params.new_name);
-  });
 
-  server.registerTool('delete_workflow', {
-    name: 'delete_workflow',
-    description: 'Delete a saved workflow by its ID.',
-    userDescription: 'Delete a saved workflow',
-    example: 'TOOL:delete_workflow{"id":1}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'number', description: 'Workflow ID to delete' }
-      },
-      required: ['id']
-    }
-  }, async (params) => {
-    if (!server._workflowManager) return { error: 'Workflow manager not initialized' };
-    await server._workflowManager.deleteWorkflow(params.id);
-    return { success: true, deleted_id: params.id };
+    return { error: `Unknown workflow action: ${params.action}` };
   });
 }
 
 module.exports = { registerWorkflowTools };
+

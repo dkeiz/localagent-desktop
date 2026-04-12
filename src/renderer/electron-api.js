@@ -152,6 +152,18 @@ window.electronAPI = Object.assign(ipcRenderer, {
     run: () => ipcRenderer.invoke('baseinit:run'),
   },
 
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+    enable: (pluginId) => ipcRenderer.invoke('plugins:enable', pluginId),
+    disable: (pluginId) => ipcRenderer.invoke('plugins:disable', pluginId),
+    inspect: (pluginId) => ipcRenderer.invoke('plugins:inspect', pluginId),
+    getConfig: (pluginId) => ipcRenderer.invoke('plugins:get-config', pluginId),
+    setConfig: (pluginId, key, value) => ipcRenderer.invoke('plugins:set-config', pluginId, key, value),
+    runAction: (pluginId, action, params = {}) => ipcRenderer.invoke('plugins:run-action', pluginId, action, params),
+    openStudio: (options = {}) => ipcRenderer.invoke('plugins:open-studio', options),
+    quickSetup: (pluginName) => ipcRenderer.invoke('plugins:quick-setup', pluginName)
+  },
+
   // EventBus API
   eventBus: {
     getLog: (category, limit) => ipcRenderer.invoke('eventbus:get-log', category, limit),

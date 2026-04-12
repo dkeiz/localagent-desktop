@@ -30,6 +30,7 @@
     <link rel="stylesheet" href="styles/commands.css?v=1">
     <link rel="stylesheet" href="styles/skin-manager.css?v=1">
     <link rel="stylesheet" href="styles/plugins.css?v=1">
+    <link rel="stylesheet" href="styles/plugin-studio-panel.css?v=1">
 </head>
 
 <body>
@@ -364,14 +365,26 @@
                 <!-- Context Window Setting -->
                 <div class="setting-section">
                     <h3>Context Window Size</h3>
-                    <div class="slider-control">
+                    <div class="slider-control context-window-control">
+                        <p class="context-help-text">
+                            Context length determines how much of your conversation local LLMs can remember and use to generate responses.
+                        </p>
                         <div class="slider-labels">
-                            <label for="context-slider" id="context-display-label">Context Size:</label>
+                            <label for="context-slider" id="context-display-label">Context Size</label>
                             <span id="context-display">8K (8192 tokens)</span>
                         </div>
                         <input type="range" id="context-slider" min="0" max="10" step="1" value="2"
                             oninput="window.mainPanel && window.mainPanel.updateContextDisplay(this.value)"
                             onchange="window.mainPanel && window.mainPanel.saveContextSize(this.value)">
+                        <div class="context-scale" aria-hidden="true">
+                            <span>4k</span>
+                            <span>8k</span>
+                            <span>16k</span>
+                            <span>32k</span>
+                            <span>64k</span>
+                            <span>128k</span>
+                            <span>256k</span>
+                        </div>
                     </div>
                 </div>
 
@@ -449,14 +462,6 @@
                 <div id="calendar-days"></div>
                 <button id="add-event-btn" class="compact-btn">+ Event</button>
                 <div id="calendar-events"></div>
-                <div class="calendar-todos">
-                    <h4 class="calendar-todos-header">Tasks</h4>
-                    <div class="todo-input">
-                        <input id="new-todo-input" type="text" placeholder="Add a task">
-                        <button id="add-todo-btn" class="compact-btn">Add</button>
-                    </div>
-                    <div id="todo-list"></div>
-                </div>
             </div>
 
             <div class="plugins-widget collapsible-widget">
@@ -488,6 +493,35 @@
         </aside>
     </div>
 
+    <div id="plugin-studio-overlay" class="plugin-studio-overlay hidden">
+        <div id="plugin-studio-panel" class="plugin-studio-panel" role="dialog" aria-modal="false">
+            <aside class="plugin-studio-list-pane">
+                <div class="plugin-studio-pane-header">
+                    <h3>Plugins</h3>
+                </div>
+                <div id="plugin-studio-list" class="plugin-studio-list"></div>
+            </aside>
+            <section class="plugin-studio-config-pane">
+                <div id="plugin-studio-empty" class="plugin-studio-empty">Select a plugin.</div>
+                <div id="plugin-studio-content" class="plugin-studio-content hidden">
+                    <div class="plugin-studio-title-row">
+                        <div>
+                            <h3 id="plugin-studio-title">Plugin</h3>
+                            <p id="plugin-studio-meta"></p>
+                        </div>
+                        <button id="plugin-studio-toggle" class="compact-btn">Enable</button>
+                    </div>
+                    <div class="plugin-studio-actions">
+                        <button id="plugin-studio-discover" class="compact-btn">Discover</button>
+                        <button id="plugin-studio-save" class="compact-btn">Save</button>
+                    </div>
+                    <div id="plugin-studio-form" class="plugin-studio-form"></div>
+                    <pre id="plugin-studio-result" class="plugin-studio-result"></pre>
+                </div>
+            </section>
+        </div>
+    </div>
+
     <script src="electron-api.js?v=7"></script>
     <script src="components/sidebar.js?v=7"></script>
     <script src="components/command-handler.js?v=1"></script>
@@ -497,7 +531,6 @@
     <script src="components/api-provider-settings.js?v=1"></script>
     <script src="components/main-panel.js?v=10"></script>
     <script src="components/calendar.js?v=7"></script>
-    <script src="components/todos.js?v=7"></script>
     <script src="components/agent-picker.js?v=1"></script>
     <script src="components/shortcuts.js?v=7"></script>
     <script src="components/rule-manager.js?v=7"></script>
@@ -506,6 +539,7 @@
     <script src="components/capability-panel.js?v=1"></script>
     <script src="components/skin-manager.js?v=1"></script>
     <script src="components/plugin-panel.js?v=1"></script>
+    <script src="components/plugin-studio-panel.js?v=1"></script>
     <script src="app.js?v=7"></script>
 </body>
 

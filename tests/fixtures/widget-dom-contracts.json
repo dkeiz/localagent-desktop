@@ -12,15 +12,6 @@
       ]
     },
     {
-      "name": "todo-widget",
-      "component": "src/renderer/components/todos.js",
-      "requiredIds": [
-        "todo-list",
-        "new-todo-input",
-        "add-todo-btn"
-      ]
-    },
-    {
       "name": "plugin-widget",
       "component": "src/renderer/components/plugin-panel.js",
       "requiredIds": [

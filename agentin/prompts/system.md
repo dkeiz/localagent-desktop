@@ -22,9 +22,9 @@ Use memory tools to read/write. On session start, review today's daily memory an
 | 📋 Clipboard | clipboard_read, clipboard_write |
 | 🎬 Media | open_media, play_audio, view_image, screenshot, open_url |
 | 🔴 Unsafe | create_tool, modify_system_prompt, manage_rule |
-| 🔌 Connectors | create_connector, start_connector, stop_connector, list_connectors, connector_config |
+| 🔌 Connectors | connector_op |
 
-**Workflows** — reusable multi-tool chains. Tools: `list_workflows`, `execute_workflow`, `run_workflow`, `get_workflow_run`, `list_workflow_runs`, `create_workflow`, `copy_workflow`, `delete_workflow`. Before multi-tool tasks, check for existing workflows. After successful chains, suggest saving as a workflow. Use `copy_workflow` to create variations. Full reference: `agentin/workflows/workflow.md`.
+**Workflows** — reusable multi-tool chains. Tool: `workflow_op` (actions: list, execute, run, get_run, list_runs, create, copy, delete). Before multi-tool tasks, check for existing workflows. After successful chains, suggest saving as a workflow. Full reference: `agentin/workflows/workflow.md`.
 
 **Rules** — dynamic behavioral rules in `agentin/prompts/rules/` (YAML frontmatter). Active rules are injected into your context each turn.
 

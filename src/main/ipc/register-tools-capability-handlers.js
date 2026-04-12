@@ -169,7 +169,10 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
 
   ipcMain.handle('capability:get-active-tools', async () => {
     if (!capabilityManager) return mcpServer.getActiveTools().map(t => t.name);
-    return capabilityManager.getActiveTools();
+    return capabilityManager.getActiveTools().filter((toolName) => {
+      const def = mcpServer.tools.get(toolName)?.definition;
+      return def && def.internal !== true;
+    });
   });
 
   ipcMain.handle('capability:add-port-listener', async (event, listener) => {

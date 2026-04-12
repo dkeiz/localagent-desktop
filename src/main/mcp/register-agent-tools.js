@@ -1,3 +1,29 @@
+async function resolveSubagent(server, params) {
+  if (!server._agentManager) {
+    throw new Error('AgentManager not initialized');
+  }
+
+  if (params.agent_id !== undefined && params.agent_id !== null) {
+    const agent = await server._agentManager.getAgent(params.agent_id);
+    if (!agent || agent.type !== 'sub') {
+      throw new Error(`Sub-agent ${params.agent_id} not found`);
+    }
+    return agent;
+  }
+
+  if (params.agent_name) {
+    const targetName = String(params.agent_name).trim().toLowerCase();
+    const agents = await server._agentManager.getAgents('sub');
+    const match = agents.find(agent => agent.name.toLowerCase() === targetName);
+    if (!match) {
+      throw new Error(`Sub-agent "${params.agent_name}" not found`);
+    }
+    return match;
+  }
+
+  throw new Error('Provide agent_id or agent_name');
+}
+
 function normalizeCompletionPayload(params) {
   const status = String(params.status || '').trim();
   const summary = String(params.summary || '').trim();
@@ -30,75 +56,27 @@ function normalizeCompletionPayload(params) {
   };
 }
 
-async function resolveSubagent(server, params) {
-  if (!server._agentManager) {
-    throw new Error('AgentManager not initialized');
-  }
-
-  if (params.agent_id !== undefined && params.agent_id !== null) {
-    const agent = await server._agentManager.getAgent(params.agent_id);
-    if (!agent || agent.type !== 'sub') {
-      throw new Error(`Sub-agent ${params.agent_id} not found`);
-    }
-    return agent;
-  }
-
-  if (params.agent_name) {
-    const targetName = String(params.agent_name).trim().toLowerCase();
-    const agents = await server._agentManager.getAgents('sub');
-    const match = agents.find(agent => agent.name.toLowerCase() === targetName);
-    if (!match) {
-      throw new Error(`Sub-agent "${params.agent_name}" not found`);
-    }
-    return match;
-  }
-
-  throw new Error('Provide agent_id or agent_name');
-}
-
 function registerAgentTools(server) {
-  server.registerTool('list_subagents', {
-    name: 'list_subagents',
-    description: 'List available sub-agents that can be delegated focused tasks. Use this before delegate_to_subagent when you are not sure which sub-agent to call.',
-    userDescription: 'Lists available sub-agents for delegation',
-    example: 'TOOL:list_subagents{}',
-    exampleOutput: '[{"id":5,"name":"Search Agent","description":"Sub-agent: performs focused web searches and returns structured results","status":"idle"}]',
-    inputSchema: { type: 'object' }
-  }, async () => {
-    if (!server._agentManager) {
-      return [];
-    }
-
-    const agents = await server._agentManager.getAgents('sub');
-    return agents.map(agent => ({
-      id: agent.id,
-      name: agent.name,
-      icon: agent.icon,
-      description: agent.description,
-      status: agent.status
-    }));
-  });
-
-  server.registerTool('delegate_to_subagent', {
-    name: 'delegate_to_subagent',
-    description: 'Delegate a focused task to a sub-agent. Returns immediately with an accepted/running acknowledgment, run id, and file locations for the delegated run. The child later completes through a structured completion contract.',
-    userDescription: 'Starts a delegated sub-agent run and returns an immediate acknowledgment',
-    example: 'TOOL:delegate_to_subagent{"agent_name":"Search Agent","task":"Research recent local Electron security guidance","contract_type":"research_complete","expected_output":"Include findings, risks, and sources"}',
-    exampleOutput: '{"accepted":true,"run_id":"subtask-20260408-ab12cd","status":"queued","child_session_id":"subtask-20260408-ab12cd","run_dir":"...\\\\agentin\\\\subtasks\\\\runs\\\\subtask-20260408-ab12cd","result_path":"...\\\\result.json"}',
+  server.registerTool('run_subagent', {
+    name: 'run_subagent',
+    description: 'Delegate a focused task to a sub-agent and return immediate run metadata.',
+    userDescription: 'Run a task on a sub-agent',
+    example: 'TOOL:run_subagent{"agent_name":"Search Agent","task":"Find 3 reliable sources about topic X"}',
+    exampleOutput: '{"accepted":true,"run_id":"subtask-20260408-ab12cd","status":"queued","child_session_id":"subtask-20260408-ab12cd"}',
     inputSchema: {
       type: 'object',
       properties: {
         agent_id: { type: 'number', description: 'Numeric sub-agent id (preferred when known)' },
         agent_name: { type: 'string', description: 'Sub-agent name (case-insensitive fallback)' },
-        task: { type: 'string', description: 'Focused task for the child agent to execute' },
+        task: { type: 'string', description: 'Focused task for the sub-agent' },
         contract_type: {
           type: 'string',
-          description: 'Required success status the child must return, e.g. "task_complete" or "research_complete"',
+          description: 'Expected completion status for success',
           default: 'task_complete'
         },
         expected_output: {
           type: 'string',
-          description: 'Optional instructions describing the structure expected inside contract.data',
+          description: 'Optional shape guidance for returned contract.data',
           default: ''
         }
       },
@@ -117,78 +95,25 @@ function registerAgentTools(server) {
     );
   });
 
-  server.registerTool('get_subagent_run', {
-    name: 'get_subagent_run',
-    description: 'Get the current state of a delegated sub-agent run by run id. Use this to inspect queued, running, completed, or failed delegated runs and to discover the run folder and result file.',
-    userDescription: 'Gets the current state of a delegated sub-agent run',
-    example: 'TOOL:get_subagent_run{"run_id":"subtask-20260408-ab12cd"}',
-    exampleOutput: '{"run_id":"subtask-20260408-ab12cd","status":"completed","summary":"Found three sources","run_dir":"...","result_path":"...","result":{"contract":{"status":"research_complete","summary":"Found three sources"}}}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        run_id: { type: 'string', description: 'Delegated run id returned by delegate_to_subagent' }
-      },
-      required: ['run_id']
-    }
-  }, async (params) => {
-    if (!server._agentManager) {
-      return null;
-    }
-    return server._agentManager.getSubagentRun(params.run_id);
-  });
-
-  server.registerTool('list_subagent_runs', {
-    name: 'list_subagent_runs',
-    description: 'List recent delegated sub-agent runs and their completion state. Useful for tracing queued/running/completed tasks and discovering their run folders and result files.',
-    userDescription: 'Lists recent sub-agent runs and their structured results',
-    example: 'TOOL:list_subagent_runs{"limit":5}',
-    exampleOutput: '[{"run_id":"subtask-20260408-ab12cd","parent_session_id":1,"child_session_id":"subtask-20260408-ab12cd","subagent_id":5,"status":"running","run_dir":"..."}]',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'number', description: 'Maximum number of runs to return', default: 10 },
-        parent_session_id: { type: 'string', description: 'Optional parent session filter' },
-        subagent_id: { type: 'number', description: 'Optional child agent filter' },
-        status: { type: 'string', description: 'Optional run status filter' }
-      }
-    }
-  }, async (params) => {
-    if (!server._agentManager) {
-      return [];
-    }
-
-    return server._agentManager.listSubagentRuns({
-      limit: params.limit || 10,
-      parentSessionId: params.parent_session_id,
-      subagentId: params.subagent_id,
-      status: params.status
-    });
-  });
-
   server.registerTool('complete_subtask', {
     name: 'complete_subtask',
-    description: 'Signal structured completion of a delegated sub-agent task. Child agents should call this exactly once when they have finished the assigned task.',
-    userDescription: 'Marks a delegated sub-agent task as complete with a structured result',
-    example: 'TOOL:complete_subtask{"status":"research_complete","summary":"Found three relevant sources","data":{"sources":[...]}}',
-    exampleOutput: '{"status":"research_complete","summary":"Found three relevant sources","data":{"sources":[...]},"artifacts":[],"notes":""}',
+    description: 'Signal structured completion of a delegated sub-agent task. Child agents should call this exactly once when finished.',
+    userDescription: 'Marks delegated sub-task completion with structured payload',
+    example: 'TOOL:complete_subtask{"status":"task_complete","summary":"Done","data":{"key":"value"}}',
+    exampleOutput: '{"status":"task_complete","summary":"Done","data":{"key":"value"},"artifacts":[],"notes":""}',
+    internal: true,
     inputSchema: {
       type: 'object',
       properties: {
-        status: { type: 'string', description: 'Completion status, e.g. task_complete, research_complete, or task_failed' },
-        summary: { type: 'string', description: 'Short human-readable summary of the outcome' },
+        status: { type: 'string', description: 'Completion status, e.g. task_complete or task_failed' },
+        summary: { type: 'string', description: 'Short human-readable summary' },
         data: { type: 'object', description: 'Structured result payload' },
-        artifacts: {
-          type: 'array',
-          description: 'Optional files or outputs created during the task',
-          default: []
-        },
-        notes: { type: 'string', description: 'Optional notes for the parent agent', default: '' }
+        artifacts: { type: 'array', description: 'Optional produced artifacts', default: [] },
+        notes: { type: 'string', description: 'Optional notes', default: '' }
       },
       required: ['status', 'summary']
     }
-  }, async (params) => {
-    return normalizeCompletionPayload(params);
-  });
+  }, async (params) => normalizeCompletionPayload(params));
 }
 
 module.exports = { registerAgentTools };

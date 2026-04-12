@@ -28,10 +28,21 @@
                 });
             }
 
-            // Manage button — for now just reloads
+            // Manage button — opens Plugin Studio popup
             if (this.manageBtn) {
-                this.manageBtn.addEventListener('click', () => this.load());
+                this.manageBtn.addEventListener('click', async () => {
+                    try {
+                        await window.electronAPI.plugins.openStudio({});
+                    } catch (error) {
+                        console.error('[PluginPanel] Failed to open plugin studio:', error);
+                        await this.load();
+                    }
+                });
             }
+
+            window.electronAPI.on('plugins:state-changed', async () => {
+                await this.load();
+            });
         }
 
         async load() {
@@ -71,6 +82,14 @@
                 name.className = 'plugin-name';
                 name.textContent = plugin.name;
                 info.appendChild(name);
+
+                info.addEventListener('click', async () => {
+                    try {
+                        await window.electronAPI.plugins.openStudio({ focusPluginId: plugin.id });
+                    } catch (error) {
+                        console.error('[PluginPanel] Failed to open studio for plugin:', error);
+                    }
+                });
 
                 const toggleBtn = document.createElement('button');
                 toggleBtn.className = `plugin-toggle-btn ${plugin.status === 'enabled' ? 'active' : ''}`;

@@ -147,134 +147,91 @@ function registerCoreTools(server) {
     }
   });
 
-  server.registerTool('create_calendar_event', {
-    name: 'create_calendar_event',
-    description: 'Create a calendar event with title, date/time, and optional description',
-    userDescription: 'Creates a new calendar event with a title, start time, duration, and optional notes',
-    example: 'TOOL:create_calendar_event{"title":"Team Meeting","start_time":"2025-10-06 14:00","duration_minutes":60,"description":"Discuss Q4 goals"}',
-    exampleOutput: '{"id":1,"title":"Team Meeting","start_time":"2025-10-06 14:00","duration_minutes":60,"description":"Discuss Q4 goals"}',
+  server.registerTool('calendar_op', {
+    name: 'calendar_op',
+    description: 'Unified calendar operations. Actions: create, list.',
+    userDescription: 'Manage calendar events',
+    example: 'TOOL:calendar_op{"action":"list","limit":10}',
     inputSchema: {
       type: 'object',
       properties: {
-        title: { type: 'string', description: 'Event title (e.g., "Team Meeting", "Doctor Appointment")' },
-        start_time: { type: 'string', description: 'Start time in format "YYYY-MM-DD HH:MM" or ISO format (e.g., "2025-10-06 14:00" or "2025-10-06T14:00:00Z")' },
-        duration_minutes: { type: 'number', description: 'Event duration in minutes (e.g., 30, 60, 90)', default: 60 },
-        description: { type: 'string', description: 'Optional event notes or description', default: '' }
+        action: { type: 'string', description: 'Operation: create | list' },
+        title: { type: 'string', description: 'Event title for create action' },
+        start_time: { type: 'string', description: 'Start time for create action' },
+        duration_minutes: { type: 'number', description: 'Duration for create action', default: 60 },
+        description: { type: 'string', description: 'Description for create action', default: '' },
+        limit: { type: 'number', description: 'Max items for list action', default: 10 }
       },
-      required: ['title', 'start_time']
+      required: ['action']
     }
   }, async (params) => {
-    const event = await server.db.addCalendarEvent(params);
-    server.emit('calendar-update');
-    return event;
-  });
-
-  server.registerTool('calendar_write', {
-    name: 'calendar_write',
-    description: 'Alias for create_calendar_event - creates a new calendar event',
-    userDescription: 'Alternative name for create_calendar_event - creates a new calendar event',
-    example: 'TOOL:calendar_write{"title":"Lunch","start_time":"2025-10-06 12:00"}',
-    exampleOutput: '{"id":2,"title":"Lunch","start_time":"2025-10-06 12:00","duration_minutes":60}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', description: 'Event title' },
-        start_time: { type: 'string', description: 'Start time in format "YYYY-MM-DD HH:MM"' },
-        duration_minutes: { type: 'number', description: 'Duration in minutes', default: 60 },
-        description: { type: 'string', description: 'Event notes', default: '' }
-      },
-      required: ['title', 'start_time']
-    }
-  }, async (params) => {
-    return await server.db.addCalendarEvent(params);
-  });
-
-  server.registerTool('list_calendar_events', {
-    name: 'list_calendar_events',
-    description: 'List calendar events with optional filters',
-    userDescription: 'Retrieves a list of upcoming calendar events, optionally limited to a specific number',
-    example: 'TOOL:list_calendar_events{"limit":5}',
-    exampleOutput: '[{"id":1,"title":"Meeting","start_time":"2025-10-06 14:00"},{"id":2,"title":"Lunch","start_time":"2025-10-06 12:00"}]',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'number', description: 'Maximum number of events to return (e.g., 5, 10, 20)', default: 10 }
+    const action = String(params.action || '').toLowerCase();
+    if (action === 'create') {
+      if (!params.title || !params.start_time) {
+        return { error: 'title and start_time are required for create action' };
       }
+      const event = await server.db.addCalendarEvent({
+        title: params.title,
+        start_time: params.start_time,
+        duration_minutes: params.duration_minutes ?? 60,
+        description: params.description ?? ''
+      });
+      server.emit('calendar-update');
+      return event;
     }
-  }, async (params) => {
-    const events = await server.db.getCalendarEvents();
-    return params.limit ? events.slice(0, params.limit) : events;
+
+    if (action === 'list') {
+      const events = await server.db.getCalendarEvents();
+      return params.limit ? events.slice(0, params.limit) : events;
+    }
+
+    return { error: `Unknown calendar action: ${params.action}` };
   });
 
-  server.registerTool('calendar_read', {
-    name: 'calendar_read',
-    description: 'Alias for list_calendar_events - list calendar events',
-    userDescription: 'Alternative name for list_calendar_events - retrieves calendar events',
-    example: 'TOOL:calendar_read{"limit":10}',
-    exampleOutput: '[{"id":1,"title":"Meeting","start_time":"2025-10-06 14:00"}]',
+  server.registerTool('todo_op', {
+    name: 'todo_op',
+    description: 'Unified todo operations. Actions: create, list, complete.',
+    userDescription: 'Manage todo items',
+    example: 'TOOL:todo_op{"action":"list"}',
     inputSchema: {
       type: 'object',
       properties: {
-        limit: { type: 'number', description: 'Maximum number of events to return', default: 10 }
-      }
-    }
-  }, async (params) => {
-    const events = await server.db.getCalendarEvents();
-    return params.limit ? events.slice(0, params.limit) : events;
-  });
-
-  server.registerTool('todo_create', {
-    name: 'todo_create',
-    description: 'Create a new todo item',
-    userDescription: 'Creates a new task/todo item with optional priority and due date',
-    example: 'TOOL:todo_create{"task":"Buy groceries","priority":2,"due_date":"2025-10-06"}',
-    exampleOutput: '{"id":1,"task":"Buy groceries","completed":false,"priority":2}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        task: { type: 'string', description: 'Task description (e.g., "Buy groceries", "Finish report")' },
-        priority: { type: 'number', description: 'Task priority from 1-5 (1=low, 5=high)', default: 1 },
-        due_date: { type: 'string', description: 'Optional due date in YYYY-MM-DD format', default: null }
+        action: { type: 'string', description: 'Operation: create | list | complete' },
+        task: { type: 'string', description: 'Task description for create action' },
+        priority: { type: 'number', description: 'Priority for create action', default: 1 },
+        due_date: { type: 'string', description: 'Due date for create action' },
+        id: { type: 'number', description: 'Todo ID for complete action' }
       },
-      required: ['task']
+      required: ['action']
     }
   }, async (params) => {
-    return await server.db.addTodo(params);
-  });
-
-  server.registerTool('todo_list', {
-    name: 'todo_list',
-    description: 'List all todo items',
-    userDescription: 'Retrieves all tasks/todo items, sorted by priority and creation date',
-    example: 'TOOL:todo_list{}',
-    exampleOutput: '[{"id":1,"task":"Buy groceries","completed":false},{"id":2,"task":"Call doctor","completed":true}]',
-    inputSchema: { type: 'object' }
-  }, async () => {
-    const todos = await server.db.getTodos();
-    return todos.map(todo => ({
-      id: todo.id,
-      task: todo.task,
-      completed: todo.completed === 1 || todo.completed === true,
-      priority: todo.priority,
-      due_date: todo.due_date
-    }));
-  });
-
-  server.registerTool('todo_complete', {
-    name: 'todo_complete',
-    description: 'Mark a todo item as complete',
-    userDescription: 'Marks a specific task/todo item as completed by its ID',
-    example: 'TOOL:todo_complete{"id":1}',
-    exampleOutput: '{"id":1,"task":"Buy groceries","completed":true}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'number', description: 'The ID number of the todo item to mark complete' }
-      },
-      required: ['id']
+    const action = String(params.action || '').toLowerCase();
+    if (action === 'create') {
+      if (!params.task) return { error: 'task is required for create action' };
+      return server.db.addTodo({
+        task: params.task,
+        priority: params.priority ?? 1,
+        due_date: params.due_date ?? null
+      });
     }
-  }, async (params) => {
-    return await server.db.updateTodo(params.id, { completed: true });
+
+    if (action === 'list') {
+      const todos = await server.db.getTodos();
+      return todos.map(todo => ({
+        id: todo.id,
+        task: todo.task,
+        completed: todo.completed === 1 || todo.completed === true,
+        priority: todo.priority,
+        due_date: todo.due_date
+      }));
+    }
+
+    if (action === 'complete') {
+      if (!params.id) return { error: 'id is required for complete action' };
+      return server.db.updateTodo(params.id, { completed: true });
+    }
+
+    return { error: `Unknown todo action: ${params.action}` };
   });
 
   server.registerTool('conversation_history', {

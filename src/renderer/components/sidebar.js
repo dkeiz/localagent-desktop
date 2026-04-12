@@ -639,13 +639,14 @@ class Sidebar {
             list.innerHTML = '<div class="no-activity">No tool activity yet</div>';
         } else {
             list.innerHTML = this.toolActivity.map((item, index) => {
+                const isSearxngSearch = item.tool === 'plugin_searxng_search_search';
                 const paramsJson = JSON.stringify(item.params, null, 2);
                 const resultJson = item.success
                     ? JSON.stringify(item.result, null, 2)
                     : item.error || 'Unknown error';
 
                 return `
-                <div class="tool-activity-item ${item.success ? 'success' : 'error'}" data-index="${index}">
+                <div class="tool-activity-item ${item.success ? 'success' : 'error'}${isSearxngSearch && item.success ? ' searxng-complete' : ''}" data-index="${index}">
                     <div class="tool-header" onclick="window.sidebar.toggleToolDetails(${index})">
                         <span class="tool-expand">▶</span>
                         <strong>${item.tool}</strong>

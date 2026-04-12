@@ -354,6 +354,7 @@ class MCPServer extends EventEmitter {
   getTools() {
     const tools = [];
     for (const [, tool] of this.tools) {
+      if (tool.definition?.internal === true) continue;
       tools.push(tool.definition);
     }
     return tools;
@@ -363,6 +364,7 @@ class MCPServer extends EventEmitter {
     const docs = [];
     for (const [, tool] of this.tools) {
       const def = tool.definition;
+      if (def?.internal === true) continue;
       const doc = {
         name: def.name,
         description: def.userDescription || def.description,
@@ -491,7 +493,7 @@ class MCPServer extends EventEmitter {
       const activeToolNames = this.capabilityManager.getActiveTools();
       return activeToolNames
         .map(name => this.tools.get(name)?.definition)
-        .filter(Boolean);
+        .filter(def => Boolean(def) && def.internal !== true);
     }
 
     const activeTools = [];
@@ -500,7 +502,7 @@ class MCPServer extends EventEmitter {
       if (group) {
         for (const toolName of group.tools) {
           const tool = this.tools.get(toolName);
-          if (tool) {
+          if (tool && tool.definition?.internal !== true) {
             activeTools.push(tool.definition);
           }
         }

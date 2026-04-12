@@ -10,92 +10,64 @@ function registerConnectorTools(server) {
     return path.join(connectorsDir, `${name}.js`);
   }
 
-  server.registerTool('create_connector', {
-    name: 'create_connector',
-    description: 'Create a new connector JS file in agentin/connectors/. The file should export {name, description, configSchema, start(context), stop()}. Use connector_config to store API keys BEFORE creating the file.',
-    userDescription: 'Create a new external service connector script',
-    example: 'TOOL:create_connector{"name":"my-service","code":"module.exports = { name: \'my-service\', ... }"}',
+  server.registerTool('connector_op', {
+    name: 'connector_op',
+    description: 'Unified connector operations. Actions: create, start, stop, list, config_get, config_set.',
+    userDescription: 'Run connector operations',
+    example: 'TOOL:connector_op{"action":"list"}',
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Connector name (used as filename, no .js extension)' },
-        code: { type: 'string', description: 'Full JavaScript source code for the connector' }
+        action: {
+          type: 'string',
+          description: 'Operation: create | start | stop | list | config_get | config_set'
+        },
+        name: { type: 'string', description: 'Connector name (required for all actions except list)' },
+        code: { type: 'string', description: 'Connector source code for create action' },
+        key: { type: 'string', description: 'Config key for config_set action' },
+        value: { type: 'string', description: 'Config value for config_set action' }
       },
-      required: ['name', 'code']
+      required: ['action']
     }
   }, async (params) => {
-    const fs = require('fs');
-    const filePath = getConnectorFilePath(params.name);
-    fs.writeFileSync(filePath, params.code, 'utf-8');
-    return { success: true, path: filePath, name: params.name };
-  });
+    const action = String(params.action || '').toLowerCase();
+    const runtime = server._connectorRuntime;
+    if (!runtime) return { error: 'Connector runtime not initialized' };
 
-  server.registerTool('start_connector', {
-    name: 'start_connector',
-    description: 'Start a connector by name. The connector JS file must exist in agentin/connectors/.',
-    userDescription: 'Start an external service connector',
-    example: 'TOOL:start_connector{"name":"telegram-bot"}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Connector name (filename without .js)' }
-      },
-      required: ['name']
+    if (action === 'list') {
+      return runtime.listConnectors();
     }
-  }, async (params) => {
-    if (!server._connectorRuntime) return { error: 'Connector runtime not initialized' };
-    return await server._connectorRuntime.startConnector(params.name);
-  });
 
-  server.registerTool('stop_connector', {
-    name: 'stop_connector',
-    description: 'Stop a running connector by name.',
-    userDescription: 'Stop a running external service connector',
-    example: 'TOOL:stop_connector{"name":"telegram-bot"}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Connector name to stop' }
-      },
-      required: ['name']
+    if (!params.name) {
+      return { error: 'name is required for this connector action' };
     }
-  }, async (params) => {
-    if (!server._connectorRuntime) return { error: 'Connector runtime not initialized' };
-    return await server._connectorRuntime.stopConnector(params.name);
-  });
 
-  server.registerTool('list_connectors', {
-    name: 'list_connectors',
-    description: 'List all available connectors and their status (running/stopped/error).',
-    userDescription: 'List all external service connectors',
-    example: 'TOOL:list_connectors{}',
-    inputSchema: { type: 'object' }
-  }, async () => {
-    if (!server._connectorRuntime) return { error: 'Connector runtime not initialized' };
-    return await server._connectorRuntime.listConnectors();
-  });
+    if (action === 'create') {
+      if (!params.code) return { error: 'code is required for create action' };
+      const fs = require('fs');
+      const filePath = getConnectorFilePath(params.name);
+      fs.writeFileSync(filePath, params.code, 'utf-8');
+      return { success: true, path: filePath, name: params.name };
+    }
 
-  server.registerTool('connector_config', {
-    name: 'connector_config',
-    description: 'Set or get configuration values for a connector. API keys and secrets are stored securely in the database, never in connector files.',
-    userDescription: 'Manage connector configuration (API keys, settings)',
-    example: 'TOOL:connector_config{"name":"telegram-bot","action":"set","key":"botToken","value":"123:ABC"}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Connector name' },
-        action: { type: 'string', enum: ['set', 'get'], description: 'set or get config' },
-        key: { type: 'string', description: 'Config key (for set action)' },
-        value: { type: 'string', description: 'Config value (for set action)' }
-      },
-      required: ['name', 'action']
+    if (action === 'start') {
+      return runtime.startConnector(params.name);
     }
-  }, async (params) => {
-    if (!server._connectorRuntime) return { error: 'Connector runtime not initialized' };
-    if (params.action === 'set') {
-      return await server._connectorRuntime.setConfig(params.name, params.key, params.value);
+
+    if (action === 'stop') {
+      return runtime.stopConnector(params.name);
     }
-    return await server._connectorRuntime.getConfig(params.name);
+
+    if (action === 'config_get') {
+      return runtime.getConfig(params.name);
+    }
+
+    if (action === 'config_set') {
+      if (!params.key) return { error: 'key is required for config_set action' };
+      return runtime.setConfig(params.name, params.key, params.value);
+    }
+
+    return { error: `Unknown connector action: ${params.action}` };
   });
 }
 
