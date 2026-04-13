@@ -29,6 +29,16 @@ module.exports = {
 
     assert.includes(html, 'id="llm-config-save-button" class="primary-btn"', 'Expected API save button to use shared button styling');
     assert.includes(html, 'id="test-custom-model-btn" type="button" class="secondary-btn"', 'Expected custom model test button to use shared button styling');
+    assert.equal(html.includes('Context Window Size'), false, 'Expected standalone context section heading to be removed');
+    assert.equal(
+      html.includes('Context length determines how much of your conversation local LLMs can remember and use to generate responses.'),
+      false,
+      'Expected standalone context description to be removed'
+    );
+    assert.ok(
+      html.indexOf('<h3>Connection</h3>') < html.indexOf('id="context-slider"'),
+      'Expected context slider to live inside the Connection card'
+    );
 
     const sliderMaxMatch = html.match(/id="context-slider"[^>]*max="(\d+)"/);
     assert.ok(sliderMaxMatch, 'Expected API context slider max attribute to exist');
@@ -48,13 +58,13 @@ module.exports = {
     assert.includes(apiStyles, 'appearance: none;', 'Expected API slider to disable generic input chrome');
     assert.includes(apiStyles, 'background: transparent;', 'Expected API slider to render without boxed input background');
     assert.includes(apiStyles, 'width: calc(100% - 18px);', 'Expected context labels to use thumb-aware width');
-    assert.includes(apiStyles, 'span:nth-child(4) { left: 50%; }', 'Expected context labels to map to fixed slider stop positions');
+    assert.includes(apiStyles, 'span:nth-child(9) { left: 88.8889%; }', 'Expected context labels to map to fixed slider stop positions');
     assert.includes(apiProviderSource, 'class="api-pill-picker"', 'Expected thinking visibility to use compact pill picker UI');
     assert.equal(apiProviderSource.includes('Remember text streaming preference'), false, 'Expected text streaming remember checkbox to be removed');
     assert.equal(apiProviderSource.includes('Remember thinking streaming preference'), false, 'Expected thinking streaming remember checkbox to be removed');
     assert.deepEqual(
       presetValues,
-      [4096, 8192, 16384, 32768, 65536, 131072, 262144],
+      [4096, 8192, 16384, 32768, 49152, 65536, 98304, 131072, 196608, 262144],
       'Unexpected API context preset values'
     );
   }

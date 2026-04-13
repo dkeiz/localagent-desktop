@@ -656,8 +656,8 @@ class MainPanel {
         return window.mainPanelTabs.saveOpenTabIds(this);
     }
     // Context preset mapping: slider index → token value
-    static CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
-    static CONTEXT_LABELS = ['4K', '8K', '16K', '32K', '64K', '128K', '256K'];
+    static CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 49152, 65536, 98304, 131072, 196608, 262144];
+    static CONTEXT_LABELS = ['4K', '8K', '16K', '32K', '48K', '64K', '96K', '128K', '192K', '256K'];
     initContextSettings() {
         const contextSlider = document.getElementById('context-slider');
         const contextDisplay = document.getElementById('context-display');

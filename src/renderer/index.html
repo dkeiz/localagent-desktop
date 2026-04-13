@@ -364,36 +364,6 @@
             <section id="api-tab" class="tab-content">
                 <h2>API Providers</h2>
 
-                <!-- Context Window Setting -->
-                <div class="setting-section context-window-section">
-                    <h3>Context Window Size</h3>
-                    <div class="slider-control context-window-control">
-                        <p class="context-help-text">
-                            Context length determines how much of your conversation local LLMs can remember and use to generate responses.
-                        </p>
-                        <div class="slider-labels">
-                            <label for="context-slider" id="context-display-label">Context Size</label>
-                            <span id="context-display">8K (8192 tokens)</span>
-                        </div>
-                        <input type="range" id="context-slider" min="0" max="6" step="1" value="1"
-                            oninput="window.mainPanel && window.mainPanel.updateContextDisplay(this.value)"
-                            onchange="window.mainPanel && window.mainPanel.saveContextSize(this.value)">
-                        <div class="context-scale" aria-hidden="true">
-                            <span>4k</span>
-                            <span>8k</span>
-                            <span>16k</span>
-                            <span>32k</span>
-                            <span>64k</span>
-                            <span>128k</span>
-                            <span>256k</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="margin: 20px 0;">
-                    <hr>
-                </div>
-
                 <div class="llm-settings">
                     <div class="provider-config">
                         <h3>Connection</h3>
@@ -417,6 +387,30 @@
 
                         <!-- Dynamic provider-specific settings (API keys, etc.) -->
                         <div id="provider-settings-container"></div>
+
+                        <div class="api-subsection context-window-section">
+                            <div class="slider-control context-window-control">
+                                <div class="slider-labels">
+                                    <label for="context-slider" id="context-display-label">Context Size</label>
+                                    <span id="context-display">8K (8192 tokens)</span>
+                                </div>
+                                <input type="range" id="context-slider" min="0" max="9" step="1" value="1"
+                                    oninput="window.mainPanel && window.mainPanel.updateContextDisplay(this.value)"
+                                    onchange="window.mainPanel && window.mainPanel.saveContextSize(this.value)">
+                                <div class="context-scale" aria-hidden="true">
+                                    <span>4k</span>
+                                    <span>8k</span>
+                                    <span>16k</span>
+                                    <span>32k</span>
+                                    <span>48k</span>
+                                    <span>64k</span>
+                                    <span>96k</span>
+                                    <span>128k</span>
+                                    <span>192k</span>
+                                    <span>256k</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="llm-model-settings-section" class="provider-config" style="display: none;">

@@ -5,8 +5,8 @@
 }
 
 #api-tab .context-window-section {
-  width: 100%;
-  max-width: none;
+  padding-top: var(--space-1);
+  border-top: 1px solid color-mix(in srgb, var(--border-color), transparent 35%);
 }
 
 #api-tab .context-window-control {
@@ -87,11 +87,14 @@
   transform: translateX(0);
 }
 
-#api-tab .context-scale span:nth-child(2) { left: 16.6667%; }
-#api-tab .context-scale span:nth-child(3) { left: 33.3333%; }
-#api-tab .context-scale span:nth-child(4) { left: 50%; }
-#api-tab .context-scale span:nth-child(5) { left: 66.6667%; }
-#api-tab .context-scale span:nth-child(6) { left: 83.3333%; }
+#api-tab .context-scale span:nth-child(2) { left: 11.1111%; }
+#api-tab .context-scale span:nth-child(3) { left: 22.2222%; }
+#api-tab .context-scale span:nth-child(4) { left: 33.3333%; }
+#api-tab .context-scale span:nth-child(5) { left: 44.4444%; }
+#api-tab .context-scale span:nth-child(6) { left: 55.5556%; }
+#api-tab .context-scale span:nth-child(7) { left: 66.6667%; }
+#api-tab .context-scale span:nth-child(8) { left: 77.7778%; }
+#api-tab .context-scale span:nth-child(9) { left: 88.8889%; }
 
 #api-tab .context-scale span:last-child {
   left: 100%;
