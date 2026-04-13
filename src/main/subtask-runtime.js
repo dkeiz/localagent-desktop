@@ -27,7 +27,7 @@ class SubtaskRuntime {
         this.cleanupStale(24);
     }
 
-    createRun({ parentSessionId = null, subagentId, agentName, task, contractType = 'task_complete', expectedOutput = '' }) {
+    createRun({ parentSessionId = null, subagentId, agentName, task, contractType = 'task_complete', expectedOutput = '', subagentMode = 'no_ui' }) {
         this.cleanupStale(24);
         const runId = this._generateRunId();
         const runDir = path.join(this.runsPath, runId);
@@ -56,6 +56,7 @@ class SubtaskRuntime {
             task,
             contract_type: contractType,
             expected_output: expectedOutput,
+            subagent_mode: subagentMode,
             created_at: createdAt,
             run_dir: runDir,
             workspace_dir: workspaceDir,
@@ -77,6 +78,7 @@ class SubtaskRuntime {
             subagent_id: subagentId,
             agent_name: agentName,
             contract_type: contractType,
+            subagent_mode: subagentMode,
             summary: '',
             error: null,
             delivered_to_parent: false,

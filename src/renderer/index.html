@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="styles/layout.css?v=7">
     <link rel="stylesheet" href="styles/theme.css?v=7">
     <link rel="stylesheet" href="styles/buttons.css?v=7">
+    <link rel="stylesheet" href="styles/api-provider-settings.css?v=1">
     <link rel="stylesheet" href="styles/rule-manager.css?v=7">
     <link rel="stylesheet" href="styles/capability-panel.css?v=1">
     <link rel="stylesheet" href="styles/chat-tabs.css?v=1">
@@ -161,9 +162,10 @@
             <section id="chat-tab" class="tab-content active">
                 <div class="chat-container">
                     <div class="chat-tabs-bar" id="chat-tabs-bar">
-                        <button id="new-session-btn" class="chat-tab-new-session" title="New Chat">New Chat</button>
-                        <div id="chat-tabs-list" class="chat-tabs-list"></div>
-                        <button id="new-chat-btn" class="chat-tab-new" title="New Tab">+</button>
+                        <div class="chat-tabs-strip">
+                            <div id="chat-tabs-list" class="chat-tabs-list"></div>
+                            <button id="new-chat-btn" class="chat-tab-new" title="Add Chat Tab">+</button>
+                        </div>
                         <div id="context-usage" class="context-usage"></div>
                     </div>
                     <div class="messages-container" id="messages-container">
@@ -363,7 +365,7 @@
                 <h2>API Providers</h2>
 
                 <!-- Context Window Setting -->
-                <div class="setting-section">
+                <div class="setting-section context-window-section">
                     <h3>Context Window Size</h3>
                     <div class="slider-control context-window-control">
                         <p class="context-help-text">
@@ -373,7 +375,7 @@
                             <label for="context-slider" id="context-display-label">Context Size</label>
                             <span id="context-display">8K (8192 tokens)</span>
                         </div>
-                        <input type="range" id="context-slider" min="0" max="10" step="1" value="2"
+                        <input type="range" id="context-slider" min="0" max="6" step="1" value="1"
                             oninput="window.mainPanel && window.mainPanel.updateContextDisplay(this.value)"
                             onchange="window.mainPanel && window.mainPanel.saveContextSize(this.value)">
                         <div class="context-scale" aria-hidden="true">
@@ -403,15 +405,14 @@
                         <select id="llm-model-select"></select>
 
                         <!-- Custom model input (shown for Ollama) -->
-                        <div id="custom-model-section" style="display: none; margin-top: 8px;">
+                        <div id="custom-model-section" class="api-subsection" style="display: none;">
                             <label for="custom-model-input">Custom Model (e.g. deepseek-v3.2:cloud)</label>
-                            <div style="display: flex; gap: 8px;">
-                                <input type="text" id="custom-model-input" placeholder="Type model name..."
-                                    style="flex: 1;">
-                                <button id="test-custom-model-btn" type="button" style="white-space: nowrap;">Test
+                            <div class="api-inline-action-row">
+                                <input type="text" id="custom-model-input" placeholder="Type model name...">
+                                <button id="test-custom-model-btn" type="button" class="secondary-btn">Test
                                     Model</button>
                             </div>
-                            <div id="custom-model-status" style="margin-top: 4px; font-size: 0.85em;"></div>
+                            <div id="custom-model-status" class="config-help api-status-text"></div>
                         </div>
 
                         <!-- Dynamic provider-specific settings (API keys, etc.) -->
@@ -425,11 +426,10 @@
                         <div id="llm-model-config-container"></div>
                     </div>
 
-                    <button id="llm-config-save-button">Save Configuration</button>
+                    <button id="llm-config-save-button" class="primary-btn">Save Configuration</button>
 
                     <!-- Current configuration display -->
-                    <div id="current-config-display"
-                        style="margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px; display: none;">
+                    <div id="current-config-display" class="api-current-config" style="display: none;">
                         <strong>Current:</strong> <span id="current-config-text"></span>
                     </div>
                 </div>

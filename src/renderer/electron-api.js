@@ -40,6 +40,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   getChatSessions: (date, limit) => ipcRenderer.invoke('get-chat-sessions', date, limit),
   loadChatSession: (sessionId) => ipcRenderer.invoke('load-chat-session', sessionId),
   switchChatSession: (sessionId) => ipcRenderer.invoke('switch-chat-session', sessionId),
+  clearChatSession: (sessionId) => ipcRenderer.invoke('clear-chat-session', sessionId),
   deleteChatSession: (sessionId) => ipcRenderer.invoke('delete-chat-session', sessionId),
   deleteAllConversations: () => ipcRenderer.invoke('delete-all-conversations'),
   getSettings: () => ipcRenderer.invoke('get-settings'),

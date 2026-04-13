@@ -102,10 +102,10 @@ class BackendEventBus extends EventEmitter {
         'connector:error':        { category: 'connector', needsInference: true,  uiRelay: true  },
 
         // Delegated sub-agent events
-        'subagent:queued':        { category: 'agent', needsInference: false, uiRelay: false },
-        'subagent:started':       { category: 'agent', needsInference: false, uiRelay: false },
-        'subagent:completed':     { category: 'agent', needsInference: false, uiRelay: false },
-        'subagent:failed':        { category: 'agent', needsInference: false, uiRelay: false },
+        'subagent:queued':        { category: 'agent', needsInference: false, uiRelay: true  },
+        'subagent:started':       { category: 'agent', needsInference: false, uiRelay: true  },
+        'subagent:completed':     { category: 'agent', needsInference: false, uiRelay: true  },
+        'subagent:failed':        { category: 'agent', needsInference: false, uiRelay: true  },
     };
 
     // ==================== Core API ====================

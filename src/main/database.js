@@ -358,8 +358,14 @@ class DatabaseWrapper {
     async clearConversations() {
         // Only clear conversations for current session
         const session = await this.getCurrentSession();
-        this.run('DELETE FROM conversations WHERE session_id = ?', [session.id]);
+        await this.clearChatSession(session.id);
         return { cleared: true };
+    }
+
+    async clearChatSession(sessionId) {
+        this.run('DELETE FROM conversations WHERE session_id = ?', [sessionId]);
+        this.run('UPDATE chat_sessions SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [sessionId]);
+        return { cleared: true, sessionId };
     }
 
     async deleteAllConversations() {

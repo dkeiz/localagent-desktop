@@ -178,7 +178,8 @@ class ToolChainController {
                         call.toolCallId,  // Pass the unique ID
                         {
                             context: {
-                                sessionId: options.sessionId
+                                sessionId: options.sessionId,
+                                source: options.mode === 'chat' ? 'chat-llm' : (options.mode || 'unknown')
                             }
                         }
                     );

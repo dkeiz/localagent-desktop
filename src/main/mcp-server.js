@@ -56,6 +56,10 @@ class MCPServer extends EventEmitter {
     return this._currentSessionId;
   }
 
+  getCurrentExecutionContext() {
+    return this._executionContextStack[this._executionContextStack.length - 1] || null;
+  }
+
   setConnectorRuntime(connectorRuntime) {
     this._connectorRuntime = connectorRuntime;
   }

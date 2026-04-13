@@ -209,6 +209,27 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     return db.loadChatSession(sessionId);
   });
 
+  ipcMain.handle('clear-chat-session', async (event, sessionId) => {
+    try {
+      if (testClientMode && isTestSessionId(sessionId)) {
+        const sid = ensureTestSession(sessionId);
+        const session = testClientStore.sessions.get(sid);
+        if (session) {
+          session.messages = [];
+        }
+        windowManager.send('conversation-update', { sessionId: sid });
+        return { cleared: true, sessionId: sid };
+      }
+
+      await db.clearChatSession(sessionId);
+      windowManager.send('conversation-update', { sessionId });
+      return { cleared: true, sessionId };
+    } catch (error) {
+      console.error('Error clearing chat session:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('switch-chat-session', async (event, sessionId) => {
     try {
       if (testClientMode && isTestSessionId(sessionId)) {
@@ -286,7 +307,7 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         content: c.role === 'assistant'
           ? stripReasoningBlocks(stripToolPatterns(c.content))
           : c.content
-      })).filter(c => c.content && c.content.trim().length > 0).reverse();
+      })).filter(c => c.content && c.content.trim().length > 0);
 
       if (!isTestSession && agentLoop) {
         agentLoop.recordActivity(activitySessionId);
@@ -360,7 +381,7 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         content: c.role === 'assistant'
           ? stripReasoningBlocks(stripToolPatterns(c.content))
           : c.content
-      })).filter(c => c.content && c.content.trim().length > 0).reverse();
+      })).filter(c => c.content && c.content.trim().length > 0);
 
       const toolContext = `Tool "${toolName}" was executed with parameters: ${JSON.stringify(params)}\n\nResult: ${JSON.stringify(toolResult, null, 2)}\n\nBased on this tool result, provide a natural, helpful response to the user. Do NOT call any tools.`;
       const response = await dispatcher.dispatch(toolContext, conversationHistory, { mode: 'chat', sessionId: effectiveSessionId });
@@ -420,7 +441,7 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         content: c.role === 'assistant'
           ? stripReasoningBlocks(stripToolPatterns(c.content))
           : c.content
-      })).filter(c => c.content && c.content.trim().length > 0).reverse();
+      })).filter(c => c.content && c.content.trim().length > 0);
 
       let response;
       if (chainController) {

@@ -24,6 +24,13 @@ async function resolveSubagent(server, params) {
   throw new Error('Provide agent_id or agent_name');
 }
 
+function normalizeSubagentMode(rawMode, fallback = 'no_ui') {
+  const value = String(rawMode || '').trim().toLowerCase();
+  if (value === 'ui') return 'ui';
+  if (value === 'noui' || value === 'no_ui' || value === 'backend') return 'no_ui';
+  return fallback;
+}
+
 function normalizeCompletionPayload(params) {
   const status = String(params.status || '').trim();
   const summary = String(params.summary || '').trim();
@@ -78,19 +85,27 @@ function registerAgentTools(server) {
           type: 'string',
           description: 'Optional shape guidance for returned contract.data',
           default: ''
+        },
+        subagent_mode: {
+          type: 'string',
+          description: 'Subagent mode: "ui" (open child chat tab animation) or "no_ui" (backend only). If omitted: chat-llm defaults to ui, backend defaults to no_ui.'
         }
       },
       required: ['task']
     }
   }, async (params) => {
     const agent = await resolveSubagent(server, params);
+    const execCtx = server.getCurrentExecutionContext ? server.getCurrentExecutionContext() : null;
+    const defaultMode = execCtx?.source === 'chat-llm' ? 'ui' : 'no_ui';
+    const subagentMode = normalizeSubagentMode(params.subagent_mode, defaultMode);
     return server._agentManager.invokeSubAgent(
       server.getCurrentSessionId() || null,
       agent.id,
       params.task,
       {
         contractType: params.contract_type || 'task_complete',
-        expectedOutput: params.expected_output || ''
+        expectedOutput: params.expected_output || '',
+        subagentMode
       }
     );
   });

@@ -12,6 +12,22 @@
         return labels[value] || value || 'unknown';
     }
 
+    function visibilityOptionsFor(reasoningCaps) {
+        const supportedModes = Array.isArray(reasoningCaps?.visibilityModes) && reasoningCaps.visibilityModes.length
+            ? reasoningCaps.visibilityModes
+            : ['show', 'min', 'hide'];
+        const labels = {
+            show: 'Expanded',
+            min: 'Collapsed',
+            hide: 'Hidden'
+        };
+
+        return supportedModes.map(value => ({
+            value,
+            label: labels[value] || value
+        }));
+    }
+
     function setCurrentConfigLabel(configDisplay, configText, config) {
         if (!configDisplay || !configText) return;
 
@@ -41,12 +57,17 @@
         const reasoningCaps = spec.capabilities?.reasoning || {};
         const streamingCaps = spec.capabilities?.streaming || {};
         const routingCaps = spec.capabilities?.providerRouting || {};
+        const visibilityOptions = visibilityOptionsFor(reasoningCaps);
         const effortOptions = Array.isArray(reasoningCaps.effortLevels) ? reasoningCaps.effortLevels : [];
         const reasoningChecked = runtimeConfig.reasoning?.enabled ? 'checked' : '';
-        const reasoningToggleDisabled = reasoningCaps.supported && !reasoningCaps.toggle ? 'disabled' : '';
-        const streamTextChecked = runtimeConfig.streaming?.text ? 'checked' : '';
-        const streamReasoningChecked = runtimeConfig.streaming?.reasoning ? 'checked' : '';
+        const reasoningControlAvailable = reasoningCaps.supported && reasoningCaps.toggle;
+        const reasoningToggleDisabled = reasoningControlAvailable ? '' : 'disabled';
         const requireParamsChecked = runtimeConfig.providerRouting?.requireParameters ? 'checked' : '';
+        const reasoningHelpText = reasoningCaps.supported
+            ? (reasoningCaps.toggle
+                ? 'Uses the mapped provider/model controls for this family.'
+                : 'This model family is treated as fixed reasoning.')
+            : 'No explicit reasoning control is mapped for this model yet.';
         const capabilityParts = [];
 
         section.style.display = 'block';
@@ -71,76 +92,71 @@
         capabilitiesContainer.textContent = capabilityParts.join(' | ');
 
         container.innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                <label style="display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500;">
+            <div class="api-model-settings">
+                <label class="api-toggle-row ${reasoningControlAvailable ? '' : 'is-disabled'}">
+                    <span class="api-toggle-copy">
+                        <span class="api-toggle-title">Enable reasoning / thinking</span>
+                        <span class="api-toggle-help">${reasoningHelpText}</span>
+                    </span>
                     <input type="checkbox" id="model-reasoning-enabled" ${reasoningChecked} ${reasoningToggleDisabled}>
-                    <span>Enable reasoning / thinking</span>
                 </label>
-                <div style="color: #666; font-size: 0.84rem; line-height: 1.4;">
-                    ${reasoningCaps.supported
-                ? (reasoningCaps.toggle
-                    ? 'Uses the mapped provider/model controls for this family.'
-                    : 'This model family is treated as fixed reasoning.')
-                : 'No explicit reasoning control is mapped for this model yet.'}
+                <div class="api-settings-grid">
+                    <div class="api-field">
+                        <label>Thinking visibility</label>
+                        <div class="api-pill-picker" role="radiogroup" aria-label="Thinking visibility">
+                            ${visibilityOptions.map(option => `
+                            <label class="api-pill-option">
+                                <input type="radio" name="model-reasoning-visibility" value="${option.value}" ${runtimeConfig.reasoning?.visibility === option.value ? 'checked' : ''}>
+                                <span>${option.label}</span>
+                            </label>`).join('')}
+                        </div>
+                    </div>
+                    ${effortOptions.length ? `
+                    <div class="api-field">
+                        <label for="model-reasoning-effort">Reasoning effort</label>
+                        <select id="model-reasoning-effort">
+                            ${effortOptions.map(level => `<option value="${level}" ${runtimeConfig.reasoning?.effort === level ? 'selected' : ''}>${level}</option>`).join('')}
+                        </select>
+                    </div>` : ''}
+                    ${reasoningCaps.maxTokens ? `
+                    <div class="api-field">
+                        <label for="model-reasoning-budget">Thinking budget</label>
+                        <input type="number" id="model-reasoning-budget" min="1" step="1" value="${runtimeConfig.reasoning?.maxTokens || ''}" placeholder="e.g. 2048">
+                    </div>` : ''}
                 </div>
-            </div>
-            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-start; margin-top: 10px;">
-                <div style="display: flex; flex-direction: column; gap: 0.4rem; min-width: 180px; flex: 1;">
-                    <label for="model-reasoning-visibility">Thinking visibility</label>
-                    <select id="model-reasoning-visibility">
-                        <option value="show" ${runtimeConfig.reasoning?.visibility === 'show' ? 'selected' : ''}>Show expanded</option>
-                        <option value="min" ${runtimeConfig.reasoning?.visibility === 'min' ? 'selected' : ''}>Show collapsed</option>
-                        <option value="hide" ${runtimeConfig.reasoning?.visibility === 'hide' ? 'selected' : ''}>Hide output</option>
-                    </select>
-                </div>
-                ${effortOptions.length ? `
-                <div style="display: flex; flex-direction: column; gap: 0.4rem; min-width: 180px; flex: 1;">
-                    <label for="model-reasoning-effort">Reasoning effort</label>
-                    <select id="model-reasoning-effort">
-                        ${effortOptions.map(level => `<option value="${level}" ${runtimeConfig.reasoning?.effort === level ? 'selected' : ''}>${level}</option>`).join('')}
-                    </select>
-                </div>` : ''}
-                ${reasoningCaps.maxTokens ? `
-                <div style="display: flex; flex-direction: column; gap: 0.4rem; min-width: 180px; flex: 1;">
-                    <label for="model-reasoning-budget">Thinking budget</label>
-                    <input type="number" id="model-reasoning-budget" min="1" step="1" value="${runtimeConfig.reasoning?.maxTokens || ''}" placeholder="e.g. 2048">
-                </div>` : ''}
-            </div>
-            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-top: 10px;">
-                <label style="display: inline-flex; align-items: center; gap: 0.5rem;">
-                    <input type="checkbox" id="model-stream-text" ${streamTextChecked} ${streamingCaps.text ? '' : 'disabled'}>
-                    <span>Remember text streaming preference</span>
-                </label>
-                <label style="display: inline-flex; align-items: center; gap: 0.5rem;">
-                    <input type="checkbox" id="model-stream-reasoning" ${streamReasoningChecked} ${(streamingCaps.reasoning && streamingCaps.reasoning !== 'none') ? '' : 'disabled'}>
-                    <span>Remember thinking streaming preference</span>
-                </label>
-            </div>
-            ${routingCaps.requireParameters ? `
-            <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 10px;">
-                <label style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                ${routingCaps.requireParameters ? `
+                <label class="api-toggle-row">
+                    <span class="api-toggle-copy">
+                        <span class="api-toggle-title">Require backend support for selected parameters</span>
+                        <span class="api-toggle-help">Useful for OpenRouter so routed backends actually support reasoning settings.</span>
+                    </span>
                     <input type="checkbox" id="model-require-params" ${requireParamsChecked}>
-                    <span>Require backend support for selected parameters</span>
-                </label>
-                <div style="color: #666; font-size: 0.84rem; line-height: 1.4;">Useful for OpenRouter so routed backends actually support reasoning settings.</div>
-            </div>` : ''}
+                </label>` : ''}
+            </div>
         `;
     }
 
-    function collectRuntimeConfig() {
+    function collectRuntimeConfig(baseRuntimeConfig = {}) {
+        const selectedVisibility = document.querySelector('input[name="model-reasoning-visibility"]:checked');
+        const legacyVisibilitySelect = document.getElementById('model-reasoning-visibility');
+
         return {
             reasoning: {
-                enabled: Boolean(document.getElementById('model-reasoning-enabled')?.checked),
-                visibility: document.getElementById('model-reasoning-visibility')?.value || 'show',
-                effort: document.getElementById('model-reasoning-effort')?.value || null,
-                maxTokens: document.getElementById('model-reasoning-budget')?.value || null
+                enabled: document.getElementById('model-reasoning-enabled')
+                    ? Boolean(document.getElementById('model-reasoning-enabled')?.checked)
+                    : Boolean(baseRuntimeConfig.reasoning?.enabled),
+                visibility: selectedVisibility?.value || legacyVisibilitySelect?.value || baseRuntimeConfig.reasoning?.visibility || 'show',
+                effort: document.getElementById('model-reasoning-effort')?.value || baseRuntimeConfig.reasoning?.effort || null,
+                maxTokens: document.getElementById('model-reasoning-budget')?.value || baseRuntimeConfig.reasoning?.maxTokens || null
             },
             streaming: {
-                text: Boolean(document.getElementById('model-stream-text')?.checked),
-                reasoning: Boolean(document.getElementById('model-stream-reasoning')?.checked)
+                text: Boolean(baseRuntimeConfig.streaming?.text),
+                reasoning: Boolean(baseRuntimeConfig.streaming?.reasoning)
             },
             providerRouting: {
-                requireParameters: Boolean(document.getElementById('model-require-params')?.checked)
+                requireParameters: document.getElementById('model-require-params')
+                    ? Boolean(document.getElementById('model-require-params')?.checked)
+                    : Boolean(baseRuntimeConfig.providerRouting?.requireParameters)
             }
         };
     }
@@ -263,17 +279,21 @@
                         </div>
                     </div>
                     <div id="qwen-cli-settings" class="config-help">CLI mode runs the local qwen command.</div>
-                    <div id="qwen-api-settings" style="display: none;">
+                    <div id="qwen-api-settings" class="api-subsection" style="display: none;">
                         <div class="config-field">
                             <label for="qwen-key">API Key</label>
                             <input type="password" id="qwen-key" placeholder="sk-...">
                         </div>
-                        <button type="button" id="verify-api-key">Verify Key</button>
-                        <div id="qwen-api-status" class="config-help"></div>
+                        <div class="api-action-row">
+                            <button type="button" id="verify-api-key" class="secondary-btn">Verify Key</button>
+                        </div>
+                        <div id="qwen-api-status" class="config-help api-status-text"></div>
                     </div>
-                    <div id="qwen-oauth-settings" style="display: none;">
-                        <button type="button" id="qwen-fetch-oauth">Load OAuth Credentials</button>
-                        <div id="qwen-oauth-status" class="config-help"></div>
+                    <div id="qwen-oauth-settings" class="api-subsection" style="display: none;">
+                        <div class="api-action-row">
+                            <button type="button" id="qwen-fetch-oauth" class="secondary-btn">Load OAuth Credentials</button>
+                        </div>
+                        <div id="qwen-oauth-status" class="config-help api-status-text"></div>
                     </div>
                 `;
             } else if (provider === 'lmstudio') {
@@ -399,7 +419,7 @@
             }
 
             if (currentModelProfile?.spec?.model === model) {
-                config.runtimeConfig = collectRuntimeConfig();
+                config.runtimeConfig = collectRuntimeConfig(currentModelProfile.runtimeConfig);
             }
 
             await persistConfig(config, `Switched to ${model}`);
@@ -408,7 +428,7 @@
         if (modelConfigContainer) {
             const syncModelConfigState = () => {
                 if (!currentModelProfile) return;
-                applyVisibilityToMainPanel(collectRuntimeConfig());
+                applyVisibilityToMainPanel(collectRuntimeConfig(currentModelProfile.runtimeConfig));
             };
             modelConfigContainer.addEventListener('input', syncModelConfigState);
             modelConfigContainer.addEventListener('change', syncModelConfigState);
@@ -556,7 +576,7 @@
             }
 
             if (config.model && currentModelProfile?.spec?.model === config.model) {
-                config.runtimeConfig = collectRuntimeConfig();
+                config.runtimeConfig = collectRuntimeConfig(currentModelProfile.runtimeConfig);
             }
 
             await window.electronAPI.llm.saveConfig(config);

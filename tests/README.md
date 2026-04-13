@@ -24,6 +24,8 @@ The goal is to catch seam breakage before large modules are split:
   Environment-dependent live checks.
 - `npm run test:searxng-e2e`
   Windowless Electron end-to-end workflow for plugin runtime via real IPC (enable plugin -> run search tool -> verify results -> disable plugin).
+- `npm run test:subagent-external`
+  External-test windowless workflow for `run_subagent` dual-mode validation (`no_ui` + `ui`) with real IPC/event bus.
 - `npm run test:all`
   Core plus skin plus live.
 - `npm run verify`
@@ -53,6 +55,9 @@ When validating plugin workflows in the real app runtime, use the windowless Ele
 For externally driven test orchestration, run:
 - `npm run start:test:external`
   - (expands to `electron . --external-test --windowless --external-port 8788`)
+
+Dedicated external tests:
+- `npm run test:subagent-external`
 
 It exposes a localhost control API:
 - `GET /health`

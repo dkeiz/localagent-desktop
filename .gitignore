@@ -9,6 +9,8 @@ out/
 
 # Electron
 *.log
+*.err.log
+*.out.log
 
 # Database
 *.db
@@ -32,3 +34,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 temp/
+
+# Local agent runtime state
+agentin/memory/.hashes.json

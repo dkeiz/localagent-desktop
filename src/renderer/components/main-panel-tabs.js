@@ -3,27 +3,42 @@
         return document.getElementById('messages-container');
     }
 
-    async function clearCurrentChat(panel) {
+    function getClearedTabTitle(tab, sessionId) {
+        const isAgentTab = Boolean(tab?.agentId) || String(sessionId).startsWith('subtask-');
+        return isAgentTab ? (tab.title || 'Agent Chat') : 'New Chat';
+    }
+
+    function resetTabState(tab, sessionId) {
+        tab.title = getClearedTabTitle(tab, sessionId);
+        tab.messagesHTML = '';
+        tab.isSending = false;
+        tab.loadingId = null;
+        tab.scrollTop = 0;
+        tab.followOutput = true;
+        tab.subagentRunning = false;
+        tab.subagentPulse = false;
+    }
+
+    async function clearTab(panel, sessionId) {
+        if (!sessionId || !panel.chatTabs.has(sessionId)) {
+            return;
+        }
+
         try {
-            const result = await window.electronAPI.clearConversations();
-            const newSessionId = result.sessionId;
+            await window.electronAPI.clearChatSession(sessionId);
 
-            const container = getMessagesContainer();
-            if (container) {
-                container.innerHTML = '';
+            const tab = panel.chatTabs.get(sessionId);
+            if (tab) {
+                resetTabState(tab, sessionId);
             }
-            panel.updateContextUsage(null);
 
-            if (panel.activeTabId && panel.chatTabs.has(panel.activeTabId)) {
-                const tab = panel.chatTabs.get(panel.activeTabId);
-                panel.chatTabs.delete(panel.activeTabId);
-                tab.title = 'New Chat';
-                tab.messagesHTML = '';
-                tab.scrollTop = 0;
-                tab.followOutput = true;
-                panel.chatTabs.set(newSessionId, tab);
+            if (sessionId === panel.activeTabId) {
+                const container = getMessagesContainer();
+                if (container) {
+                    container.innerHTML = '';
+                }
+                panel.updateContextUsage(null);
             }
-            panel.activeTabId = newSessionId;
 
             renderTabs(panel);
             saveOpenTabIds(panel);
@@ -34,6 +49,10 @@
         } catch (error) {
             console.error('Error clearing chat:', error);
         }
+    }
+
+    async function clearCurrentChat(panel) {
+        return clearTab(panel, panel.activeTabId);
     }
 
     async function newChat(panel) {
@@ -99,6 +118,72 @@
             await panel.calculateContextUsage();
         } catch (error) {
             console.error('Error opening agent chat:', error);
+        }
+    }
+
+    async function ensureSubagentChat(panel, eventPayload, { activate = false } = {}) {
+        const sessionId = eventPayload?.childSessionId || eventPayload?.child_session_id;
+        if (!sessionId) return;
+
+        const agentId = eventPayload?.subagentId || eventPayload?.subagent_id || null;
+        const agentName = eventPayload?.agentName || eventPayload?.agent_name || `Subagent ${agentId || ''}`.trim();
+
+        if (!panel.chatTabs.has(sessionId)) {
+            saveCurrentTabMessages(panel);
+            panel.chatTabs.set(sessionId, {
+                title: agentName,
+                agentId,
+                agentIcon: '🛰️',
+                messagesHTML: '',
+                isSending: false,
+                loadingId: null,
+                scrollTop: 0,
+                followOutput: true,
+                subagentRunning: true,
+                subagentPulse: true
+            });
+        }
+
+        const tab = panel.chatTabs.get(sessionId);
+        if (!tab) return;
+
+        tab.subagentRunning = true;
+        tab.subagentPulse = true;
+        tab.agentId = tab.agentId || agentId;
+        tab.title = tab.title || agentName;
+
+        if (activate) {
+            await switchTab(panel, sessionId);
+            await loadTabConversations(panel, sessionId);
+        } else {
+            renderTabs(panel);
+            saveOpenTabIds(panel);
+        }
+    }
+
+    async function updateSubagentChatState(panel, eventPayload) {
+        const sessionId = eventPayload?.childSessionId || eventPayload?.child_session_id;
+        if (!sessionId || !panel.chatTabs.has(sessionId)) {
+            return;
+        }
+
+        const tab = panel.chatTabs.get(sessionId);
+        const eventType = eventPayload.__eventType || '';
+        if (eventType === 'subagent:completed' || eventType === 'subagent:failed') {
+            tab.subagentRunning = false;
+            tab.subagentPulse = true;
+            setTimeout(() => {
+                const t = panel.chatTabs.get(sessionId);
+                if (!t) return;
+                t.subagentPulse = false;
+                renderTabs(panel);
+            }, 1400);
+        }
+
+        if (panel.activeTabId === sessionId) {
+            await loadTabConversations(panel, sessionId);
+        } else {
+            renderTabs(panel);
         }
     }
 
@@ -291,23 +376,37 @@
 
         for (const [sessionId, tab] of panel.chatTabs) {
             const tabEl = document.createElement('div');
-            tabEl.className = `chat-tab${sessionId === panel.activeTabId ? ' active' : ''}`;
+            tabEl.className = `chat-tab${sessionId === panel.activeTabId ? ' active' : ''}${tab.subagentPulse ? ' subagent-pulse' : ''}`;
             tabEl.dataset.sessionId = sessionId;
 
+            const clearBtn = document.createElement('button');
+            clearBtn.className = 'chat-tab-reset';
+            clearBtn.type = 'button';
+            clearBtn.title = 'Clear Chat';
+            clearBtn.textContent = '🖌';
+            clearBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                clearTab(panel, sessionId);
+            });
+
             const statusDot = document.createElement('span');
-            statusDot.className = `chat-tab-status${tab.isSending ? ' thinking' : ''}`;
+            const isSubagent = String(sessionId).startsWith('subtask-');
+            statusDot.className = `chat-tab-status${tab.isSending || tab.subagentRunning ? ' thinking' : ''}${isSubagent && !tab.subagentRunning ? ' subagent-done' : ''}`;
 
             const label = document.createElement('span');
             label.className = 'chat-tab-label';
             const agentPrefix = tab.agentIcon ? `${tab.agentIcon} ` : '';
             label.textContent = agentPrefix + (tab.title || `Chat ${sessionId}`);
 
+            tabEl.appendChild(clearBtn);
             tabEl.appendChild(statusDot);
             tabEl.appendChild(label);
 
             if (panel.chatTabs.size > 1) {
                 const closeBtn = document.createElement('button');
                 closeBtn.className = 'chat-tab-close';
+                closeBtn.type = 'button';
+                closeBtn.title = 'Close Tab';
                 closeBtn.textContent = '×';
                 closeBtn.addEventListener('click', (event) => {
                     event.stopPropagation();
@@ -335,8 +434,10 @@
 
     window.mainPanelTabs = {
         autoTitleTab,
+        clearTab,
         clearCurrentChat,
         closeTab,
+        ensureSubagentChat,
         loadTabConversations,
         newChat,
         openAgentChat,
@@ -345,6 +446,7 @@
         restoreOpenTabs,
         saveCurrentTabMessages,
         saveOpenTabIds,
-        switchTab
+        switchTab,
+        updateSubagentChatState
     };
 })();

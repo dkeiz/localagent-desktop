@@ -5,11 +5,9 @@ class MainPanel {
         this.recognition = null;
         this.synthesis = window.speechSynthesis;
         this.autoSpeak = false;
-
         // Multi-chat tab management
         this.chatTabs = new Map(); // sessionId -> { title, messagesHTML, isSending, loadingId }
         this.activeTabId = null;
-
         // Initialize immediately since we're already in DOMContentLoaded
         this.commandHandler = new CommandHandler(this);
         this.initializeEvents();
@@ -17,7 +15,6 @@ class MainPanel {
         this.initContextSettings();
         this.restoreOpenTabs();
     }
-
     async loadSystemPrompt() {
         try {
             const prompt = await window.electronAPI.getSystemPrompt();
@@ -29,7 +26,6 @@ class MainPanel {
             console.error('Error loading system prompt:', error);
         }
     }
-
     initializeEvents() {
         // Chat send functionality
         const sendBtn = document.getElementById('send-btn');
@@ -41,9 +37,7 @@ class MainPanel {
         const speakBtn = document.getElementById('speak-btn');
         const dropZone = document.getElementById('drop-zone');
         const messagesContainer = document.getElementById('messages-container');
-
         sendBtn.addEventListener('click', () => this.sendMessage());
-
         // Stop generation button
         if (stopBtn) {
             stopBtn.addEventListener('click', async () => {
@@ -59,15 +53,10 @@ class MainPanel {
                 }
             });
         }
-
         if (newChatBtn) newChatBtn.addEventListener('click', () => this.newChat());
-
-        const newSessionBtn = document.getElementById('new-session-btn');
-        if (newSessionBtn) newSessionBtn.addEventListener('click', () => this.clearCurrentChat());
         attachBtn.addEventListener('click', () => this.attachFile());
         voiceBtn.addEventListener('click', () => this.toggleVoiceInput());
         speakBtn.addEventListener('click', () => this.toggleAutoSpeak());
-
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -75,7 +64,6 @@ class MainPanel {
                 this.sendMessage();
             }
         });
-
         // Autocomplete for /commands
         messageInput.addEventListener('input', () => {
             const val = messageInput.value;
@@ -86,7 +74,6 @@ class MainPanel {
                 this.hideCommandAutocomplete();
             }
         });
-
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') this.hideCommandAutocomplete();
             if (e.key === 'Tab' && this._autocompleteVisible) {
@@ -94,7 +81,6 @@ class MainPanel {
                 this.acceptFirstAutocomplete();
             }
         });
-
         // Drag and drop
         window.addEventListener('dragenter', (e) => {
             e.preventDefault();
@@ -102,54 +88,43 @@ class MainPanel {
                 dropZone.classList.add('active');
             }
         });
-
         dropZone.addEventListener('dragover', (e) => e.preventDefault());
-
         dropZone.addEventListener('dragleave', (e) => {
             if (e.target === dropZone) {
                 dropZone.classList.remove('active');
             }
         });
-
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('active');
             this.handleFileDrop(e.dataTransfer.files);
         });
-
         if (messagesContainer) {
             messagesContainer.addEventListener('scroll', () => this._storeActiveTabScrollState());
             messagesContainer.addEventListener('click', (event) => {
                 const image = event.target.closest('.chat-image');
                 if (!image) return;
-
                 const lightboxSrc = image.getAttribute('data-lightbox-src') || image.getAttribute('src');
                 if (lightboxSrc) {
                     this._openLightbox(lightboxSrc);
                 }
             });
         }
-
         window.addEventListener('keydown', (event) => {
             if (event.key !== 'PageDown') return;
             if (this._shouldIgnorePagingTarget(event.target)) return;
-
             event.preventDefault();
             this._pageDownMessages();
         });
-
         // Settings tab events
         document.getElementById('save-prompt-btn').addEventListener('click', () => this.saveSystemPrompt());
-
         // MCP tab events
         const addProxyBtn = document.getElementById('add-proxy-btn');
         if (addProxyBtn) {
             addProxyBtn.addEventListener('click', () => this.addProxyServer());
         }
-
         // Listen for updates from main process
         this.setupEventListeners();
-
         // Reinitialize context slider when API tab is opened
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -159,7 +134,6 @@ class MainPanel {
             });
         });
     }
-
     initializeVoice() {
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -167,13 +141,11 @@ class MainPanel {
             this.recognition.continuous = false;
             this.recognition.interimResults = false;
             this.recognition.lang = 'en-US';
-
             this.recognition.onresult = (event) => {
                 const transcript = event.results[0][0].transcript;
                 document.getElementById('message-input').value = transcript;
                 document.getElementById('voice-btn').classList.remove('recording');
             };
-
             this.recognition.onerror = (event) => {
                 console.error('Speech recognition error:', event.error);
                 document.getElementById('voice-btn').classList.remove('recording');
@@ -181,7 +153,6 @@ class MainPanel {
                     this.showNotification(`Voice error: ${event.error}`, 'error');
                 }
             };
-
             this.recognition.onend = () => {
                 document.getElementById('voice-btn').classList.remove('recording');
             };
@@ -189,13 +160,11 @@ class MainPanel {
             console.warn('Speech recognition not supported in this browser');
         }
     }
-
     toggleVoiceInput() {
         if (!this.recognition) {
             this.showNotification('Voice input not supported in this browser. Try Chrome/Edge.', 'error');
             return;
         }
-
         const voiceBtn = document.getElementById('voice-btn');
         if (voiceBtn.classList.contains('recording')) {
             this.recognition.stop();
@@ -210,7 +179,6 @@ class MainPanel {
             }
         }
     }
-
     toggleAutoSpeak() {
         this.autoSpeak = !this.autoSpeak;
         const speakBtn = document.getElementById('speak-btn');
@@ -218,13 +186,11 @@ class MainPanel {
         speakBtn.title = this.autoSpeak ? 'Auto-speak ON' : 'Auto-speak OFF';
         this.showNotification(`Auto-speak ${this.autoSpeak ? 'enabled' : 'disabled'}`);
     }
-
     speakText(text) {
         this.synthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         this.synthesis.speak(utterance);
     }
-
     attachFile() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -232,22 +198,18 @@ class MainPanel {
         input.onchange = (e) => this.handleFileDrop(e.target.files);
         input.click();
     }
-
     async handleFileDrop(files) {
         for (const file of files) {
             const filePath = file.path || file.name;
             const ext = file.name.split('.').pop().toLowerCase();
             const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext);
             const isAudio = ['mp3', 'wav', 'ogg', 'm4a'].includes(ext);
-
             // Show user message with file attachment
             this.addMessageWithAttachment('user', `Analyze this file`, {
                 name: file.name,
                 type: isImage ? 'image' : isAudio ? 'audio' : 'document'
             });
-
             const loadingId = this.addMessage('assistant', '...');
-
             // Process file
             try {
                 const result = await window.electronAPI.handleFileDrop(filePath);
@@ -263,77 +225,63 @@ class MainPanel {
             }
         }
     }
-
     showAttachedFile(fileName) {
         const container = document.querySelector('.input-container');
         const fileDiv = document.createElement('div');
         fileDiv.className = 'attached-file';
         const nameSpan = document.createElement('span');
         nameSpan.textContent = `📎 ${fileName}`;
-
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'remove-file';
         removeBtn.textContent = '✕';
         removeBtn.title = 'Remove attachment';
         removeBtn.addEventListener('click', () => fileDiv.remove());
-
         fileDiv.appendChild(nameSpan);
         fileDiv.appendChild(removeBtn);
         container.insertBefore(fileDiv, container.firstChild);
     }
-
     async sendMessage() {
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
         const stopBtn = document.getElementById('stop-btn');
         const message = messageInput.value.trim();
-
         if (!message && this.attachedFiles.length === 0) return;
-
         // Intercept /commands
         if (this.commandHandler.isCommand(message)) {
             messageInput.value = '';
             this.addMessage('user', message);
             const result = await this.commandHandler.execute(message);
-
             // If the command returns a passthrough, send that to the AI instead
             if (result.passthrough) {
                 messageInput.value = result.passthrough;
                 return this.sendMessage();
             }
-
             if (result.output) {
                 this.addMessage('system', result.output, result.style);
             }
             return;
         }
-
         const sessionId = this.activeTabId;
         const tab = this.chatTabs.get(sessionId);
-
         // Add user message to UI immediately
         if (message) this.addMessage('user', message);
         messageInput.value = '';
         this.attachedFiles = [];
         document.querySelectorAll('.attached-file').forEach(el => el.remove());
         messageInput.focus();
-
         // Show stop button, hide send button
         if (sendBtn) sendBtn.classList.add('hidden');
         if (stopBtn) stopBtn.classList.remove('hidden');
         this.isSending = true;
         if (tab) { tab.isSending = true; this.renderTabs(); }
-
         // Auto-title the tab from first user message
         if (tab && (tab.title.startsWith('Chat ') || !tab.title)) {
             tab.title = message.substring(0, 30) + (message.length > 30 ? '…' : '');
             this.renderTabs();
         }
-
         // Add loading indicator
         const loadingId = this.addMessage('assistant', '...');
-
         // Send async with sessionId for per-chat isolation
         window.electronAPI.sendMessage(message, sessionId)
             .then(response => {
@@ -361,22 +309,17 @@ class MainPanel {
                 if (tab) { tab.isSending = false; this.renderTabs(); }
             });
     }
-
     addMessage(role, content, style) {
         const messagesContainer = document.getElementById('messages-container');
         const messageWrapper = document.createElement('div');
         messageWrapper.className = `message-wrapper ${role}`;
-
         const messageDiv = document.createElement('div');
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
         messageDiv.className = `message ${role}${style === 'terminal' ? ' terminal-output' : ''}`;
         const shouldFollow = !this._suspendMessageAutoscroll && this._shouldAutoScroll(role === 'user' || content === '...');
-
         this._renderMessageBody(messageDiv, role, content, style);
-
         messageWrapper.appendChild(messageDiv);
-
         // Add speak button outside bubble for assistant messages
         if (role === 'assistant' && content !== '...') {
             const speakIcon = document.createElement('button');
@@ -389,7 +332,6 @@ class MainPanel {
             });
             messageWrapper.appendChild(speakIcon);
         }
-
         messagesContainer.appendChild(messageWrapper);
         if (shouldFollow) {
             this._scrollMessagesToLatest(true);
@@ -398,28 +340,22 @@ class MainPanel {
         }
         return messageId;
     }
-
     _openLightbox(src) {
         // Remove existing lightbox
         const existing = document.getElementById('image-lightbox');
         if (existing) existing.remove();
-
         const overlay = document.createElement('div');
         overlay.id = 'image-lightbox';
         overlay.className = 'image-lightbox';
         overlay.addEventListener('click', () => overlay.remove());
-
         const image = document.createElement('img');
         image.src = src;
         image.alt = 'Enlarged image';
         image.addEventListener('click', (event) => event.stopPropagation());
-
         overlay.appendChild(image);
         document.body.appendChild(overlay);
     }
-
     // ==================== Command Autocomplete ====================
-
     showCommandAutocomplete(completions) {
         let dropdown = document.getElementById('cmd-autocomplete');
         if (!dropdown) {
@@ -430,25 +366,20 @@ class MainPanel {
             if (inputRow) inputRow.style.position = 'relative';
             inputRow?.appendChild(dropdown);
         }
-
         if (completions.length === 0) {
             this.hideCommandAutocomplete();
             return;
         }
-
         dropdown.innerHTML = '';
         completions.forEach(c => {
             const item = document.createElement('div');
             item.className = 'cmd-autocomplete-item';
-
             const nameSpan = document.createElement('span');
             nameSpan.className = 'cmd-name';
             nameSpan.textContent = c.name;
-
             const descSpan = document.createElement('span');
             descSpan.className = 'cmd-desc';
             descSpan.textContent = c.description;
-
             item.appendChild(nameSpan);
             item.appendChild(document.createTextNode(' '));
             item.appendChild(descSpan);
@@ -459,17 +390,14 @@ class MainPanel {
             });
             dropdown.appendChild(item);
         });
-
         dropdown.style.display = 'block';
         this._autocompleteVisible = true;
     }
-
     hideCommandAutocomplete() {
         const dropdown = document.getElementById('cmd-autocomplete');
         if (dropdown) dropdown.style.display = 'none';
         this._autocompleteVisible = false;
     }
-
     acceptFirstAutocomplete() {
         const dropdown = document.getElementById('cmd-autocomplete');
         if (dropdown) {
@@ -481,18 +409,15 @@ class MainPanel {
         }
         this.hideCommandAutocomplete();
     }
-
     addMessageWithAttachment(role, content, attachment) {
         const messagesContainer = document.getElementById('messages-container');
         const messageWrapper = document.createElement('div');
         messageWrapper.className = `message-wrapper ${role}`;
-
         const messageDiv = document.createElement('div');
         const messageId = `msg-${Date.now()}-${Math.random()}`;
         messageDiv.id = messageId;
         messageDiv.className = `message ${role}`;
         const shouldFollow = !this._suspendMessageAutoscroll && this._shouldAutoScroll(true);
-
         // For images, show inline preview
         if (attachment.type === 'image' && attachment.path) {
             const image = document.createElement('img');
@@ -501,10 +426,8 @@ class MainPanel {
             image.alt = attachment.name || 'Attached image';
             image.title = 'Click to enlarge';
             image.dataset.lightboxSrc = image.src;
-
             const text = document.createElement('span');
             text.textContent = content;
-
             messageDiv.appendChild(image);
             messageDiv.appendChild(document.createElement('br'));
             messageDiv.appendChild(text);
@@ -515,15 +438,12 @@ class MainPanel {
             icon.className = 'attachment-icon';
             icon.title = attachment.name || 'Attachment';
             icon.textContent = icons[attachment.type] || '📎';
-
             const text = document.createElement('span');
             text.textContent = content;
-
             messageDiv.appendChild(icon);
             messageDiv.appendChild(document.createTextNode(' '));
             messageDiv.appendChild(text);
         }
-
         messageWrapper.appendChild(messageDiv);
         messagesContainer.appendChild(messageWrapper);
         if (shouldFollow) {
@@ -533,7 +453,6 @@ class MainPanel {
         }
         return messageId;
     }
-
     removeMessage(messageId) {
         const messageDiv = document.getElementById(messageId);
         if (messageDiv) {
@@ -542,20 +461,16 @@ class MainPanel {
             (wrapper || messageDiv).remove();
         }
     }
-
     _renderMessageBody(messageDiv, role, content, style) {
         if (style === 'terminal') {
             messageDiv.classList.add('terminal-output');
         }
-
         if (role === 'assistant' && content === '...') {
             messageDiv.classList.add('loading');
             messageDiv.textContent = content;
             return;
         }
-
         messageDiv.classList.remove('loading');
-
         if (window.messageFormatter) {
             window.messageFormatter.renderInto(messageDiv, {
                 role,
@@ -565,100 +480,78 @@ class MainPanel {
             });
             return;
         }
-
         messageDiv.textContent = String(content || '');
     }
-
     _getMessagesContainer() {
         return document.getElementById('messages-container');
     }
-
     _isNearBottom(container) {
         if (!container) return true;
         const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
         return distance <= 48;
     }
-
     _shouldAutoScroll(force = false) {
         if (force) return true;
-
         const tab = this.activeTabId ? this.chatTabs.get(this.activeTabId) : null;
         if (tab && tab.followOutput === false) {
             return false;
         }
-
         return this._isNearBottom(this._getMessagesContainer());
     }
-
     _storeActiveTabScrollState() {
         if (!this.activeTabId || !this.chatTabs.has(this.activeTabId)) {
             return;
         }
-
         const container = this._getMessagesContainer();
         if (!container) {
             return;
         }
-
         const tab = this.chatTabs.get(this.activeTabId);
         tab.scrollTop = container.scrollTop;
         tab.followOutput = this._isNearBottom(container);
     }
-
     _scrollMessagesToLatest(force = false) {
         if (this._suspendMessageAutoscroll) {
             return;
         }
-
         const container = this._getMessagesContainer();
         if (!container) {
             return;
         }
-
         if (!force && !this._shouldAutoScroll(false)) {
             this._storeActiveTabScrollState();
             return;
         }
-
         container.scrollTop = container.scrollHeight;
         this._storeActiveTabScrollState();
     }
-
     _shouldIgnorePagingTarget(target) {
         if (!target) return false;
-
         const tagName = target.tagName ? target.tagName.toLowerCase() : '';
         return tagName === 'input'
             || tagName === 'textarea'
             || tagName === 'select'
             || target.isContentEditable === true;
     }
-
     _pageDownMessages() {
         const container = this._getMessagesContainer();
         if (!container) {
             return;
         }
-
         const increment = Math.max(container.clientHeight - 72, 120);
         container.scrollTop = Math.min(container.scrollTop + increment, container.scrollHeight);
-
         if (this._isNearBottom(container)) {
             container.scrollTop = container.scrollHeight;
         }
-
         this._storeActiveTabScrollState();
     }
-
     async updateContextUsage(response) {
         const contextDiv = document.getElementById('context-usage');
         if (!contextDiv) return;
-
         if (!response || !response.usage) {
             contextDiv.textContent = '';
             return;
         }
-
         const { prompt_tokens, total_tokens } = response.usage;
         // Use response context_length first, then saved setting, then default
         let contextLength = response.context_length;
@@ -670,16 +563,12 @@ class MainPanel {
                 contextLength = 8192;
             }
         }
-
         // Store for later use
         this.lastContextUsage = { prompt_tokens, total_tokens, contextLength };
-
         // Format to k notation
         const formatK = (num) => (num / 1000).toFixed(1) + 'k';
-
         contextDiv.textContent = `${formatK(total_tokens)}/${formatK(contextLength)}`;
         contextDiv.title = `Prompt: ${prompt_tokens} tokens, Total: ${total_tokens} tokens`;
-
         // Color code based on usage
         const percentage = (total_tokens / contextLength) * 100;
         if (percentage > 80) {
@@ -690,7 +579,6 @@ class MainPanel {
             contextDiv.style.color = '#28a745';
         }
     }
-
     async calculateContextUsage() {
         try {
             const conversations = await window.electronAPI.getConversations();
@@ -698,18 +586,15 @@ class MainPanel {
                 this.updateContextUsage(null);
                 return;
             }
-
             // Estimate tokens: ~1.37 tokens per word
             let totalTokens = 0;
             conversations.forEach(conv => {
                 const words = conv.content.split(/\s+/).length;
                 totalTokens += Math.ceil(words * 1.37);
             });
-
             // Get context window setting
             const contextWindow = await window.electronAPI.getSetting('context_window');
             const contextLength = contextWindow ? parseInt(contextWindow) : 8192;
-
             // Update display
             this.updateContextUsage({
                 usage: {
@@ -718,92 +603,78 @@ class MainPanel {
                 },
                 context_length: contextLength
             });
-
             console.log(`Context loaded: ${totalTokens}/${contextLength} tokens`);
         } catch (error) {
             console.error('Error calculating context:', error);
         }
     }
-
     showStoredContextUsage() {
         if (this.lastContextUsage) {
             this.updateContextUsage({ usage: this.lastContextUsage, context_length: this.lastContextUsage.contextLength });
         }
     }
-
     async clearCurrentChat() {
         return window.mainPanelTabs.clearCurrentChat(this);
     }
-
     async newChat() {
         return window.mainPanelTabs.newChat(this);
     }
-
     async openAgentChat(agentId, sessionId, agent) {
         return window.mainPanelTabs.openAgentChat(this, agentId, sessionId, agent);
     }
-
+    async ensureSubagentChat(eventPayload, options = {}) {
+        return window.mainPanelTabs.ensureSubagentChat(this, eventPayload, options);
+    }
+    async updateSubagentChatState(eventPayload) {
+        return window.mainPanelTabs.updateSubagentChatState(this, eventPayload);
+    }
     openNewWindow() {
         return window.mainPanelTabs.openNewWindow();
     }
-
     async restoreOpenTabs() {
         return window.mainPanelTabs.restoreOpenTabs(this);
     }
-
     async autoTitleTab(sessionId) {
         return window.mainPanelTabs.autoTitleTab(this, sessionId);
     }
-
     saveCurrentTabMessages() {
         return window.mainPanelTabs.saveCurrentTabMessages(this);
     }
-
     async switchTab(sessionId) {
         return window.mainPanelTabs.switchTab(this, sessionId);
     }
-
     async loadTabConversations(sessionId) {
         return window.mainPanelTabs.loadTabConversations(this, sessionId);
     }
-
     async closeTab(sessionId) {
         return window.mainPanelTabs.closeTab(this, sessionId);
     }
-
     renderTabs() {
         return window.mainPanelTabs.renderTabs(this);
     }
-
     async saveOpenTabIds() {
         return window.mainPanelTabs.saveOpenTabIds(this);
     }
-
     // Context preset mapping: slider index → token value
-    static CONTEXT_PRESETS = [2048, 4096, 8192, 16384, 32768, 65536, 98304, 131072, 163840, 196608, 262144];
-    static CONTEXT_LABELS = ['2K', '4K', '8K', '16K', '32K', '64K', '96K', '128K', '160K', '192K', '256K'];
-
+    static CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
+    static CONTEXT_LABELS = ['4K', '8K', '16K', '32K', '64K', '128K', '256K'];
     initContextSettings() {
         const contextSlider = document.getElementById('context-slider');
         const contextDisplay = document.getElementById('context-display');
-
         if (!contextSlider || !contextDisplay) {
             console.warn('Context slider elements not found');
             return;
         }
-
         console.log('✓ Context slider found, initializing...');
-
         // Set initial display
         this.updateContextDisplay(contextSlider.value);
-
         // Load saved setting and find matching preset index
         window.electronAPI.getSetting('context_window')
             .then(savedValue => {
                 if (savedValue) {
                     const numVal = parseInt(savedValue);
                     // Find closest preset index
-                    let bestIdx = 2; // default 8K
+                    let bestIdx = 1; // default 8K
                     let bestDiff = Infinity;
                     MainPanel.CONTEXT_PRESETS.forEach((preset, idx) => {
                         const diff = Math.abs(preset - numVal);
@@ -817,11 +688,9 @@ class MainPanel {
             .catch(error => {
                 console.error('✗ Error loading setting:', error);
             });
-
         // Initialize thinking mode settings
         this._initThinkingSettings();
     }
-
     async _initThinkingSettings() {
         try {
             const { mode, showThinking } = await window.electronAPI.llm.getThinkingMode();
@@ -830,29 +699,24 @@ class MainPanel {
             const thinkToggle = document.getElementById('thinking-toggle');
             const visGroup = document.getElementById('thinking-visibility-group');
             const visRadios = document.querySelectorAll('input[name="think-vis"]');
-
             // Determine initial visibility setting
             let savedVis;
             try {
                 savedVis = await window.electronAPI.getSettingValue('llm.thinkingVisibility');
             } catch (e) { }
             this._thinkingVisibility = savedVis || (showThinking ? 'show' : 'hide');
-
             // Set toggle state
             if (thinkToggle) {
                 thinkToggle.checked = mode === 'think';
             }
-
             // Show/hide visibility group based on toggle
             if (visGroup) {
                 visGroup.style.display = (mode === 'think') ? 'flex' : 'none';
             }
-
             // Set the right radio
             visRadios.forEach(r => {
                 r.checked = r.value === this._thinkingVisibility;
             });
-
             // Bind toggle
             if (thinkToggle) {
                 thinkToggle.addEventListener('change', async (e) => {
@@ -862,7 +726,6 @@ class MainPanel {
                     this.showNotification(`Thinking: ${e.target.checked ? 'ON' : 'OFF'}`);
                 });
             }
-
             // Bind radio pills
             visRadios.forEach(radio => {
                 radio.addEventListener('change', async (e) => {
@@ -877,7 +740,6 @@ class MainPanel {
             this._thinkingVisibility = 'show';
         }
     }
-
     async saveContextSize(index) {
         try {
             const value = MainPanel.CONTEXT_PRESETS[parseInt(index)] || 8192;
@@ -889,23 +751,18 @@ class MainPanel {
             this.showNotification(`Save failed: ${error.message}`, 'error');
         }
     }
-
     updateContextDisplay(index) {
         const idx = parseInt(index);
         const contextDisplay = document.getElementById('context-display');
         if (!contextDisplay) return;
-
         const tokens = MainPanel.CONTEXT_PRESETS[idx] || 8192;
         const label = MainPanel.CONTEXT_LABELS[idx] || '8K';
         contextDisplay.textContent = `${label} (${tokens.toLocaleString()} tokens)`;
     }
-
     async saveSystemPrompt() {
         const promptTextarea = document.getElementById('system-prompt');
         const prompt = promptTextarea.value.trim();
-
         if (!prompt) return;
-
         try {
             await window.electronAPI.setSystemPrompt(prompt);
             this.showNotification('System prompt saved successfully');
@@ -914,76 +771,74 @@ class MainPanel {
             this.showNotification('Error saving system prompt', 'error');
         }
     }
-
-
-
     async addProxyServer() {
         // Placeholder for proxy server addition
         // This would typically open a modal or form
         this.showNotification('Proxy server functionality coming soon', 'info');
     }
-
     setupEventListeners() {
         // Listen for conversation updates
         window.electronAPI.onConversationUpdate((event, data) => {
             // Don't reload on every update
         });
-
+        window.electronAPI.onBackgroundEvent(async (event, bgEvent) => {
+            if (!bgEvent || !bgEvent.type || !bgEvent.payload) return;
+            const type = bgEvent.type;
+            const payload = bgEvent.payload || {};
+            const mode = String(payload.subagentMode || payload.subagent_mode || 'no_ui').toLowerCase();
+            if (!type.startsWith('subagent:') || mode !== 'ui') return;
+            try {
+                if (type === 'subagent:queued' || type === 'subagent:started') {
+                    await this.ensureSubagentChat({ ...payload, __eventType: type }, { activate: false });
+                } else if (type === 'subagent:completed' || type === 'subagent:failed') {
+                    await this.updateSubagentChatState({ ...payload, __eventType: type });
+                }
+            } catch (error) {
+                console.error('Failed to process subagent background event:', error);
+            }
+        });
         // Listen for tool permission requests
         window.electronAPI.onToolPermissionRequest((event, request) => {
             this.showToolPermissionDialog(request);
         });
     }
-
     async initializeSession() {
         // Tab system handles initialization now via restoreOpenTabs()
         // This is kept for backward compatibility
     }
-
     async loadConversations() {
         if (this.activeTabId) {
             await this.loadTabConversations(this.activeTabId);
         }
     }
-
     // All rule-related methods have been moved to rule-manager.js
-
     showToolPermissionDialog(request) {
         return window.mainPanelPermissions.showToolPermissionDialog(this, request);
     }
-
     async approveToolCreation() {
         return window.mainPanelPermissions.approveToolCreation(this);
     }
-
     denyToolCreation() {
         return window.mainPanelPermissions.denyToolCreation(this);
     }
-
     async allowToolOnce(toolName) {
         return window.mainPanelPermissions.allowToolOnce(this, toolName);
     }
-
     async enableTool(toolName) {
         return window.mainPanelPermissions.enableTool(this, toolName);
     }
-
     denyToolPermission() {
         return window.mainPanelPermissions.denyToolPermission(this);
     }
-
     closePermissionDialog() {
         return window.mainPanelPermissions.closePermissionDialog(this);
     }
-
     showNotification(message, type = 'success') {
         return window.mainPanelPermissions.showNotification(message, type);
     }
 }
-
 document.addEventListener('DOMContentLoaded', async () => {
     window.mainPanel = new MainPanel();
-
     if (typeof window.initializeApiProviderSettings === 'function') {
         try {
             await window.initializeApiProviderSettings(window.mainPanel);
@@ -993,6 +848,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
         console.warn('API provider settings module not loaded');
     }
-
     await window.mainPanel.initializeSession();
 });

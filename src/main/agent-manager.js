@@ -362,7 +362,9 @@ Your parent may inspect this run folder later if clarification is needed. Keep y
 
         return `You are being invoked as a sub-agent by another agent.
 
-Complete only the requested task. Use available tools if needed. When finished, return a strict JSON object (no wrappers, no markdown) matching the completion contract below.
+Complete only the requested task. Use available tools if needed.
+When the completion tool "complete_subtask" is available, call it to finish the run.
+If tool call is unavailable, return a strict JSON object (no wrappers, no markdown) matching the completion contract below.
 
 Required completion contract:
 - status: "${contractType}" on success, or "task_failed" on failure
@@ -439,6 +441,16 @@ ${task}`;
         }
 
         return null;
+    }
+
+    _summarizePlainText(text) {
+        const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) {
+            return 'Task completed';
+        }
+        const firstSentence = normalized.split(/[.!?]/)[0].trim();
+        const summary = firstSentence || normalized;
+        return summary.length > 180 ? `${summary.slice(0, 177)}...` : summary;
     }
 
     _normalizeCompletionPayload(payload, contractType) {
@@ -534,9 +546,22 @@ ${task}`;
     }
 
     async _completeSubagentRun(runId, response, sessionId, contractType) {
-        const completionPayload = response?.completionResult
+        let completionPayload = response?.completionResult
             ? response.completionResult
             : this._extractJsonObject(response?.content || '');
+
+        if (!completionPayload && response?.content) {
+            // Fallback for models that skip completion tool/JSON despite a valid textual result.
+            completionPayload = {
+                status: contractType,
+                summary: this._summarizePlainText(response.content),
+                data: {
+                    output_text: String(response.content)
+                },
+                artifacts: [],
+                notes: 'Auto-wrapped from plain-text subagent response because completion contract payload was missing.'
+            };
+        }
 
         const normalized = this._normalizeCompletionPayload(completionPayload, contractType);
         const workspaceArtifacts = this._normalizeWorkspaceArtifacts(sessionId);
@@ -641,7 +666,8 @@ ${task}`;
             parentSessionId: run.parent_session_id,
             childSessionId: run.child_session_id,
             subagentId: run.subagent_id,
-            agentName: run.agent_name
+            agentName: run.agent_name,
+            subagentMode: run.subagent_mode || 'no_ui'
         });
 
         try {
@@ -696,6 +722,7 @@ ${task}`;
                 childSessionId: run.child_session_id,
                 subagentId: run.subagent_id,
                 agentName: run.agent_name,
+                subagentMode: run.subagent_mode || 'no_ui',
                 summary: contract.summary,
                 status: contract.status,
                 deliveryPath: delivery?.delivery_path || null
@@ -721,6 +748,7 @@ ${task}`;
                 childSessionId: run.child_session_id,
                 subagentId: run.subagent_id,
                 agentName: run.agent_name,
+                subagentMode: run.subagent_mode || 'no_ui',
                 error: error.message
             });
             return failedRun;
@@ -739,13 +767,16 @@ ${task}`;
 
         const contractType = options.contractType || 'task_complete';
         const expectedOutput = options.expectedOutput || '';
+        const subagentModeRaw = String(options.subagentMode || 'no_ui').trim().toLowerCase();
+        const subagentMode = subagentModeRaw === 'ui' ? 'ui' : 'no_ui';
         const run = this.subtaskRuntime.createRun({
             parentSessionId,
             subagentId: subAgentId,
             agentName: agent.name,
             task,
             contractType,
-            expectedOutput
+            expectedOutput,
+            subagentMode
         });
 
         await this._setSubagentActive(subAgentId, true);
@@ -754,7 +785,8 @@ ${task}`;
             parentSessionId,
             childSessionId: run.child_session_id,
             subagentId: subAgentId,
-            agentName: agent.name
+            agentName: agent.name,
+            subagentMode
         });
 
         const pending = this._executeDelegatedRun(run, agent, task, contractType, expectedOutput)
@@ -780,6 +812,8 @@ ${task}`;
             parent_session_id: parentSessionId,
             contractType,
             contract_type: contractType,
+            subagentMode,
+            subagent_mode: subagentMode,
             status: run.status,
             runDir: run.run_dir,
             run_dir: run.run_dir,

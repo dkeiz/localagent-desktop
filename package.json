@@ -24,6 +24,7 @@
     "test:testclient-mode": "node tools/test-testclient-mode.js",
     "test:searxng-smoke": "node tools/test-searxng-plugin-smoke.js",
     "test:searxng-e2e": "electron tools/test-searxng-e2e-electron.js",
+    "test:subagent-external": "node tests/external/subagent-dual-mode.external-test.js",
     "test:ollama-live": "node tools/test-ollama-live.js",
     "test:live": "node tests/run-suite.js live",
     "test:core": "node tests/run-suite.js core",

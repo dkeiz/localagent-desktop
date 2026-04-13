@@ -32,8 +32,7 @@ class ShortcutsManager {
 
     newChat() {
         // Ctrl+N clears the current chat in-place (same tab)
-        const btn = document.getElementById('new-session-btn');
-        if (btn) btn.click();
+        window.mainPanel?.clearCurrentChat?.();
     }
 
     focusInput() {
@@ -145,5 +144,4 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }, 1000);
 });
-
 
