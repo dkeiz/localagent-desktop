@@ -558,12 +558,55 @@ ${task}`;
     }
 
     async _completeSubagentRun(runId, response, sessionId, contractType) {
+        const rawContent = String(response?.content || '').trim();
+        const inferredStatus = response?.chainExhausted ? 'task_failed' : contractType;
         let completionPayload = response?.completionResult
             ? response.completionResult
-            : this._extractJsonObject(response?.content || '');
+            : this._extractJsonObject(rawContent);
 
         if (!completionPayload) {
-            throw new Error('Sub-agent completion payload missing; expected complete_subtask call or strict JSON result');
+            if (!rawContent) {
+                throw new Error('Sub-agent completion payload missing; expected complete_subtask call or strict JSON result');
+            }
+            completionPayload = {
+                status: inferredStatus,
+                summary: response?.chainExhausted
+                    ? 'Delegated run reached chain step limit without explicit completion payload.'
+                    : this._summarizePlainText(rawContent),
+                data: {
+                    output_text: rawContent
+                },
+                artifacts: [],
+                notes: response?.chainExhausted
+                    ? 'Auto-wrapped from plain-text response after chain exhaustion.'
+                    : 'Auto-wrapped from plain-text response because completion payload was missing.'
+            };
+        } else if (typeof completionPayload !== 'object' || Array.isArray(completionPayload)) {
+            completionPayload = {
+                status: inferredStatus,
+                summary: this._summarizePlainText(rawContent || String(completionPayload)),
+                data: {
+                    output_text: rawContent || String(completionPayload)
+                },
+                artifacts: [],
+                notes: 'Auto-wrapped non-object completion payload.'
+            };
+        } else {
+            if (!completionPayload.status) {
+                completionPayload.status = inferredStatus;
+            }
+            if (!completionPayload.summary) {
+                completionPayload.summary = this._summarizePlainText(rawContent || JSON.stringify(completionPayload.data || {}));
+            }
+            if (!completionPayload.data || typeof completionPayload.data !== 'object' || Array.isArray(completionPayload.data)) {
+                completionPayload.data = rawContent ? { output_text: rawContent } : {};
+            }
+            if (!Array.isArray(completionPayload.artifacts)) {
+                completionPayload.artifacts = [];
+            }
+            if (completionPayload.notes === undefined || completionPayload.notes === null) {
+                completionPayload.notes = '';
+            }
         }
 
         const normalized = this._normalizeCompletionPayload(completionPayload, contractType);
@@ -703,6 +746,7 @@ ${task}`;
                         includeTools: true,
                         includeRules: false,
                         completionTools: ['complete_subtask'],
+                        maxChainSteps: 24,
                         trace: traceHooks
                     }
                 )

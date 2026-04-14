@@ -16,6 +16,10 @@ class ToolChainController {
         this.stopped = false; // For aborting chains
         this.workflowManager = null; // Set via setWorkflowManager()
         this.autoCapture = false; // Toggle via setAutoCapture()
+        this.nonDedupeTools = new Set([
+            'subagent',
+            'run_subagent'
+        ]);
     }
 
     /**
@@ -82,6 +86,20 @@ class ToolChainController {
         }).replace(/\x00+/g, '').trim();
     }
 
+    _shouldSkipDuplicate(call) {
+        if (!call || !call.toolName) {
+            return false;
+        }
+        if (this.nonDedupeTools.has(call.toolName)) {
+            return false;
+        }
+
+        const dedupeKey = `${call.toolName}:${JSON.stringify(call.params)}`;
+        const alreadyExecuted = Array.from(this.executedToolCalls.values())
+            .some(prev => `${prev.toolName}:${JSON.stringify(prev.params)}` === dedupeKey);
+        return alreadyExecuted;
+    }
+
     /**
      * Execute a message with tool chaining support
      * @param {string} message - User message
@@ -102,7 +120,9 @@ class ToolChainController {
         let finalResponse = null;
         let lastLLMResponse = null; // Track last response for fallback
 
-        while (stepCount < this.maxChainSteps) {
+        const maxSteps = Math.max(1, Number(options.maxChainSteps) || this.maxChainSteps);
+
+        while (stepCount < maxSteps) {
             // Check if chain was stopped by user
             if (this.stopped) {
                 console.log('[Chain] Chain stopped by user');
@@ -159,10 +179,7 @@ class ToolChainController {
             for (const call of toolCalls) {
                 try {
                     // Check for duplicate tool call
-                    const dedupeKey = `${call.toolName}:${JSON.stringify(call.params)}`;
-                    const alreadyExecuted = Array.from(this.executedToolCalls.values())
-                        .some(prev => `${prev.toolName}:${JSON.stringify(prev.params)}` === dedupeKey);
-                    if (alreadyExecuted) {
+                    if (this._shouldSkipDuplicate(call)) {
                         console.log(`[Chain] Skipping duplicate tool call: ${call.toolName}`);
                         toolResults.push({
                             toolCallId: call.toolCallId,
@@ -313,7 +330,8 @@ Error: ${r.error}`;
             finalResponse = {
                 ...lastLLMResponse,
                 content: this.stripToolPatterns(lastLLMResponse.content) || 'I ran into an issue processing your request. Please try again.',
-                chainExhausted: true
+                chainExhausted: true,
+                maxChainSteps: maxSteps
             };
         }
 

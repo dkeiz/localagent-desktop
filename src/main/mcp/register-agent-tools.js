@@ -30,6 +30,7 @@ function normalizeSubagentAction(rawAction) {
   const value = String(rawAction || 'list').trim().toLowerCase();
   if (value === 'list' || value === 'ls' || value === 'show') return 'list';
   if (value === 'run' || value === 'start' || value === 'invoke') return 'run';
+  if (value === 'status' || value === 'get' || value === 'inspect') return 'status';
   if (value === 'new' || value === 'create' || value === 'add') return 'new';
   if (value === 'stop' || value === 'deactivate' || value === 'disable') return 'stop';
   throw new Error(`Unsupported subagent action "${value}"`);
@@ -123,8 +124,9 @@ function normalizeCompletionPayload(params) {
 
 async function listSubagents(server) {
   const agents = await server._agentManager.getAgents('sub');
+  const parentSessionId = server.getCurrentSessionId ? server.getCurrentSessionId() : null;
   const runs = typeof server._agentManager.listSubagentRuns === 'function'
-    ? await server._agentManager.listSubagentRuns({ limit: 10 })
+    ? await server._agentManager.listSubagentRuns({ limit: 10, parentSessionId })
     : [];
 
   return {
@@ -166,8 +168,7 @@ async function runSubagent(server, params) {
   }
 
   const agent = await resolveSubagent(server, params);
-  const execCtx = server.getCurrentExecutionContext ? server.getCurrentExecutionContext() : null;
-  const defaultMode = execCtx?.source === 'chat-llm' ? 'ui' : 'no_ui';
+  const defaultMode = 'ui';
   const subagentMode = normalizeSubagentMode(params.subagent_mode, defaultMode);
   const result = await server._agentManager.invokeSubAgent(
     server.getCurrentSessionId() || null,
@@ -184,6 +185,45 @@ async function runSubagent(server, params) {
     ...result,
     action: 'run',
     agent: formatSubagent(agent)
+  };
+}
+
+async function getSubagentStatus(server, params) {
+  const runId = String(params.run_id || '').trim();
+  if (!runId) {
+    throw new Error('subagent action="status" requires run_id');
+  }
+  if (!server._agentManager || typeof server._agentManager.getSubagentRun !== 'function') {
+    throw new Error('Subagent run status is unavailable (AgentManager.getSubagentRun missing)');
+  }
+
+  const run = await server._agentManager.getSubagentRun(runId);
+  if (!run) {
+    return {
+      success: false,
+      action: 'status',
+      run_id: runId,
+      status: 'not_found',
+      error: `Subagent run "${runId}" not found`
+    };
+  }
+
+  const normalized = formatSubagentRun(run);
+  const contract = run.result?.contract || null;
+  const terminalStatuses = new Set(['failed', 'task_failed', 'task_complete', 'completed']);
+  const runStatus = String(run.status || '').trim();
+  const contractStatus = String(contract?.status || '').trim();
+  const done = terminalStatuses.has(runStatus) || terminalStatuses.has(contractStatus);
+
+  return {
+    success: true,
+    action: 'status',
+    run_id: normalized.run_id,
+    status: runStatus || contractStatus || 'unknown',
+    done,
+    run: normalized,
+    result: run.result || null,
+    contract
   };
 }
 
@@ -218,6 +258,8 @@ async function handleSubagentOperation(server, rawParams = {}) {
   switch (params.action) {
     case 'list':
       return listSubagents(server);
+    case 'status':
+      return getSubagentStatus(server, params);
     case 'new':
       return createSubagent(server, params);
     case 'run':
@@ -232,8 +274,8 @@ async function handleSubagentOperation(server, rawParams = {}) {
 function registerAgentTools(server) {
   server.registerTool('subagent', {
     name: 'subagent',
-    description: 'Manage sub-agents through a single tool. Use action="list" to inspect available sub-agents, action="run" to delegate work, action="new" to create a sub-agent, or action="stop" to deactivate one.',
-    userDescription: 'List, create, run, or stop sub-agents',
+    description: 'Manage sub-agents through a single tool. Use action="list" to inspect sub-agents, action="run" to delegate, action="status" to poll a run, action="new" to create, or action="stop" to deactivate.',
+    userDescription: 'List, create, run, check status, or stop sub-agents',
     example: 'TOOL:subagent{"action":"run","id":5,"task":"Find 3 reliable sources about topic X"}',
     exampleOutput: '{"accepted":true,"run_id":"subtask-20260408-ab12cd","status":"queued","child_session_id":"subtask-20260408-ab12cd"}',
     inputSchema: {
@@ -241,7 +283,7 @@ function registerAgentTools(server) {
       properties: {
         action: {
           type: 'string',
-          description: 'Sub-agent action: list, run, new, or stop',
+          description: 'Sub-agent action: list, run, status, new, or stop',
           default: 'list'
         },
         id: { type: 'number', description: 'Sub-agent id. Prefer id over name; use action="list" first if needed.' },
@@ -259,12 +301,12 @@ function registerAgentTools(server) {
         },
         subagent_mode: {
           type: 'string',
-          description: 'Subagent mode: "ui" (open child chat tab animation) or "no_ui" (backend only). If omitted: chat-llm defaults to ui, backend defaults to no_ui.'
+          description: 'Subagent mode: "ui" (open child chat tab animation) or "no_ui" (backend only). If omitted, default is "ui".'
         },
         description: { type: 'string', description: 'Description for action="new"' },
         system_prompt: { type: 'string', description: 'System prompt for action="new"' },
         icon: { type: 'string', description: 'Optional icon for action="new"', default: '🤖' },
-        run_id: { type: 'string', description: 'Existing run id for future stop/status flows' }
+        run_id: { type: 'string', description: 'Existing run id for action="status" (and future stop/status flows)' }
       },
       required: []
     }
