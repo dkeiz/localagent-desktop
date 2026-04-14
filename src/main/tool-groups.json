@@ -62,7 +62,7 @@
             "tools": [
                 "conversation_history",
                 "search_conversations",
-                "run_subagent",
+                "subagent",
                 "get_system_prompt",
                 "list_active_rules",
                 "toggle_rule",

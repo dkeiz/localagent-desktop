@@ -258,6 +258,7 @@ class WorkflowManager {
 
         const chain = Array.isArray(toolChain) ? toolChain : [];
         const asyncHintTools = new Set([
+            'subagent',
             'run_subagent',
             'run_command',
             'run_python',

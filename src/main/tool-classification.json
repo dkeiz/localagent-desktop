@@ -16,7 +16,7 @@
       "get_system_prompt",
       "list_active_rules",
       "conversation_history",
-      "run_subagent",
+      "subagent",
       "search_conversations",
       "search_web_bing",
       "search_web_insta",

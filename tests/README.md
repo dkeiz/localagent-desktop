@@ -25,7 +25,7 @@ The goal is to catch seam breakage before large modules are split:
 - `npm run test:searxng-e2e`
   Windowless Electron end-to-end workflow for plugin runtime via real IPC (enable plugin -> run search tool -> verify results -> disable plugin).
 - `npm run test:subagent-external`
-  External-test windowless workflow for `run_subagent` dual-mode validation (`no_ui` + `ui`) with real IPC/event bus.
+  External-test windowless workflow for `subagent` dual-mode validation (`no_ui` + `ui`) with real IPC/event bus.
 - `npm run test:all`
   Core plus skin plus live.
 - `npm run verify`

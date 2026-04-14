@@ -861,7 +861,7 @@ class MainPanel {
             if (!type.startsWith('subagent:') || mode !== 'ui') return;
             try {
                 if (type === 'subagent:queued' || type === 'subagent:started') {
-                    await this.ensureSubagentChat({ ...payload, __eventType: type }, { activate: false });
+                    await this.ensureSubagentChat({ ...payload, __eventType: type }, { activate: true });
                 } else if (type === 'subagent:completed' || type === 'subagent:failed') {
                     await this.updateSubagentChatState({ ...payload, __eventType: type });
                 }

@@ -1,27 +1,85 @@
+const DEFAULT_SUBAGENT_SYSTEM_PROMPT = 'You are a delegated sub-agent. Complete only the assigned task, stay within scope, and return structured results when asked.';
+
+function formatSubagent(agent) {
+  return {
+    id: agent.id,
+    name: agent.name,
+    type: agent.type,
+    status: agent.status || 'idle',
+    icon: agent.icon || '',
+    description: agent.description || ''
+  };
+}
+
+function formatSubagentRun(run) {
+  return {
+    run_id: run.run_id || run.runId || run.id || null,
+    status: run.status || '',
+    subagent_id: run.subagent_id || run.subagentId || null,
+    agent_name: run.agent_name || run.agentName || '',
+    parent_session_id: run.parent_session_id || run.parentSessionId || null,
+    child_session_id: run.child_session_id || run.childSessionId || null,
+    summary: run.summary || run.result_summary || '',
+    error: run.error || '',
+    created_at: run.created_at || null,
+    completed_at: run.completed_at || null
+  };
+}
+
+function normalizeSubagentAction(rawAction) {
+  const value = String(rawAction || 'list').trim().toLowerCase();
+  if (value === 'list' || value === 'ls' || value === 'show') return 'list';
+  if (value === 'run' || value === 'start' || value === 'invoke') return 'run';
+  if (value === 'new' || value === 'create' || value === 'add') return 'new';
+  if (value === 'stop' || value === 'deactivate' || value === 'disable') return 'stop';
+  throw new Error(`Unsupported subagent action "${value}"`);
+}
+
+function normalizeSubagentParams(params = {}) {
+  return {
+    action: normalizeSubagentAction(params.action),
+    id: params.id ?? params.agent_id ?? null,
+    name: params.name ?? params.agent_name ?? '',
+    task: params.task ? String(params.task) : '',
+    contract_type: params.contract_type ? String(params.contract_type) : 'task_complete',
+    expected_output: params.expected_output ? String(params.expected_output) : '',
+    subagent_mode: params.subagent_mode ? String(params.subagent_mode) : '',
+    description: params.description ? String(params.description) : '',
+    system_prompt: params.system_prompt ? String(params.system_prompt) : '',
+    icon: params.icon ? String(params.icon) : '🤖',
+    run_id: params.run_id ? String(params.run_id) : ''
+  };
+}
+
 async function resolveSubagent(server, params) {
   if (!server._agentManager) {
     throw new Error('AgentManager not initialized');
   }
 
-  if (params.agent_id !== undefined && params.agent_id !== null) {
-    const agent = await server._agentManager.getAgent(params.agent_id);
+  if (params.id !== undefined && params.id !== null && params.id !== '') {
+    const agent = await server._agentManager.getAgent(params.id);
     if (!agent || agent.type !== 'sub') {
-      throw new Error(`Sub-agent ${params.agent_id} not found`);
+      throw new Error(`Sub-agent ${params.id} not found`);
     }
     return agent;
   }
 
-  if (params.agent_name) {
-    const targetName = String(params.agent_name).trim().toLowerCase();
+  if (params.name) {
+    const targetName = String(params.name).trim().toLowerCase();
     const agents = await server._agentManager.getAgents('sub');
     const match = agents.find(agent => agent.name.toLowerCase() === targetName);
     if (!match) {
-      throw new Error(`Sub-agent "${params.agent_name}" not found`);
+      throw new Error(`Sub-agent "${params.name}" not found`);
     }
     return match;
   }
 
-  throw new Error('Provide agent_id or agent_name');
+  const agents = await server._agentManager.getAgents('sub');
+  if (agents.length === 1) {
+    return agents[0];
+  }
+
+  throw new Error('Provide subagent id or name, or call subagent with action="list" first');
 }
 
 function normalizeSubagentMode(rawMode, fallback = 'no_ui') {
@@ -63,13 +121,162 @@ function normalizeCompletionPayload(params) {
   };
 }
 
+async function listSubagents(server) {
+  const agents = await server._agentManager.getAgents('sub');
+  const runs = typeof server._agentManager.listSubagentRuns === 'function'
+    ? await server._agentManager.listSubagentRuns({ limit: 10 })
+    : [];
+
+  return {
+    success: true,
+    action: 'list',
+    count: agents.length,
+    agents: agents.map(formatSubagent),
+    recent_runs: runs.map(formatSubagentRun),
+    note: agents.length
+      ? 'Prefer id when running a subagent.'
+      : 'No sub-agents are configured yet. Use action="new" to create one.'
+  };
+}
+
+async function createSubagent(server, params) {
+  const name = String(params.name || '').trim();
+  if (!name) {
+    throw new Error('subagent action="new" requires name');
+  }
+
+  const created = await server._agentManager.createAgent({
+    name,
+    type: 'sub',
+    icon: params.icon || '🤖',
+    description: params.description || 'Sub-agent created via MCP tool',
+    system_prompt: params.system_prompt || DEFAULT_SUBAGENT_SYSTEM_PROMPT
+  });
+
+  return {
+    success: true,
+    action: 'new',
+    agent: formatSubagent(created)
+  };
+}
+
+async function runSubagent(server, params) {
+  if (!String(params.task || '').trim()) {
+    throw new Error('subagent action="run" requires task');
+  }
+
+  const agent = await resolveSubagent(server, params);
+  const execCtx = server.getCurrentExecutionContext ? server.getCurrentExecutionContext() : null;
+  const defaultMode = execCtx?.source === 'chat-llm' ? 'ui' : 'no_ui';
+  const subagentMode = normalizeSubagentMode(params.subagent_mode, defaultMode);
+  const result = await server._agentManager.invokeSubAgent(
+    server.getCurrentSessionId() || null,
+    agent.id,
+    params.task,
+    {
+      contractType: params.contract_type || 'task_complete',
+      expectedOutput: params.expected_output || '',
+      subagentMode
+    }
+  );
+
+  return {
+    ...result,
+    action: 'run',
+    agent: formatSubagent(agent)
+  };
+}
+
+async function stopSubagent(server, params) {
+  if (params.run_id) {
+    return {
+      success: false,
+      action: 'stop',
+      run_id: params.run_id,
+      error: 'Scoped subagent run cancellation is not implemented yet'
+    };
+  }
+
+  const agent = await resolveSubagent(server, params);
+  await server._agentManager.deactivateAgent(agent.id);
+
+  return {
+    success: true,
+    action: 'stop',
+    agent: formatSubagent({ ...agent, status: 'idle' }),
+    note: 'Agent status set to idle. This does not guarantee cancellation of an in-flight delegated run.'
+  };
+}
+
+async function handleSubagentOperation(server, rawParams = {}) {
+  if (!server._agentManager) {
+    throw new Error('AgentManager not initialized');
+  }
+
+  const params = normalizeSubagentParams(rawParams);
+
+  switch (params.action) {
+    case 'list':
+      return listSubagents(server);
+    case 'new':
+      return createSubagent(server, params);
+    case 'run':
+      return runSubagent(server, params);
+    case 'stop':
+      return stopSubagent(server, params);
+    default:
+      throw new Error(`Unsupported subagent action "${params.action}"`);
+  }
+}
+
 function registerAgentTools(server) {
+  server.registerTool('subagent', {
+    name: 'subagent',
+    description: 'Manage sub-agents through a single tool. Use action="list" to inspect available sub-agents, action="run" to delegate work, action="new" to create a sub-agent, or action="stop" to deactivate one.',
+    userDescription: 'List, create, run, or stop sub-agents',
+    example: 'TOOL:subagent{"action":"run","id":5,"task":"Find 3 reliable sources about topic X"}',
+    exampleOutput: '{"accepted":true,"run_id":"subtask-20260408-ab12cd","status":"queued","child_session_id":"subtask-20260408-ab12cd"}',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          description: 'Sub-agent action: list, run, new, or stop',
+          default: 'list'
+        },
+        id: { type: 'number', description: 'Sub-agent id. Prefer id over name; use action="list" first if needed.' },
+        name: { type: 'string', description: 'Sub-agent name for run/new/stop actions' },
+        task: { type: 'string', description: 'Focused task for action="run"' },
+        contract_type: {
+          type: 'string',
+          description: 'Expected completion status for action="run"',
+          default: 'task_complete'
+        },
+        expected_output: {
+          type: 'string',
+          description: 'Optional shape guidance for action="run" result data',
+          default: ''
+        },
+        subagent_mode: {
+          type: 'string',
+          description: 'Subagent mode: "ui" (open child chat tab animation) or "no_ui" (backend only). If omitted: chat-llm defaults to ui, backend defaults to no_ui.'
+        },
+        description: { type: 'string', description: 'Description for action="new"' },
+        system_prompt: { type: 'string', description: 'System prompt for action="new"' },
+        icon: { type: 'string', description: 'Optional icon for action="new"', default: '🤖' },
+        run_id: { type: 'string', description: 'Existing run id for future stop/status flows' }
+      },
+      required: []
+    }
+  }, async (params) => handleSubagentOperation(server, params));
+
   server.registerTool('run_subagent', {
     name: 'run_subagent',
-    description: 'Delegate a focused task to a sub-agent and return immediate run metadata.',
-    userDescription: 'Run a task on a sub-agent',
-    example: 'TOOL:run_subagent{"agent_name":"Search Agent","task":"Find 3 reliable sources about topic X"}',
+    description: 'Compatibility alias for subagent action="run".',
+    userDescription: 'Compatibility alias for subagent action="run"',
+    example: 'TOOL:run_subagent{"agent_id":5,"task":"Find 3 reliable sources about topic X"}',
     exampleOutput: '{"accepted":true,"run_id":"subtask-20260408-ab12cd","status":"queued","child_session_id":"subtask-20260408-ab12cd"}',
+    internal: true,
     inputSchema: {
       type: 'object',
       properties: {
@@ -88,27 +295,20 @@ function registerAgentTools(server) {
         },
         subagent_mode: {
           type: 'string',
-          description: 'Subagent mode: "ui" (open child chat tab animation) or "no_ui" (backend only). If omitted: chat-llm defaults to ui, backend defaults to no_ui.'
+          description: 'Subagent mode: "ui" or "no_ui"'
         }
       },
       required: ['task']
     }
-  }, async (params) => {
-    const agent = await resolveSubagent(server, params);
-    const execCtx = server.getCurrentExecutionContext ? server.getCurrentExecutionContext() : null;
-    const defaultMode = execCtx?.source === 'chat-llm' ? 'ui' : 'no_ui';
-    const subagentMode = normalizeSubagentMode(params.subagent_mode, defaultMode);
-    return server._agentManager.invokeSubAgent(
-      server.getCurrentSessionId() || null,
-      agent.id,
-      params.task,
-      {
-        contractType: params.contract_type || 'task_complete',
-        expectedOutput: params.expected_output || '',
-        subagentMode
-      }
-    );
-  });
+  }, async (params) => handleSubagentOperation(server, {
+    action: 'run',
+    id: params.agent_id,
+    name: params.agent_name,
+    task: params.task,
+    contract_type: params.contract_type,
+    expected_output: params.expected_output,
+    subagent_mode: params.subagent_mode
+  }));
 
   server.registerTool('complete_subtask', {
     name: 'complete_subtask',

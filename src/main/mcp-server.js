@@ -102,6 +102,23 @@ class MCPServer extends EventEmitter {
     this.tools.set(name, { definition, handler });
   }
 
+  getToolsByNames(toolNames = [], { includeInternal = false } = {}) {
+    const output = [];
+    const seen = new Set();
+
+    for (const toolName of toolNames) {
+      const key = String(toolName || '').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const tool = this.tools.get(key);
+      if (!tool?.definition) continue;
+      if (tool.definition.internal === true && !includeInternal) continue;
+      output.push(tool.definition);
+    }
+
+    return output;
+  }
+
   async withExecutionContext(context, fn) {
     this._executionContextStack.push(context || {});
     try {
@@ -120,7 +137,9 @@ class MCPServer extends EventEmitter {
       throw new Error(`Tool not found: ${toolName}`);
     }
 
-    if (!bypassPermissions && this.capabilityManager && !this.capabilityManager.isToolActive(toolName)) {
+    const isInternalTool = tool.definition?.internal === true;
+
+    if (!bypassPermissions && !isInternalTool && this.capabilityManager && !this.capabilityManager.isToolActive(toolName)) {
       const permissionRequest = {
         needsPermission: true,
         toolName,
@@ -132,7 +151,7 @@ class MCPServer extends EventEmitter {
       return permissionRequest;
     }
 
-    const isActive = bypassPermissions ? true : await this.getToolActiveState(toolName);
+    const isActive = (bypassPermissions || isInternalTool) ? true : await this.getToolActiveState(toolName);
     if (!isActive) {
       const permissionRequest = {
         needsPermission: true,
@@ -174,6 +193,7 @@ class MCPServer extends EventEmitter {
         toolName,
         timestamp: new Date().toISOString(),
         success: true,
+        params,
         result
       };
 
@@ -185,6 +205,7 @@ class MCPServer extends EventEmitter {
         toolName,
         timestamp: new Date().toISOString(),
         success: false,
+        params,
         error: error.message
       };
       this.emit('tool-executed', errorResult);

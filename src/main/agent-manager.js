@@ -545,22 +545,25 @@ ${task}`;
         return Array.from(merged.values());
     }
 
+    async _persistSubagentConversation(sessionId, role, content, metadata = null) {
+        if (!this.db || typeof this.db.addConversation !== 'function' || !sessionId || !content) {
+            return;
+        }
+
+        try {
+            await this.db.addConversation({ role, content, metadata }, sessionId);
+        } catch (error) {
+            console.error('[AgentManager] Failed to persist subagent conversation:', error.message);
+        }
+    }
+
     async _completeSubagentRun(runId, response, sessionId, contractType) {
         let completionPayload = response?.completionResult
             ? response.completionResult
             : this._extractJsonObject(response?.content || '');
 
-        if (!completionPayload && response?.content) {
-            // Fallback for models that skip completion tool/JSON despite a valid textual result.
-            completionPayload = {
-                status: contractType,
-                summary: this._summarizePlainText(response.content),
-                data: {
-                    output_text: String(response.content)
-                },
-                artifacts: [],
-                notes: 'Auto-wrapped from plain-text subagent response because completion contract payload was missing.'
-            };
+        if (!completionPayload) {
+            throw new Error('Sub-agent completion payload missing; expected complete_subtask call or strict JSON result');
         }
 
         const normalized = this._normalizeCompletionPayload(completionPayload, contractType);
@@ -585,12 +588,16 @@ ${task}`;
             return null;
         }
 
+        const run = this.subtaskRuntime.getRun(runId);
+        const sessionId = run?.child_session_id || null;
+
         return {
             onAssistantMessage: async ({ content }) => {
                 this.subtaskRuntime.appendMessage(runId, {
                     role: 'assistant',
                     content
                 });
+                await this._persistSubagentConversation(sessionId, 'assistant', content);
             },
             onToolResult: async ({ toolName, params, success, result, error }) => {
                 this.subtaskRuntime.appendToolEvent(runId, {
@@ -599,6 +606,14 @@ ${task}`;
                     success,
                     result,
                     error
+                });
+                const label = success
+                    ? `Tool ${toolName} succeeded:\n${JSON.stringify(result, null, 2)}`
+                    : `Tool ${toolName} failed: ${error || 'Unknown error'}`;
+                await this._persistSubagentConversation(sessionId, 'system', label, {
+                    tool_name: toolName,
+                    params,
+                    success
                 });
             }
         };
@@ -658,6 +673,12 @@ ${task}`;
         this.subtaskRuntime.appendMessage(run.run_id, {
             role: 'user',
             content: taskPrompt
+        });
+        await this._persistSubagentConversation(run.child_session_id, 'user', taskPrompt, {
+            delegated: true,
+            parent_session_id: run.parent_session_id,
+            run_id: run.run_id,
+            subagent_id: run.subagent_id
         });
 
         this.subtaskRuntime.markRunning(run.run_id);

@@ -129,6 +129,9 @@ class ToolChainController {
             if (options.preemptible !== undefined) {
                 dispatchOptions.preemptible = options.preemptible;
             }
+            if (completionTools.size > 0) {
+                dispatchOptions.completionTools = Array.from(completionTools);
+            }
 
             const response = await this.dispatcher.dispatch(currentMessage, workingHistory, dispatchOptions);
             lastLLMResponse = response;

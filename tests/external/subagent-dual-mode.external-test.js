@@ -136,9 +136,10 @@ async function run() {
 
     for (const mode of ['no_ui', 'ui']) {
       const invokeResult = await invokeIpc('execute-mcp-tool', [
-        'run_subagent',
+        'subagent',
         {
-          agent_id: agent.id,
+          action: 'run',
+          id: agent.id,
           task: 'Return task complete with summary ping ok and include mode echo in output.',
           contract_type: 'task_complete',
           subagent_mode: mode
@@ -147,10 +148,10 @@ async function run() {
 
       assert.ok(invokeResult && invokeResult.success === true, `execute-mcp-tool failed for mode=${mode}`);
       const toolPayload = invokeResult.result || {};
-      assert.ok(toolPayload && toolPayload.success === true, `run_subagent tool returned failure for mode=${mode}`);
+      assert.ok(toolPayload && toolPayload.success === true, `subagent tool returned failure for mode=${mode}`);
       const runMeta = toolPayload.result || {};
       const runId = String(runMeta.run_id || runMeta.runId || '');
-      assert.ok(runId, `run_subagent returned empty run id for mode=${mode}: ${JSON.stringify(runMeta)}`);
+      assert.ok(runId, `subagent returned empty run id for mode=${mode}: ${JSON.stringify(runMeta)}`);
 
       const { terminal, events } = await waitForSubagentTerminal(runId, deadline);
       const types = events.map((event) => event.type);
@@ -160,7 +161,7 @@ async function run() {
       assert.equal(String(terminal.payload?.subagentMode || ''), mode, `Mode mismatch for ${runId}`);
     }
 
-    console.log('[external-test:subagent] PASS dual-mode run_subagent flow');
+    console.log('[external-test:subagent] PASS dual-mode subagent flow');
   } catch (error) {
     console.error('[external-test:subagent] FAIL:', error.message);
     if (capturedOut.trim()) {

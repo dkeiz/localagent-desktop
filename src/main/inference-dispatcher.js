@@ -90,7 +90,14 @@ class InferenceDispatcher {
 
         // Build system prompt (with optional agent override)
         const agentId = options.agentId || null;
-        const systemPrompt = await this._buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId: options.sessionId, agentId });
+        const systemPrompt = await this._buildSystemPrompt({
+            includeTools,
+            includeRules,
+            includeEnv,
+            sessionId: options.sessionId,
+            agentId,
+            completionTools: options.completionTools || []
+        });
 
         // Assemble messages array
         const messages = [
@@ -155,7 +162,7 @@ class InferenceDispatcher {
 
     // ------- system prompt construction -------
 
-    async _buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId, agentId }) {
+    async _buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId, agentId, completionTools = [] }) {
         let prompt;
 
         // If dispatching for a specific agent, use agent's system prompt
@@ -232,23 +239,33 @@ Each knowledge file is max 200 lines. Use existing file tools to read and search
 
         // Tool documentation
         if (includeTools && this.mcpServer) {
-            prompt += this._buildToolContext();
+            prompt += await this._buildToolContext(completionTools);
         }
 
         return prompt;
     }
 
-    _buildToolContext() {
+    async _buildToolContext(completionToolNames = []) {
         const activeTools = this.mcpServer.getActiveTools
             ? this.mcpServer.getActiveTools()
             : [];
-        const tools = activeTools.length > 0
+        const visibleTools = activeTools.length > 0
             ? activeTools
             : this.mcpServer.getTools();
+        const completionTools = this.mcpServer.getToolsByNames
+            ? this.mcpServer.getToolsByNames(completionToolNames, { includeInternal: true })
+            : [];
+        const tools = [...visibleTools];
+
+        for (const tool of completionTools) {
+            if (!tools.some(existing => existing.name === tool.name)) {
+                tools.push(tool);
+            }
+        }
 
         let ctx = `\n\n<mcp_tools>\nAvailable Tools (from active groups):\n\n`;
 
-        tools.forEach(tool => {
+        for (const tool of tools) {
             const isActive = this.mcpServer.toolStates.get(tool.name) !== false;
             const status = isActive ? '✅ Available' : '⚠️ Disabled (permission required)';
 
@@ -272,8 +289,21 @@ Each knowledge file is max 200 lines. Use existing file tools to read and search
                 ctx += `Example: ${tool.example}\n`;
             }
 
+            if (tool.name === 'subagent') {
+                const subagents = this.agentManager ? await this.agentManager.getAgents('sub') : [];
+                if (subagents.length > 0) {
+                    ctx += `Live Sub-agents:\n`;
+                    subagents.forEach(agent => {
+                        ctx += `  - id=${agent.id}, name="${agent.name}", status=${agent.status || 'idle'}\n`;
+                    });
+                } else {
+                    ctx += `Live Sub-agents: none configured right now\n`;
+                }
+                ctx += `Use action="list" if you need the current ids. Prefer id over name for action="run".\n`;
+            }
+
             ctx += `\n`;
-        });
+        }
 
         ctx += `\n## How to Use Tools\n`;
         ctx += `Format: TOOL:tool_name{"param":"value"}\n`;
