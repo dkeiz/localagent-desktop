@@ -36,6 +36,14 @@ class LMStudioAdapter extends BaseAdapter {
             stream: false
         };
 
+        const requestOverrides = options.runtimeConfig?.requestOverrides;
+        if (requestOverrides && typeof requestOverrides === 'object' && !Array.isArray(requestOverrides)) {
+            Object.entries(requestOverrides).forEach(([key, value]) => {
+                if (key === 'model' || key === 'messages' || key === 'stream') return;
+                requestBody[key] = value;
+            });
+        }
+
         try {
             const response = await axios.post(`${url}/v1/chat/completions`, requestBody, {
                 signal,
@@ -47,7 +55,8 @@ class LMStudioAdapter extends BaseAdapter {
             return this._normalizeResponse({
                 content: response.data.choices[0].message.content,
                 model: response.data.model,
-                usage: response.data.usage
+                usage: response.data.usage,
+                context_length: options.runtimeConfig?.contextWindow?.value || options.modelSpec?.runtime?.contextWindow?.value
             });
         } catch (error) {
             this._endRequest();

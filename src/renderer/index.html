@@ -372,7 +372,12 @@
                         <select id="llm-provider-select"></select>
 
                         <label for="llm-model-select">Model</label>
-                        <select id="llm-model-select"></select>
+                        <div class="api-inline-action-row api-model-row">
+                            <select id="llm-model-select"></select>
+                            <button id="refresh-provider-models-btn" type="button" class="secondary-btn">Discover
+                                Models</button>
+                        </div>
+                        <div id="provider-discovery-status" class="config-help api-status-text"></div>
 
                         <!-- Custom model input (shown for Ollama) -->
                         <div id="custom-model-section" class="api-subsection" style="display: none;">
@@ -388,8 +393,8 @@
                         <!-- Dynamic provider-specific settings (API keys, etc.) -->
                         <div id="provider-settings-container"></div>
 
-                        <div class="api-subsection context-window-section">
-                            <div class="slider-control context-window-control">
+                        <div id="context-window-section" class="api-subsection context-window-section" style="display: none;">
+                            <div id="context-window-configurable" class="slider-control context-window-control">
                                 <div class="slider-labels">
                                     <label for="context-slider" id="context-display-label">Context Size</label>
                                     <span id="context-display">8K (8192 tokens)</span>
@@ -410,6 +415,7 @@
                                     <span>256k</span>
                                 </div>
                             </div>
+                            <div id="context-window-readonly" class="api-context-readonly" style="display: none;"></div>
                         </div>
                     </div>
 

@@ -9,6 +9,15 @@
   border-top: 1px solid color-mix(in srgb, var(--border-color), transparent 35%);
 }
 
+#api-tab .api-context-readonly {
+  padding: var(--space-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--card-bg), var(--bg-secondary) 18%);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
 #api-tab .context-window-control {
   width: 100%;
 }
@@ -119,10 +128,28 @@
 #api-tab #provider-settings-container,
 #api-tab #llm-model-config-container,
 #api-tab .api-model-settings,
-#api-tab .api-subsection {
+#api-tab .api-subsection,
+#api-tab .api-provider-settings-block {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+#api-tab .api-provider-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--card-bg), var(--bg-secondary) 18%);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+#api-tab .api-provider-notes p {
+  margin: 0;
 }
 
 #api-tab .config-field {
@@ -140,6 +167,10 @@
 }
 
 #api-tab .api-inline-action-row input {
+  flex: 1 1 320px;
+}
+
+#api-tab .api-model-row select {
   flex: 1 1 320px;
 }
 
@@ -207,6 +238,19 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+#api-tab .api-field textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+#api-tab .api-field textarea[data-invalid="true"] {
+  border-color: #dc3545;
+}
+
+#api-tab .api-field-wide {
+  grid-column: 1 / -1;
 }
 
 #api-tab .api-pill-picker {

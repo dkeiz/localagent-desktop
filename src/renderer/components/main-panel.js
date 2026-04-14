@@ -592,9 +592,8 @@ class MainPanel {
                 const words = conv.content.split(/\s+/).length;
                 totalTokens += Math.ceil(words * 1.37);
             });
-            // Get context window setting
-            const contextWindow = await window.electronAPI.getSetting('context_window');
-            const contextLength = contextWindow ? parseInt(contextWindow) : 8192;
+            const contextLength = parseInt(await window.electronAPI.getSetting('context_window'), 10)
+                || 8192;
             // Update display
             this.updateContextUsage({
                 usage: {
@@ -658,6 +657,81 @@ class MainPanel {
     // Context preset mapping: slider index → token value
     static CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 49152, 65536, 98304, 131072, 196608, 262144];
     static CONTEXT_LABELS = ['4K', '8K', '16K', '32K', '48K', '64K', '96K', '128K', '192K', '256K'];
+    static getContextPresetIndex(value) {
+        const target = parseInt(value, 10);
+        if (!Number.isFinite(target) || target <= 0) return 1;
+        return MainPanel.CONTEXT_PRESETS.reduce((bestIndex, preset, index) => {
+            const bestValue = MainPanel.CONTEXT_PRESETS[bestIndex];
+            return Math.abs(preset - target) < Math.abs(bestValue - target) ? index : bestIndex;
+        }, 1);
+    }
+    static formatContextValue(tokens) {
+        const value = parseInt(tokens, 10);
+        if (!Number.isFinite(value) || value <= 0) return 'Unknown';
+        if (value >= 1000) {
+            const compact = value % 1000 === 0 ? (value / 1000).toFixed(0) : (value / 1000).toFixed(1);
+            return `${compact}K`;
+        }
+        return `${value}`;
+    }
+    async loadSelectedContextSetting() {
+        try {
+            const savedValue = await window.electronAPI.getSetting('context_window');
+            const parsedValue = parseInt(savedValue, 10);
+            this._selectedContextSetting = Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 8192;
+        } catch (error) {
+            this._selectedContextSetting = 8192;
+        }
+        return this._selectedContextSetting;
+    }
+    applyContextProfile(profile) {
+        const section = document.getElementById('context-window-section');
+        const configurableControl = document.getElementById('context-window-configurable');
+        const readonlyControl = document.getElementById('context-window-readonly');
+        const contextSlider = document.getElementById('context-slider');
+        if (!section || !configurableControl || !readonlyControl || !contextSlider) {
+            return;
+        }
+
+        if (!profile?.spec?.model) {
+            this._apiContextProfile = null;
+            section.style.display = 'none';
+            configurableControl.style.display = 'none';
+            readonlyControl.style.display = 'none';
+            return;
+        }
+
+        this._apiContextProfile = profile;
+        const contextCaps = profile.spec.capabilities?.contextWindow || {};
+        const contextValue = contextCaps.configurable
+            ? (this._selectedContextSetting || MainPanel.CONTEXT_PRESETS[parseInt(contextSlider.value, 10)] || 8192)
+            : (profile.runtimeConfig?.contextWindow?.value
+                || profile.spec.runtime?.contextWindow?.value)
+            || 8192;
+
+        if (!contextCaps.supported && !contextCaps.configurable) {
+            section.style.display = 'none';
+            configurableControl.style.display = 'none';
+            readonlyControl.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+
+        if (contextCaps.configurable) {
+            const bestIndex = MainPanel.getContextPresetIndex(contextValue);
+            configurableControl.style.display = 'block';
+            readonlyControl.style.display = 'none';
+            contextSlider.disabled = false;
+            contextSlider.value = bestIndex;
+            this.updateContextDisplay(bestIndex);
+            return;
+        }
+
+        configurableControl.style.display = 'none';
+        readonlyControl.style.display = 'block';
+        readonlyControl.textContent = `Context Window: ${MainPanel.formatContextValue(contextValue)} (${Number(contextValue).toLocaleString()} tokens)`;
+    }
     initContextSettings() {
         const contextSlider = document.getElementById('context-slider');
         const contextDisplay = document.getElementById('context-display');
@@ -666,29 +740,24 @@ class MainPanel {
             return;
         }
         console.log('✓ Context slider found, initializing...');
-        // Set initial display
-        this.updateContextDisplay(contextSlider.value);
-        // Load saved setting and find matching preset index
-        window.electronAPI.getSetting('context_window')
-            .then(savedValue => {
-                if (savedValue) {
-                    const numVal = parseInt(savedValue);
-                    // Find closest preset index
-                    let bestIdx = 1; // default 8K
-                    let bestDiff = Infinity;
-                    MainPanel.CONTEXT_PRESETS.forEach((preset, idx) => {
-                        const diff = Math.abs(preset - numVal);
-                        if (diff < bestDiff) { bestDiff = diff; bestIdx = idx; }
+        this.loadSelectedContextSetting()
+            .then(contextValue => {
+                const bestIdx = MainPanel.getContextPresetIndex(contextValue);
+                contextSlider.value = bestIdx;
+                this.updateContextDisplay(bestIdx);
+                return window.electronAPI.llm.getConfig();
+            })
+            .then(config => {
+                if (config?.modelSpec && config?.runtimeConfig) {
+                    this.applyContextProfile({
+                        spec: config.modelSpec,
+                        runtimeConfig: config.runtimeConfig
                     });
-                    console.log(`✓ Loaded saved value: ${savedValue} → index ${bestIdx}`);
-                    contextSlider.value = bestIdx;
-                    this.updateContextDisplay(bestIdx);
                 }
             })
             .catch(error => {
-                console.error('✗ Error loading setting:', error);
+                console.error('✗ Error loading context setting:', error);
             });
-        // Initialize thinking mode settings
         this._initThinkingSettings();
     }
     async _initThinkingSettings() {
@@ -743,8 +812,11 @@ class MainPanel {
     async saveContextSize(index) {
         try {
             const value = MainPanel.CONTEXT_PRESETS[parseInt(index)] || 8192;
-            console.log('Saving context:', value);
             await window.electronAPI.setContextSetting(value);
+            this._selectedContextSetting = value;
+            if (this._apiContextProfile) {
+                this.applyContextProfile(this._apiContextProfile);
+            }
             this.showNotification(`Context: ${MainPanel.CONTEXT_LABELS[parseInt(index)] || '8K'}`);
         } catch (error) {
             console.error('Save error:', error);

@@ -1,6 +1,7 @@
 const OllamaAdapter = require('./providers/ollama-adapter');
 const LMStudioAdapter = require('./providers/lmstudio-adapter');
 const OpenRouterAdapter = require('./providers/openrouter-adapter');
+const OpenAICompatibleAdapter = require('./providers/openai-compatible-adapter');
 const QwenAdapter = require('./providers/qwen-adapter');
 const { getEffectiveLlmSelection } = require('./llm-state');
 
@@ -25,7 +26,46 @@ class AIService {
       ollama: new OllamaAdapter(db),
       lmstudio: new LMStudioAdapter(db),
       openrouter: new OpenRouterAdapter(db),
-      qwen: new QwenAdapter(db)
+      qwen: new QwenAdapter(db),
+      openai: new OpenAICompatibleAdapter('openai', db, {
+        label: 'OpenAI',
+        defaultBaseURL: 'https://api.openai.com/v1',
+        apiPrefix: '/v1'
+      }),
+      groq: new OpenAICompatibleAdapter('groq', db, {
+        label: 'Groq',
+        defaultBaseURL: 'https://api.groq.com/openai/v1',
+        apiPrefix: '/v1'
+      }),
+      deepseek: new OpenAICompatibleAdapter('deepseek', db, {
+        label: 'DeepSeek',
+        defaultBaseURL: 'https://api.deepseek.com/v1',
+        apiPrefix: '/v1'
+      }),
+      mistral: new OpenAICompatibleAdapter('mistral', db, {
+        label: 'Mistral',
+        defaultBaseURL: 'https://api.mistral.ai/v1',
+        apiPrefix: '/v1'
+      }),
+      anthropic: new OpenAICompatibleAdapter('anthropic', db, {
+        label: 'Anthropic',
+        defaultBaseURL: 'https://api.anthropic.com/v1',
+        apiPrefix: '/v1',
+        defaultHeaders: {
+          'anthropic-version': '2023-06-01'
+        }
+      }),
+      byok: new OpenAICompatibleAdapter('byok', db, {
+        label: 'BYOK',
+        apiPrefix: '/v1',
+        apiKeyOptional: true
+      }),
+      'local-openai': new OpenAICompatibleAdapter('local-openai', db, {
+        label: 'Local Server',
+        defaultBaseURL: 'http://127.0.0.1:8000/v1',
+        apiPrefix: '/v1',
+        apiKeyOptional: true
+      })
     };
   }
 

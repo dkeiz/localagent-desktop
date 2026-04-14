@@ -10,6 +10,11 @@ class MockDB {
     return this.settings.get(key) || null;
   }
 
+  async saveSetting(key, value) {
+    this.settings.set(key, String(value));
+    return { key, value };
+  }
+
   async getActivePromptRules() {
     return [{ content: 'Always be concise.' }];
   }
@@ -111,10 +116,42 @@ async function testPreemptionSignal() {
   assert(ai.stopCalls >= 1, 'Expected stopGeneration to be called for preemption');
 }
 
+async function testUiContextOverridesSavedRuntimeContext() {
+  const db = new MockDB();
+  const model = 'kimi-k2.5:cloud';
+  db.settings.set('llm.model', model);
+  db.settings.set('context_window', '65536');
+  db.settings.set('llm.modelOverrides', JSON.stringify({
+    'ollama::kimi-k2.5:cloud': {
+      contextWindow: { value: 8192 }
+    }
+  }));
+
+  const ai = new MockAIService();
+  const dispatcher = new InferenceDispatcher(ai, db, makeMcpServer());
+
+  await dispatcher.dispatch('hello', [], { mode: 'chat', model });
+
+  assert.strictEqual(ai.calls.length, 1);
+  assert.strictEqual(
+    ai.calls[0].options.runtimeConfig.contextWindow.value,
+    65536,
+    'Expected dispatcher to use the UI-selected context instead of saved 8k runtime context'
+  );
+
+  const savedOverrides = JSON.parse(db.settings.get('llm.modelOverrides'));
+  assert.strictEqual(
+    savedOverrides['ollama::kimi-k2.5:cloud'].contextWindow.value,
+    65536,
+    'Expected successful request context to be remembered for the active provider/model'
+  );
+}
+
 async function main() {
   await testMessageAssemblyAndInjection();
   await testSerializationLock();
   await testPreemptionSignal();
+  await testUiContextOverridesSavedRuntimeContext();
   console.log('[test-dispatcher-mocked] PASS');
 }
 

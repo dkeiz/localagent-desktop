@@ -29,6 +29,7 @@ module.exports = {
 
     assert.includes(html, 'id="llm-config-save-button" class="primary-btn"', 'Expected API save button to use shared button styling');
     assert.includes(html, 'id="test-custom-model-btn" type="button" class="secondary-btn"', 'Expected custom model test button to use shared button styling');
+    assert.includes(html, 'id="refresh-provider-models-btn" type="button" class="secondary-btn"', 'Expected model discovery button to use shared button styling');
     assert.equal(html.includes('Context Window Size'), false, 'Expected standalone context section heading to be removed');
     assert.equal(
       html.includes('Context length determines how much of your conversation local LLMs can remember and use to generate responses.'),
@@ -39,6 +40,7 @@ module.exports = {
       html.indexOf('<h3>Connection</h3>') < html.indexOf('id="context-slider"'),
       'Expected context slider to live inside the Connection card'
     );
+    assert.includes(html, 'id="context-window-readonly"', 'Expected read-only context state container for provider-managed context windows');
 
     const sliderMaxMatch = html.match(/id="context-slider"[^>]*max="(\d+)"/);
     assert.ok(sliderMaxMatch, 'Expected API context slider max attribute to exist');
@@ -60,6 +62,7 @@ module.exports = {
     assert.includes(apiStyles, 'width: calc(100% - 18px);', 'Expected context labels to use thumb-aware width');
     assert.includes(apiStyles, 'span:nth-child(9) { left: 88.8889%; }', 'Expected context labels to map to fixed slider stop positions');
     assert.includes(apiProviderSource, 'class="api-pill-picker"', 'Expected thinking visibility to use compact pill picker UI');
+    assert.includes(apiProviderSource, 'Request overrides (JSON)', 'Expected request override editor for compatible providers');
     assert.equal(apiProviderSource.includes('Remember text streaming preference'), false, 'Expected text streaming remember checkbox to be removed');
     assert.equal(apiProviderSource.includes('Remember thinking streaming preference'), false, 'Expected thinking streaming remember checkbox to be removed');
     assert.deepEqual(

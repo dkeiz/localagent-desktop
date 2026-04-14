@@ -15,10 +15,8 @@ class OllamaAdapter extends BaseAdapter {
 
     async call(messages, options = {}) {
         const signal = this._startRequest();
-
-        // Read context window setting
-        const userContextWindow = await this.db.getSetting('context_window');
-        const contextLength = userContextWindow ? parseInt(userContextWindow) : 8192;
+        const runtimeConfig = options.runtimeConfig || {};
+        const contextLength = runtimeConfig.contextWindow?.value || options.modelSpec?.runtime?.contextWindow?.value || 8192;
 
         // Apply thinking mode if set
         const processedMessages = this._applyThinkingMode(

@@ -37,6 +37,11 @@ function normalizeId(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function parsePositiveInteger(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function toPatternRegex(pattern) {
   const escaped = String(pattern || '')
     .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
@@ -51,6 +56,18 @@ function matchesModel(model, patterns = []) {
 
 function getProviderSpec(provider) {
   return rawSpecs.providers[normalizeId(provider)] || null;
+}
+
+function getProviderCatalogModels(provider) {
+  const providerSpec = getProviderSpec(provider);
+  return Array.isArray(providerSpec?.catalog) ? clone(providerSpec.catalog) : [];
+}
+
+function getProviderConnectionFields(provider) {
+  const providerSpec = getProviderSpec(provider);
+  return Array.isArray(providerSpec?.settings?.connectionFields)
+    ? clone(providerSpec.settings.connectionFields)
+    : [];
 }
 
 function getModelFamily(provider, model) {
@@ -104,6 +121,7 @@ function getProviderProfiles() {
     id,
     label: spec.label || id,
     description: spec.description || '',
+    catalog: clone(spec.catalog) || [],
     settings: clone(spec.settings) || {},
     notes: clone(spec.notes) || []
   }));
@@ -121,6 +139,47 @@ function parseJsonSetting(rawValue, fallback = {}) {
 
 function getOverrideKey(provider, model) {
   return `${normalizeId(provider)}::${normalizeId(model)}`;
+}
+
+function getConnectionSettingKey(provider, fieldId) {
+  return `llm.${normalizeId(provider)}.${fieldId}`;
+}
+
+function sanitizeContextWindow(spec, candidate) {
+  const contextCaps = spec.capabilities?.contextWindow || {};
+  const defaults = spec.runtime?.contextWindow || {};
+  const presets = Array.isArray(contextCaps.presets)
+    ? contextCaps.presets.map(parsePositiveInteger).filter(Boolean)
+    : [];
+  const fallback = parsePositiveInteger(defaults.value) || 8192;
+
+  if (!contextCaps.configurable) {
+    return { value: fallback };
+  }
+
+  let value = parsePositiveInteger(candidate?.value) || fallback;
+
+  if (presets.length > 0 && !presets.includes(value)) {
+    value = presets.reduce((best, preset) => {
+      return Math.abs(preset - value) < Math.abs(best - value) ? preset : best;
+    }, presets[0]);
+  }
+
+  if (contextCaps.min) {
+    value = Math.max(contextCaps.min, value);
+  }
+  if (contextCaps.max) {
+    value = Math.min(contextCaps.max, value);
+  }
+
+  return { value };
+}
+
+function sanitizeRequestOverrides(spec, candidate) {
+  const defaults = isPlainObject(spec.runtime?.requestOverrides) ? spec.runtime.requestOverrides : {};
+  const supported = Boolean(spec.capabilities?.requestOverrides?.supported);
+  if (!supported) return clone(defaults);
+  return isPlainObject(candidate) ? clone(candidate) : clone(defaults);
 }
 
 function sanitizeRuntimeConfig(spec, candidate = {}) {
@@ -145,7 +204,9 @@ function sanitizeRuntimeConfig(spec, candidate = {}) {
     },
     providerRouting: {
       requireParameters: Boolean(effective.providerRouting?.requireParameters)
-    }
+    },
+    contextWindow: sanitizeContextWindow(spec, effective.contextWindow),
+    requestOverrides: sanitizeRequestOverrides(spec, effective.requestOverrides)
   };
 
   if (!reasoningCaps.supported) {
@@ -199,16 +260,92 @@ async function saveModelRuntimeConfig(db, provider, model, runtimeConfig) {
   const spec = resolveModelSpec(provider, model);
   const overrides = await getStoredModelOverrides(db);
   const key = getOverrideKey(provider, model);
-  const sanitized = sanitizeRuntimeConfig(spec, runtimeConfig);
+  const currentOverride = isPlainObject(overrides[key]) ? overrides[key] : {};
+  const mergedRuntime = mergeDeep(currentOverride, runtimeConfig || {});
+  const sanitized = sanitizeRuntimeConfig(spec, mergedRuntime);
+  const shouldPersistContextWindow = Object.prototype.hasOwnProperty.call(currentOverride, 'contextWindow')
+    || Object.prototype.hasOwnProperty.call(runtimeConfig || {}, 'contextWindow');
+  if (!shouldPersistContextWindow) {
+    delete sanitized.contextWindow;
+  }
   overrides[key] = sanitized;
   await db.saveSetting('llm.modelOverrides', JSON.stringify(overrides));
   return { spec, runtime: sanitized };
+}
+
+function normalizeStoredConnectionValue(field, rawValue) {
+  if (field.type === 'checkbox') {
+    if (typeof rawValue === 'boolean') return rawValue;
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+      return Boolean(field.defaultValue);
+    }
+    return String(rawValue) === 'true';
+  }
+
+  if (field.type === 'json') {
+    return parseJsonSetting(rawValue, field.defaultValue || {});
+  }
+
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return field.defaultValue ?? '';
+  }
+
+  return rawValue;
+}
+
+function serializeConnectionValue(field, value) {
+  if (field.type === 'checkbox') {
+    return value ? 'true' : 'false';
+  }
+
+  if (field.type === 'json') {
+    return JSON.stringify(isPlainObject(value) ? value : (field.defaultValue || {}));
+  }
+
+  return value === undefined || value === null ? '' : String(value);
+}
+
+async function getProviderConnectionConfig(db, provider) {
+  const fields = getProviderConnectionFields(provider);
+  const output = {};
+
+  for (const field of fields) {
+    const rawValue = await db.getSetting(getConnectionSettingKey(provider, field.id));
+    output[field.id] = normalizeStoredConnectionValue(field, rawValue);
+  }
+
+  return output;
+}
+
+async function saveProviderConnectionConfig(db, provider, connection = {}) {
+  const fields = getProviderConnectionFields(provider);
+  const saved = {};
+
+  for (const field of fields) {
+    if (!Object.prototype.hasOwnProperty.call(connection, field.id)) {
+      continue;
+    }
+
+    const serialized = serializeConnectionValue(field, connection[field.id]);
+    await db.saveSetting(getConnectionSettingKey(provider, field.id), serialized);
+    if (field.id === 'apiKey' && serialized) {
+      await db.setAPIKey(normalizeId(provider), serialized);
+    }
+    saved[field.id] = normalizeStoredConnectionValue(field, serialized);
+  }
+
+  return saved;
 }
 
 module.exports = {
   SPEC_FILE,
   getProviderProfiles,
   getProviderSpec,
+  getProviderCatalogModels,
+  getProviderConnectionFields,
+  getProviderConnectionConfig,
+  saveProviderConnectionConfig,
+  getConnectionSettingKey,
   getModelFamily,
   resolveModelSpec,
   sanitizeRuntimeConfig,

@@ -56,6 +56,10 @@ class FakeElement {
   querySelectorAll() {
     return [];
   }
+
+  querySelector() {
+    return null;
+  }
 }
 
 function createOptionElement() {
@@ -75,6 +79,8 @@ function createProviderSelectionContext(source) {
   const elements = new Map([
     ['llm-provider-select', new FakeElement('llm-provider-select', 'select')],
     ['llm-model-select', new FakeElement('llm-model-select', 'select')],
+    ['refresh-provider-models-btn', new FakeElement('refresh-provider-models-btn', 'button')],
+    ['provider-discovery-status', new FakeElement('provider-discovery-status')],
     ['provider-settings-container', new FakeElement('provider-settings-container')],
     ['llm-config-save-button', new FakeElement('llm-config-save-button', 'button')],
     ['llm-model-settings-section', new FakeElement('llm-model-settings-section')],
@@ -130,8 +136,21 @@ function createProviderSelectionContext(source) {
     llm: {
       async getProviderProfiles() {
         return {
-          providers: [{ id: 'ollama', label: 'Ollama' }]
+          providers: [{
+            id: 'ollama',
+            label: 'Ollama',
+            settings: {
+              supportsCustomModel: true,
+              supportsModelDiscovery: true,
+              connectionFields: [],
+              customModelLabel: 'Custom Model',
+              customModelPlaceholder: 'Type model name...'
+            }
+          }]
         };
+      },
+      async getProviderConnectionConfig() {
+        return {};
       },
       async getConfig() {
         return currentConfig;

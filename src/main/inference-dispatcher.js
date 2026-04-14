@@ -1,5 +1,5 @@
 const path = require('path');
-const { getModelRuntimeConfig } = require('./llm-config');
+const { getModelRuntimeConfig, saveModelRuntimeConfig, sanitizeRuntimeConfig } = require('./llm-config');
 const { getEffectiveLlmSelection } = require('./llm-state');
 
 /**
@@ -50,6 +50,7 @@ class InferenceDispatcher {
     async dispatch(prompt, history = [], options = {}) {
         const mode = options.mode || 'chat';
         const preemptible = options.preemptible === true;
+        const provider = this.aiService.getCurrentProvider();
 
         // Decide what to inject based on mode (callers can override)
         const includeTools = options.includeTools ?? (mode === 'chat');
@@ -66,11 +67,15 @@ class InferenceDispatcher {
         if (!options.runtimeConfig && options.model) {
             const { spec, runtime } = await getModelRuntimeConfig(
                 this.db,
-                this.aiService.getCurrentProvider(),
+                provider,
                 options.model
             );
             options.modelSpec = spec;
             options.runtimeConfig = runtime;
+        }
+
+        if (options.modelSpec && options.runtimeConfig) {
+            options.runtimeConfig = await this._applyUiRuntimeOverrides(options.modelSpec, options.runtimeConfig);
         }
 
         if (!options.thinkingMode) {
@@ -108,11 +113,43 @@ class InferenceDispatcher {
             this._lockMode = mode;
             this._lockPreemptible = preemptible;
             console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} historyLen=${history.length}`);
-            return await this.aiService.sendMessage(messages, options);
+            const response = await this.aiService.sendMessage(messages, options);
+            await this._rememberWorkingRuntimeParams(provider, options.model, options.modelSpec, options.runtimeConfig, response);
+            return response;
         } finally {
             this._lockMode = null;
             this._lockPreemptible = false;
             this._releaseLock();
+        }
+    }
+
+    async _applyUiRuntimeOverrides(modelSpec, runtimeConfig = {}) {
+        const effectiveRuntime = JSON.parse(JSON.stringify(runtimeConfig || {}));
+        const contextCaps = modelSpec?.capabilities?.contextWindow || {};
+        if (!contextCaps.configurable) {
+            return effectiveRuntime;
+        }
+
+        const savedContext = await this.db.getSetting('context_window');
+        const parsedContext = Number.parseInt(savedContext, 10);
+        if (Number.isFinite(parsedContext) && parsedContext > 0) {
+            effectiveRuntime.contextWindow = { value: parsedContext };
+        }
+
+        return sanitizeRuntimeConfig(modelSpec, effectiveRuntime);
+    }
+
+    async _rememberWorkingRuntimeParams(provider, model, modelSpec, runtimeConfig, response) {
+        if (!provider || !model || !modelSpec || response?.stopped) {
+            return;
+        }
+
+        const contextCaps = modelSpec.capabilities?.contextWindow || {};
+        const contextLength = runtimeConfig?.contextWindow?.value || response?.context_length;
+        if (contextCaps.configurable && contextLength) {
+            await saveModelRuntimeConfig(this.db, provider, model, {
+                contextWindow: { value: contextLength }
+            });
         }
     }
 

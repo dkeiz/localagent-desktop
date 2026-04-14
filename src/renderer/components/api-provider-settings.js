@@ -37,10 +37,93 @@
         }
 
         configDisplay.style.display = 'block';
-        const providerName = config.provider.charAt(0).toUpperCase() + config.provider.slice(1);
+        const providerName = config.providerLabel || config.provider.charAt(0).toUpperCase() + config.provider.slice(1);
         configText.textContent = config.model
             ? `Provider: ${providerName}, Model: "${config.model}"`
             : `Provider: ${providerName}`;
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function providerFieldId(fieldId) {
+        return `provider-field-${fieldId}`;
+    }
+
+    function renderGenericProviderSettings(profile, connection = {}) {
+        const fields = Array.isArray(profile?.settings?.connectionFields)
+            ? profile.settings.connectionFields
+            : [];
+
+        const fieldMarkup = fields.map(field => {
+            const value = connection[field.id] ?? field.defaultValue ?? '';
+            const helpMarkup = field.helpText
+                ? `<div class="config-help">${escapeHtml(field.helpText)}</div>`
+                : '';
+
+            return `
+                <div class="config-field">
+                    <label for="${providerFieldId(field.id)}">${escapeHtml(field.label)}</label>
+                    <input
+                        type="${field.type === 'password' ? 'password' : 'text'}"
+                        id="${providerFieldId(field.id)}"
+                        placeholder="${escapeHtml(field.placeholder || '')}"
+                        value="${escapeHtml(value)}"
+                    >
+                    ${helpMarkup}
+                </div>
+            `;
+        }).join('');
+
+        const noteMarkup = Array.isArray(profile?.notes) && profile.notes.length
+            ? `<div class="api-provider-notes">${profile.notes.map(note => `<p>${escapeHtml(note)}</p>`).join('')}</div>`
+            : '';
+
+        return `
+            <div class="api-provider-settings-block">
+                ${fieldMarkup}
+                ${noteMarkup}
+            </div>
+        `;
+    }
+
+    function parseRequestOverridesValue(baseRuntimeConfig = {}, strict = false) {
+        const input = document.getElementById('model-request-overrides');
+        if (!input) {
+            return {
+                value: baseRuntimeConfig.requestOverrides || {},
+                valid: true
+            };
+        }
+
+        const raw = input.value.trim();
+        if (!raw) {
+            delete input.dataset.invalid;
+            return { value: {}, valid: true };
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('Overrides must be a JSON object');
+            }
+            delete input.dataset.invalid;
+            return { value: parsed, valid: true };
+        } catch (error) {
+            input.dataset.invalid = 'true';
+            if (strict) {
+                throw new Error('Request overrides must be a valid JSON object');
+            }
+            return {
+                value: baseRuntimeConfig.requestOverrides || {},
+                valid: false
+            };
+        }
     }
 
     function renderModelSettings(capabilitiesContainer, container, section, profile) {
@@ -57,12 +140,18 @@
         const reasoningCaps = spec.capabilities?.reasoning || {};
         const streamingCaps = spec.capabilities?.streaming || {};
         const routingCaps = spec.capabilities?.providerRouting || {};
+        const contextCaps = spec.capabilities?.contextWindow || {};
+        const modalityCaps = spec.capabilities?.modalities || {};
+        const requestOverrideCaps = spec.capabilities?.requestOverrides || {};
         const visibilityOptions = visibilityOptionsFor(reasoningCaps);
         const effortOptions = Array.isArray(reasoningCaps.effortLevels) ? reasoningCaps.effortLevels : [];
         const reasoningChecked = runtimeConfig.reasoning?.enabled ? 'checked' : '';
         const reasoningControlAvailable = reasoningCaps.supported && reasoningCaps.toggle;
         const reasoningToggleDisabled = reasoningControlAvailable ? '' : 'disabled';
         const requireParamsChecked = runtimeConfig.providerRouting?.requireParameters ? 'checked' : '';
+        const requestOverridesValue = runtimeConfig.requestOverrides && Object.keys(runtimeConfig.requestOverrides).length
+            ? JSON.stringify(runtimeConfig.requestOverrides, null, 2)
+            : '';
         const reasoningHelpText = reasoningCaps.supported
             ? (reasoningCaps.toggle
                 ? 'Uses the mapped provider/model controls for this family.'
@@ -85,6 +174,17 @@
         }
         if (streamingCaps.reasoning && streamingCaps.reasoning !== 'none') {
             capabilityParts.push(`Thinking output: ${prettyChannelLabel(streamingCaps.reasoning)}`);
+        }
+        if (contextCaps.supported && runtimeConfig.contextWindow?.value) {
+            capabilityParts.push(contextCaps.configurable
+                ? 'Context size configurable'
+                : `Context: ${runtimeConfig.contextWindow.value.toLocaleString()} tokens`);
+        }
+        if (modalityCaps.vision) {
+            capabilityParts.push('Vision input available');
+        }
+        if (requestOverrideCaps.supported) {
+            capabilityParts.push('Advanced request overrides');
         }
         if (spec.notes?.length) {
             capabilityParts.push(spec.notes[0]);
@@ -123,6 +223,12 @@
                         <label for="model-reasoning-budget">Thinking budget</label>
                         <input type="number" id="model-reasoning-budget" min="1" step="1" value="${runtimeConfig.reasoning?.maxTokens || ''}" placeholder="e.g. 2048">
                     </div>` : ''}
+                    ${requestOverrideCaps.supported ? `
+                    <div class="api-field api-field-wide">
+                        <label for="model-request-overrides">Request overrides (JSON)</label>
+                        <textarea id="model-request-overrides" rows="5" placeholder='{"top_k": 40}'>${escapeHtml(requestOverridesValue)}</textarea>
+                        <div class="config-help">Merged into the request body after the app's standard parameters.</div>
+                    </div>` : ''}
                 </div>
                 ${routingCaps.requireParameters ? `
                 <label class="api-toggle-row">
@@ -136,9 +242,10 @@
         `;
     }
 
-    function collectRuntimeConfig(baseRuntimeConfig = {}) {
+    function collectRuntimeConfig(baseRuntimeConfig = {}, strict = false) {
         const selectedVisibility = document.querySelector('input[name="model-reasoning-visibility"]:checked');
         const legacyVisibilitySelect = document.getElementById('model-reasoning-visibility');
+        const requestOverrides = parseRequestOverridesValue(baseRuntimeConfig, strict);
 
         return {
             reasoning: {
@@ -157,13 +264,16 @@
                 requireParameters: document.getElementById('model-require-params')
                     ? Boolean(document.getElementById('model-require-params')?.checked)
                     : Boolean(baseRuntimeConfig.providerRouting?.requireParameters)
-            }
+            },
+            requestOverrides: requestOverrides.value
         };
     }
 
     window.initializeApiProviderSettings = async function (mainPanel) {
         const llmProviderSelect = document.getElementById('llm-provider-select');
         const llmModelSelect = document.getElementById('llm-model-select');
+        const refreshModelsButton = document.getElementById('refresh-provider-models-btn');
+        const providerDiscoveryStatus = document.getElementById('provider-discovery-status');
         const providerSettingsContainer = document.getElementById('provider-settings-container');
         const llmConfigSaveButton = document.getElementById('llm-config-save-button');
         const modelSettingsSection = document.getElementById('llm-model-settings-section');
@@ -180,6 +290,62 @@
         let currentModelProfile = null;
         let providerProfileMap = {};
         let syncModelsToChat = null;
+        const getProviderProfile = (provider) => providerProfileMap[provider] || null;
+
+        const toggleCustomModelSection = (provider) => {
+            const customSection = document.getElementById('custom-model-section');
+            const customLabel = customSection?.querySelector('label[for="custom-model-input"]');
+            const customInput = document.getElementById('custom-model-input');
+            const profile = getProviderProfile(provider);
+            if (!customSection) return;
+
+            const enabled = Boolean(profile?.settings?.supportsCustomModel);
+            customSection.style.display = enabled ? 'flex' : 'none';
+            if (customLabel) {
+                customLabel.textContent = profile?.settings?.customModelLabel || 'Custom Model';
+            }
+            if (customInput) {
+                customInput.placeholder = profile?.settings?.customModelPlaceholder || 'Type model name...';
+            }
+        };
+
+        const buildProviderConfig = (provider, { includeModel = true, strict = false } = {}) => {
+            const config = { provider };
+            const profile = getProviderProfile(provider);
+            const model = llmModelSelect.value;
+
+            if (profile?.settings?.connectionFields?.length) {
+                config.connection = {};
+                profile.settings.connectionFields.forEach(field => {
+                    const input = document.getElementById(providerFieldId(field.id));
+                    if (!input) return;
+                    const value = input.value?.trim() || '';
+                    config.connection[field.id] = value;
+                    if (field.id === 'apiKey' && value) config.apiKey = value;
+                    if (field.id === 'url' && value) config.url = value;
+                });
+            }
+
+            if (provider === 'qwen') {
+                const mode = document.querySelector('input[name="qwen-mode"]:checked')?.value || 'cli';
+                config.mode = mode;
+                config.useOAuth = mode === 'oauth';
+                if (mode === 'api') {
+                    const apiKey = document.getElementById('qwen-key')?.value?.trim();
+                    if (apiKey) config.apiKey = apiKey;
+                }
+            }
+
+            if (includeModel && !isPlaceholderModel(model)) {
+                config.model = model;
+            }
+
+            if (config.model && currentModelProfile?.spec?.model === config.model) {
+                config.runtimeConfig = collectRuntimeConfig(currentModelProfile.runtimeConfig, strict);
+            }
+
+            return config;
+        };
 
         const applyVisibilityToMainPanel = (runtimeConfig) => {
             if (mainPanel) {
@@ -210,23 +376,29 @@
             if (!provider || !model || model === 'Select a Model...' || model === 'No models found') {
                 currentModelProfile = null;
                 renderModelSettings(modelCapabilitiesContainer, modelConfigContainer, modelSettingsSection, null);
+                mainPanel?.applyContextProfile?.(null);
                 return null;
             }
 
             currentModelProfile = await window.electronAPI.llm.getModelProfile(provider, model);
             renderModelSettings(modelCapabilitiesContainer, modelConfigContainer, modelSettingsSection, currentModelProfile);
             applyVisibilityToMainPanel(currentModelProfile?.runtimeConfig);
+            mainPanel?.applyContextProfile?.(currentModelProfile);
             return currentModelProfile;
         };
 
         const loadModelsForProvider = async (provider, forceRefresh = false, preferredModel = null) => {
             if (!provider || provider === 'Select a Provider...') {
                 llmModelSelect.innerHTML = '<option>Select a provider first</option>';
+                if (providerDiscoveryStatus) providerDiscoveryStatus.textContent = '';
                 await loadModelProfile(null, null);
                 return [];
             }
 
             llmModelSelect.innerHTML = '<option disabled>Loading models...</option>';
+            if (providerDiscoveryStatus) {
+                providerDiscoveryStatus.textContent = forceRefresh ? 'Refreshing model list...' : '';
+            }
 
             try {
                 const models = await window.electronAPI.llm.getModels(provider, forceRefresh);
@@ -248,11 +420,19 @@
                     llmModelSelect.innerHTML = '<option disabled>No models found</option>';
                 }
 
+                if (providerDiscoveryStatus) {
+                    providerDiscoveryStatus.textContent = models?.length
+                        ? `Found ${models.length} model${models.length === 1 ? '' : 's'}.`
+                        : 'No models discovered. You can still enter a manual model ID below.';
+                }
                 await loadModelProfile(provider, llmModelSelect.value);
                 return models || [];
             } catch (error) {
                 console.error('Failed to load models:', error);
                 llmModelSelect.innerHTML = '<option>Failed to load models</option>';
+                if (providerDiscoveryStatus) {
+                    providerDiscoveryStatus.textContent = `Discovery failed: ${error.message}`;
+                }
                 await loadModelProfile(null, null);
                 return [];
             }
@@ -260,15 +440,11 @@
 
         const updateProviderSettings = async (provider) => {
             providerSettingsContainer.innerHTML = '';
+            currentConfig = await window.electronAPI.llm.getConfig();
+            const profile = getProviderProfile(provider);
+            const savedConnection = await window.electronAPI.llm.getProviderConnectionConfig(provider);
 
-            if (provider === 'openrouter') {
-                providerSettingsContainer.innerHTML = `
-                    <div class="config-field">
-                        <label for="openrouter-key">OpenRouter API Key</label>
-                        <input type="password" id="openrouter-key" placeholder="sk-...">
-                    </div>
-                `;
-            } else if (provider === 'qwen') {
+            if (provider === 'qwen') {
                 providerSettingsContainer.innerHTML = `
                     <div class="config-field">
                         <label>Qwen Access Mode</label>
@@ -296,25 +472,11 @@
                         <div id="qwen-oauth-status" class="config-help api-status-text"></div>
                     </div>
                 `;
-            } else if (provider === 'lmstudio') {
-                providerSettingsContainer.innerHTML = `
-                    <div class="config-field">
-                        <label for="lmstudio-url">LM Studio URL</label>
-                        <input type="text" id="lmstudio-url" placeholder="http://localhost:1234">
-                    </div>
-                `;
+            } else if (profile) {
+                providerSettingsContainer.innerHTML = renderGenericProviderSettings(profile, savedConnection);
             }
 
-            currentConfig = await window.electronAPI.llm.getConfig();
-            if (provider === 'openrouter' && currentConfig?.provider === provider && currentConfig.apiKey) {
-                const input = document.getElementById('openrouter-key');
-                if (input) input.value = currentConfig.apiKey;
-            }
-
-            if (provider === 'lmstudio' && currentConfig?.provider === provider && currentConfig.url) {
-                const input = document.getElementById('lmstudio-url');
-                if (input) input.value = currentConfig.url;
-            }
+            toggleCustomModelSection(provider);
 
             if (provider === 'qwen') {
                 const applyQwenMode = async (mode, preferredModel = null, refresh = false) => {
@@ -329,19 +491,22 @@
                     await loadModelsForProvider('qwen', refresh || mode === 'oauth', preferredModel);
                 };
 
+                const savedMode = await window.electronAPI.getSettingValue('llm.qwen.mode');
+                const savedUseOAuth = await window.electronAPI.getSettingValue('llm.qwen.useOAuth');
+                const savedApiKey = await window.electronAPI.getSettingValue('llm.qwen.apiKey');
                 const mode = currentConfig?.provider === provider
                     ? (currentConfig.mode || (currentConfig.useOAuth ? 'oauth' : 'cli'))
-                    : 'cli';
+                    : (savedMode || (savedUseOAuth === 'true' ? 'oauth' : 'cli'));
                 const modeRadio = document.querySelector(`input[name="qwen-mode"][value="${mode}"]`);
                 if (modeRadio) modeRadio.checked = true;
 
                 const qwenKeyInput = document.getElementById('qwen-key');
-                if (qwenKeyInput && currentConfig?.apiKey) {
-                    qwenKeyInput.value = currentConfig.apiKey;
+                if (qwenKeyInput && (currentConfig?.apiKey || savedApiKey)) {
+                    qwenKeyInput.value = currentConfig?.apiKey || savedApiKey;
                 }
 
                 const oauthStatus = document.getElementById('qwen-oauth-status');
-                if (oauthStatus && currentConfig?.useOAuth) {
+                if (oauthStatus && (currentConfig?.useOAuth || savedUseOAuth === 'true')) {
                     oauthStatus.textContent = 'OAuth credentials configured';
                 }
 
@@ -398,6 +563,10 @@
                 }
 
                 await applyQwenMode(mode, currentConfig?.model, mode === 'oauth');
+            } else if (providerDiscoveryStatus) {
+                providerDiscoveryStatus.textContent = profile?.settings?.supportsModelDiscovery
+                    ? ''
+                    : 'This provider does not expose model discovery.';
             }
         };
 
@@ -409,18 +578,8 @@
                 return;
             }
 
-            const config = { provider, model };
-            if (provider === 'qwen') {
-                const qwenMode = document.querySelector('input[name="qwen-mode"]:checked')?.value;
-                if (qwenMode) {
-                    config.mode = qwenMode;
-                    config.useOAuth = qwenMode === 'oauth';
-                }
-            }
-
-            if (currentModelProfile?.spec?.model === model) {
-                config.runtimeConfig = collectRuntimeConfig(currentModelProfile.runtimeConfig);
-            }
+            const config = buildProviderConfig(provider, { includeModel: false });
+            config.model = model;
 
             await persistConfig(config, `Switched to ${model}`);
         };
@@ -428,7 +587,11 @@
         if (modelConfigContainer) {
             const syncModelConfigState = () => {
                 if (!currentModelProfile) return;
-                applyVisibilityToMainPanel(collectRuntimeConfig(currentModelProfile.runtimeConfig));
+                try {
+                    applyVisibilityToMainPanel(collectRuntimeConfig(currentModelProfile.runtimeConfig));
+                } catch (_) {
+                    // Leave current preview state unchanged until JSON is valid again.
+                }
             };
             modelConfigContainer.addEventListener('input', syncModelConfigState);
             modelConfigContainer.addEventListener('change', syncModelConfigState);
@@ -440,11 +603,7 @@
             if (provider !== 'qwen') {
                 await loadModelsForProvider(provider, false, null);
             }
-
-            const customSection = document.getElementById('custom-model-section');
-            if (customSection) {
-                customSection.style.display = provider === 'ollama' ? 'block' : 'none';
-            }
+            toggleCustomModelSection(provider);
 
             if (chatProviderSelect) {
                 chatProviderSelect.value = provider;
@@ -519,74 +678,73 @@
             });
         }
 
+        if (refreshModelsButton) {
+            refreshModelsButton.addEventListener('click', async () => {
+                const provider = llmProviderSelect.value;
+                if (!provider || provider === 'Select a Provider...') {
+                    return;
+                }
+
+                refreshModelsButton.disabled = true;
+                if (providerDiscoveryStatus) {
+                    providerDiscoveryStatus.textContent = 'Saving connection details and refreshing models...';
+                }
+
+                try {
+                    const config = buildProviderConfig(provider, { includeModel: false });
+                    await window.electronAPI.llm.saveConfig(config);
+                    await loadModelsForProvider(provider, true, llmModelSelect.value);
+                    syncModelsToChat?.();
+                } catch (error) {
+                    if (providerDiscoveryStatus) {
+                        providerDiscoveryStatus.textContent = `Discovery failed: ${error.message}`;
+                    }
+                } finally {
+                    refreshModelsButton.disabled = false;
+                }
+            });
+        }
+
         llmConfigSaveButton.addEventListener('click', async () => {
             const provider = llmProviderSelect.value;
-            const model = llmModelSelect.value;
 
             if (!provider || provider === 'Select a Provider...') {
                 alert('Please select a provider');
                 return;
             }
 
-            const config = { provider };
-            if (provider === 'ollama') {
-                if (!model || model === 'Select a Model...') {
-                    alert('Please select a model');
-                    return;
-                }
-                config.model = model;
-            } else if (provider === 'openrouter') {
-                const apiKey = document.getElementById('openrouter-key')?.value?.trim();
-                if (!apiKey) {
-                    alert('Please enter OpenRouter API key');
-                    return;
-                }
-                config.apiKey = apiKey;
-                if (model && model !== 'Select a Model...') config.model = model;
-            } else if (provider === 'qwen') {
+            const profile = getProviderProfile(provider);
+            if (provider === 'qwen') {
                 const mode = document.querySelector('input[name="qwen-mode"]:checked')?.value || 'cli';
-                config.mode = mode;
-                config.useOAuth = mode === 'oauth';
-
-                if (mode === 'api') {
-                    const apiKey = document.getElementById('qwen-key')?.value?.trim();
-                    if (!apiKey) {
-                        alert('Please enter Qwen API key');
-                        return;
-                    }
-                    config.apiKey = apiKey;
-                }
-
-                if ((mode === 'api' || mode === 'oauth') && (!model || model === 'Select a Model...' || model === 'No models found')) {
-                    alert('Please select a Qwen model');
+                if (mode === 'api' && !document.getElementById('qwen-key')?.value?.trim()) {
+                    alert('Please enter Qwen API key');
                     return;
                 }
-
-                if (model && model !== 'Select a Model...') {
-                    config.model = model;
-                }
-            } else if (provider === 'lmstudio') {
-                if (!model || model === 'Select a Model...') {
-                    alert('Please select a model');
+            } else if (profile?.settings?.connectionFields?.length) {
+                const missing = profile.settings.connectionFields.find(field => field.required && !document.getElementById(providerFieldId(field.id))?.value?.trim());
+                if (missing) {
+                    alert(`Please enter ${missing.label}`);
                     return;
                 }
-                config.model = model;
-                const url = document.getElementById('lmstudio-url')?.value?.trim();
-                if (url) config.url = url;
             }
 
-            if (config.model && currentModelProfile?.spec?.model === config.model) {
-                config.runtimeConfig = collectRuntimeConfig(currentModelProfile.runtimeConfig);
+            try {
+                const config = buildProviderConfig(provider, { includeModel: true, strict: true });
+                await window.electronAPI.llm.saveConfig(config);
+                currentConfig = await window.electronAPI.llm.getConfig();
+                setCurrentConfigLabel(currentConfigDisplay, currentConfigText, currentConfig);
+                if (config.model) {
+                    await loadModelProfile(config.provider, config.model);
+                }
+                if (profile?.settings?.supportsModelDiscovery || provider === 'qwen') {
+                    await loadModelsForProvider(provider, true, config.model || llmModelSelect.value);
+                    syncModelsToChat?.();
+                }
+                applyVisibilityToMainPanel(currentConfig?.runtimeConfig || config.runtimeConfig);
+                mainPanel.showNotification('Configuration saved!');
+            } catch (error) {
+                alert(error.message || 'Failed to save configuration');
             }
-
-            await window.electronAPI.llm.saveConfig(config);
-            currentConfig = await window.electronAPI.llm.getConfig();
-            setCurrentConfigLabel(currentConfigDisplay, currentConfigText, currentConfig);
-            if (config.model) {
-                await loadModelProfile(config.provider, config.model);
-            }
-            applyVisibilityToMainPanel(currentConfig?.runtimeConfig || config.runtimeConfig);
-            mainPanel.showNotification('Configuration saved!');
         });
 
         const providerProfiles = await window.electronAPI.llm.getProviderProfiles();
@@ -617,11 +775,7 @@
                 llmModelSelect.value = currentConfig.model;
                 await loadModelProfile(currentConfig.provider, currentConfig.model);
             }
-
-            const customSection = document.getElementById('custom-model-section');
-            if (customSection) {
-                customSection.style.display = currentConfig.provider === 'ollama' ? 'block' : 'none';
-            }
+            toggleCustomModelSection(currentConfig.provider);
         } else {
             renderModelSettings(modelCapabilitiesContainer, modelConfigContainer, modelSettingsSection, null);
         }

@@ -1,8 +1,12 @@
 const axios = require('axios');
 const {
   SPEC_FILE,
+  getProviderCatalogModels,
+  getProviderConnectionConfig,
   getProviderProfiles,
+  getProviderSpec,
   getModelRuntimeConfig,
+  saveProviderConnectionConfig,
   saveModelRuntimeConfig
 } = require('../llm-config');
 const {
@@ -43,10 +47,28 @@ function registerLlmHandlers(ipcMain, runtime) {
     return resolvedRuntime;
   }
 
+  async function getCatalogAwareModels(provider, discovered = []) {
+    const seededModels = [...getProviderCatalogModels(provider), ...discovered];
+    return getKnownModelsForProvider(db, provider, seededModels);
+  }
+
+  function normalizeConnectionPayload(config = {}) {
+    const connection = { ...(config.connection || {}) };
+
+    if (config.apiKey !== undefined) {
+      connection.apiKey = config.apiKey;
+    }
+    if (config.url !== undefined) {
+      connection.url = config.url;
+    }
+
+    return connection;
+  }
+
   ipcMain.handle('getProviderModels', async (event, provider) => {
     try {
       const discovered = await aiService.getModels(provider);
-      const models = await getKnownModelsForProvider(db, provider, discovered);
+      const models = await getCatalogAwareModels(provider, discovered);
       return { status: 'success', models };
     } catch (error) {
       return { status: 'error', message: error.message };
@@ -71,7 +93,7 @@ function registerLlmHandlers(ipcMain, runtime) {
     console.log('llm:get-models called with provider:', provider, 'forceRefresh:', forceRefresh);
     try {
       const discovered = await aiService.getModels(provider.toLowerCase(), forceRefresh);
-      const models = await getKnownModelsForProvider(db, provider, discovered);
+      const models = await getCatalogAwareModels(provider, discovered);
       console.log(`Models from ${provider}:`, models);
       return models;
     } catch (error) {
@@ -85,10 +107,18 @@ function registerLlmHandlers(ipcMain, runtime) {
       console.log('Saving config:', config);
       await saveActiveSelection(db, config.provider, config.model);
 
-      if (config.apiKey) {
-        await db.saveSetting(`llm.${config.provider}.apiKey`, config.apiKey);
+      const providerSpec = getProviderSpec(config.provider);
+      const connection = normalizeConnectionPayload(config);
+      if (providerSpec?.settings?.connectionFields?.length) {
+        await saveProviderConnectionConfig(db, config.provider, connection);
       }
-      if (config.url) {
+      if (config.apiKey !== undefined && !providerSpec?.settings?.connectionFields?.some(field => field.id === 'apiKey')) {
+        await db.saveSetting(`llm.${config.provider}.apiKey`, config.apiKey);
+        if (config.apiKey) {
+          await db.setAPIKey(config.provider, config.apiKey);
+        }
+      }
+      if (config.url !== undefined && !providerSpec?.settings?.connectionFields?.some(field => field.id === 'url')) {
         await db.saveSetting(`llm.${config.provider}.url`, config.url);
       }
 
@@ -158,12 +188,15 @@ function registerLlmHandlers(ipcMain, runtime) {
       config.selectionSource = source;
 
       if (provider) {
+        config.providerLabel = getProviderSpec(provider)?.label || provider;
+        const connection = await getProviderConnectionConfig(db, provider);
         const apiKey = await db.getSetting(`llm.${provider}.apiKey`);
         const url = await db.getSetting(`llm.${provider}.url`);
         const mode = await db.getSetting(`llm.${provider}.mode`);
         const useOAuth = await db.getSetting(`llm.${provider}.useOAuth`);
-        if (apiKey) config.apiKey = apiKey;
-        if (url) config.url = url;
+        config.connection = connection;
+        if (connection.apiKey || apiKey) config.apiKey = connection.apiKey || apiKey;
+        if (connection.url || url) config.url = connection.url || url;
         if (mode) config.mode = mode;
         if (useOAuth === 'true') config.useOAuth = true;
       }
@@ -179,6 +212,11 @@ function registerLlmHandlers(ipcMain, runtime) {
       console.error('Failed to get LLM config:', error);
       return {};
     }
+  });
+
+  ipcMain.handle('llm:get-provider-connection-config', async (event, provider) => {
+    if (!provider) return {};
+    return getProviderConnectionConfig(db, provider);
   });
 
   ipcMain.handle('llm:get-provider-profiles', async () => {
@@ -198,6 +236,25 @@ function registerLlmHandlers(ipcMain, runtime) {
     };
   });
 
+  ipcMain.handle('llm:save-model-runtime', async (event, { provider, model, runtimeConfig }) => {
+    if (!provider || !model) {
+      throw new Error('Provider and model are required');
+    }
+
+    const saved = await saveModelRuntimeConfig(db, provider, model, runtimeConfig);
+    const active = await getEffectiveLlmSelection(db);
+    if (active.provider === provider && active.model === model) {
+      await syncResolvedRuntime(provider, model, saved.runtime);
+    }
+
+    return {
+      success: true,
+      specFile: SPEC_FILE,
+      spec: saved.spec,
+      runtimeConfig: saved.runtime
+    };
+  });
+
   ipcMain.handle('stop-generation', async () => {
     const stopped = aiService.stopGeneration();
     if (runtime.chainController && runtime.chainController.stopChain) {
@@ -209,7 +266,7 @@ function registerLlmHandlers(ipcMain, runtime) {
   ipcMain.handle('is-generating', async () => ({ generating: aiService.isGenerating }));
   ipcMain.handle('get-ai-providers', async () => aiService.getProviders());
   ipcMain.handle('get-providers', async () => aiService.getProviders());
-  ipcMain.handle('get-models', async (event, provider) => aiService.getModels(provider));
+  ipcMain.handle('get-models', async (event, provider) => getCatalogAwareModels(provider, await aiService.getModels(provider)));
 
   ipcMain.handle('qwen:refresh-models', async () => {
     try {
@@ -250,9 +307,12 @@ function registerLlmHandlers(ipcMain, runtime) {
 
     if (provider && model) {
       const profile = await getModelRuntimeConfig(db, provider, model);
-      const runtimeConfig = profile.runtime;
-      runtimeConfig.reasoning.enabled = mode === 'think';
-      const saved = await saveModelRuntimeConfig(db, provider, model, runtimeConfig);
+      const saved = await saveModelRuntimeConfig(db, provider, model, {
+        reasoning: {
+          ...profile.runtime.reasoning,
+          enabled: mode === 'think'
+        }
+      });
       await db.saveSetting('llm.thinkingMode', saved.runtime.reasoning.enabled ? 'think' : 'off');
       await db.saveSetting('llm.showThinking', saved.runtime.reasoning.visibility === 'hide' ? 'false' : 'true');
       await db.saveSetting('llm.thinkingVisibility', saved.runtime.reasoning.visibility || 'show');
@@ -285,8 +345,12 @@ function registerLlmHandlers(ipcMain, runtime) {
 
     if (provider && model) {
       const profile = await getModelRuntimeConfig(db, provider, model);
-      profile.runtime.reasoning.visibility = show ? 'show' : 'hide';
-      const saved = await saveModelRuntimeConfig(db, provider, model, profile.runtime);
+      const saved = await saveModelRuntimeConfig(db, provider, model, {
+        reasoning: {
+          ...profile.runtime.reasoning,
+          visibility: show ? 'show' : 'hide'
+        }
+      });
       await db.saveSetting('llm.showThinking', saved.runtime.reasoning.visibility === 'hide' ? 'false' : 'true');
       await db.saveSetting('llm.thinkingVisibility', saved.runtime.reasoning.visibility || 'show');
     } else {
