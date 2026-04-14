@@ -745,6 +745,8 @@ ${task}`;
                         agentId: agent.id,
                         includeTools: true,
                         includeRules: false,
+                        skipMemoryOnStart: true,
+                        skipLock: true,
                         completionTools: ['complete_subtask'],
                         maxChainSteps: 24,
                         trace: traceHooks
@@ -758,7 +760,9 @@ ${task}`;
                         sessionId: run.child_session_id,
                         agentId: agent.id,
                         includeTools: true,
-                        includeRules: false
+                        includeRules: false,
+                        skipMemoryOnStart: true,
+                        skipLock: true
                     }
                 );
 

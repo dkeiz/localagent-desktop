@@ -25,19 +25,50 @@
         }
 
         try {
-            await window.electronAPI.clearChatSession(sessionId);
+            const oldTab = panel.chatTabs.get(sessionId);
+            const isAgentTab = Boolean(oldTab?.agentId) || String(sessionId).startsWith('subtask-');
 
-            const tab = panel.chatTabs.get(sessionId);
-            if (tab) {
-                resetTabState(tab, sessionId);
+            // For agent/subagent tabs: wipe messages in-place (no new session)
+            if (isAgentTab) {
+                await window.electronAPI.clearChatSession(sessionId);
+                if (oldTab) {
+                    resetTabState(oldTab, sessionId);
+                }
+                if (sessionId === panel.activeTabId) {
+                    const container = getMessagesContainer();
+                    if (container) container.innerHTML = '';
+                    panel.updateContextUsage(null);
+                }
+                renderTabs(panel);
+                saveOpenTabIds(panel);
+                if (window.sidebar) window.sidebar.loadChatSessions();
+                return;
             }
 
+            // For regular chat tabs: preserve old session in history, create fresh one
+            const newSession = await window.electronAPI.invoke('create-chat-session');
+            const newSessionId = newSession.id;
+
+            // Remove old tab entry, keep old session untouched in DB (visible in Recent Chats)
+            panel.chatTabs.delete(sessionId);
+
+            // Create tab for new session
+            panel.chatTabs.set(newSessionId, {
+                title: 'New Chat',
+                messagesHTML: '',
+                isSending: false,
+                loadingId: null,
+                scrollTop: 0,
+                followOutput: true
+            });
+
+            // Switch to new tab if the cleared tab was active
             if (sessionId === panel.activeTabId) {
+                panel.activeTabId = newSessionId;
                 const container = getMessagesContainer();
-                if (container) {
-                    container.innerHTML = '';
-                }
+                if (container) container.innerHTML = '';
                 panel.updateContextUsage(null);
+                await window.electronAPI.switchChatSession(newSessionId);
             }
 
             renderTabs(panel);

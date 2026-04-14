@@ -55,7 +55,9 @@ class InferenceDispatcher {
         // Decide what to inject based on mode (callers can override)
         const includeTools = options.includeTools ?? (mode === 'chat');
         const includeRules = options.includeRules ?? (mode === 'chat');
-        const includeEnv = mode === 'chat' || mode === 'internal';
+        const includeEnv = options.includeEnv ?? (mode === 'chat' || mode === 'internal');
+        const skipMemoryOnStart = options.skipMemoryOnStart === true;
+        const skipLock = options.skipLock === true;
 
         // Resolve model once here (not in each adapter)
         if (!options.model) {
@@ -94,6 +96,7 @@ class InferenceDispatcher {
             includeTools,
             includeRules,
             includeEnv,
+            skipMemoryOnStart,
             sessionId: options.sessionId,
             agentId,
             completionTools: options.completionTools || []
@@ -114,19 +117,20 @@ class InferenceDispatcher {
             }
         }
 
-        // Acquire lock — serializes concurrent calls so they don't race
-        await this._acquireLock();
+        // Acquire lock — serializes concurrent calls so they don't race.
+        // skipLock allows fire-and-forget subagent dispatches to run concurrently.
+        if (!skipLock) await this._acquireLock();
         try {
             this._lockMode = mode;
             this._lockPreemptible = preemptible;
-            console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} historyLen=${history.length}`);
+            console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} skipLock=${skipLock} historyLen=${history.length}`);
             const response = await this.aiService.sendMessage(messages, options);
             await this._rememberWorkingRuntimeParams(provider, options.model, options.modelSpec, options.runtimeConfig, response);
             return response;
         } finally {
             this._lockMode = null;
             this._lockPreemptible = false;
-            this._releaseLock();
+            if (!skipLock) this._releaseLock();
         }
     }
 
@@ -162,7 +166,7 @@ class InferenceDispatcher {
 
     // ------- system prompt construction -------
 
-    async _buildSystemPrompt({ includeTools, includeRules, includeEnv, sessionId, agentId, completionTools = [] }) {
+    async _buildSystemPrompt({ includeTools, includeRules, includeEnv, skipMemoryOnStart = false, sessionId, agentId, completionTools = [] }) {
         let prompt;
 
         // If dispatching for a specific agent, use agent's system prompt
@@ -206,7 +210,7 @@ For commands with potentially large output (builds, installs, logs, directory tr
 Your session workspace is personal and auto-cleaned on session close.
 </workspace_guidance>
 
-<memory_on_start>
+${skipMemoryOnStart ? '' : `<memory_on_start>
 IMPORTANT: At the start of every new conversation, you MUST read your core memory files using the read_file tool BEFORE answering the user. This is how you remember who you are and who the user is.
 
 Read these files (use read_file tool):
@@ -217,7 +221,7 @@ Read these files (use read_file tool):
 5. ${path.join(appDir, 'agentin', 'workflows', 'workflow.md')} — workflow system reference
 
 Do this silently as part of your first response. You must still answer the user's question in the same turn — chain the file reads then respond naturally.
-</memory_on_start>
+</memory_on_start>`}
 
 <knowledge_guidance>
 You have a personal knowledge store at ${path.join(appDir, 'agentin', 'knowledge')}.

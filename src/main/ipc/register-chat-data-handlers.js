@@ -315,6 +315,9 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
       if (!isTestSession && mcpServer.setCurrentSessionId) {
         mcpServer.setCurrentSessionId(activitySessionId);
       }
+      if (!isTestSession && effectiveSessionId) {
+        await db.setCurrentSession(effectiveSessionId);
+      }
       if (!isTestSession && sessionInitManager) {
         sessionInitManager.recordActivity().catch(() => {});
       }

@@ -146,6 +146,15 @@ class ToolChainController {
             if (options.includeRules !== undefined) {
                 dispatchOptions.includeRules = options.includeRules;
             }
+            if (options.includeEnv !== undefined) {
+                dispatchOptions.includeEnv = options.includeEnv;
+            }
+            if (options.skipMemoryOnStart) {
+                dispatchOptions.skipMemoryOnStart = true;
+            }
+            if (options.skipLock) {
+                dispatchOptions.skipLock = true;
+            }
             if (options.preemptible !== undefined) {
                 dispatchOptions.preemptible = options.preemptible;
             }
