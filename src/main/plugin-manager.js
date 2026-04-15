@@ -109,23 +109,23 @@ class PluginManager extends EventEmitter {
         if (!plugin) throw new Error(`Plugin "${pluginId}" not found`);
         if (plugin.status === 'enabled' && plugin.module && plugin.context) return;
 
-        const mainPath = path.join(plugin.dir, plugin.manifest.main);
-        if (!fs.existsSync(mainPath)) {
-            throw new Error(`Plugin entry point not found: ${mainPath}`);
-        }
-
-        // Clear require cache for hot-reload during development
-        delete require.cache[require.resolve(mainPath)];
-
-        const pluginModule = require(mainPath);
-        plugin.module = pluginModule;
-        plugin.handlers = [];
-
-        // Build context for the plugin
-        const context = this._buildPluginContext(pluginId, plugin);
-        plugin.context = context;
-
         try {
+            const mainPath = path.join(plugin.dir, plugin.manifest.main);
+            if (!fs.existsSync(mainPath)) {
+                throw new Error(`Plugin entry point not found: ${mainPath}`);
+            }
+
+            // Clear require cache for hot-reload during development
+            delete require.cache[require.resolve(mainPath)];
+
+            const pluginModule = require(mainPath);
+            plugin.module = pluginModule;
+            plugin.handlers = [];
+
+            // Build context for the plugin
+            const context = this._buildPluginContext(pluginId, plugin);
+            plugin.context = context;
+
             // Call onEnable
             if (typeof pluginModule.onEnable === 'function') {
                 await pluginModule.onEnable(context);

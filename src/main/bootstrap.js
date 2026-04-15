@@ -168,16 +168,6 @@ async function bootstrapApplication(options = {}) {
   container.register('workflowScheduler', workflowScheduler);
   container.register('ollamaService', ollamaService);
 
-  if (createInitialWindow) {
-    windowManager.createMainWindow();
-  }
-
-  if (ipcMain) {
-    setupIpcHandlers(ipcMain, container);
-  }
-
-  eventBus.init({ windowManager, dispatcher, db });
-
   const knowledgeManager = new KnowledgeManager(db, { baseDir: paths.knowledgeBaseDir });
   container.register('knowledgeManager', knowledgeManager);
   await knowledgeManager.initialize();
@@ -199,6 +189,16 @@ async function bootstrapApplication(options = {}) {
   const pluginManager = new PluginManager(container, { pluginsDir: paths.pluginsDir });
   container.register('pluginManager', pluginManager);
   await pluginManager.initialize();
+
+  if (ipcMain) {
+    setupIpcHandlers(ipcMain, container);
+  }
+
+  eventBus.init({ windowManager, dispatcher, db });
+
+  if (createInitialWindow) {
+    windowManager.createMainWindow();
+  }
 
   if (autoStartDaemons) {
     const isAnyTestMode = isTestClientMode || isExternalTestMode || isTestMode || isNoWindowMode;
