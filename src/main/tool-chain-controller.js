@@ -62,7 +62,7 @@ class ToolChainController {
      */
     stripToolPatterns(text) {
         if (!text) return text;
-        return text.replace(/TOOL:\w+\{/g, (match, offset) => {
+        return text.replace(/TOOL\s*:\s*[A-Za-z0-9_]+\s*\{/gi, (match, offset) => {
             // Find matching closing brace with nesting
             const startIdx = offset + match.length - 1; // position of opening {
             let depth = 1;
@@ -100,6 +100,27 @@ class ToolChainController {
         return alreadyExecuted;
     }
 
+    _looksLikeToolIntent(text) {
+        const value = String(text || '');
+        return /TOOL\s*:?\s*[A-Za-z0-9_]+/i.test(value);
+    }
+
+    _buildToolFormatRepairPrompt(previousOutput) {
+        return `Your previous response attempted a tool call, but formatting was invalid for backend parsing.
+
+Re-emit ONLY valid tool call lines in exact format:
+TOOL:tool_name{"param":"value"}
+
+Rules:
+- No prose before or after tool lines
+- No markdown code fences
+- JSON must be valid (double quotes, balanced braces)
+- If no tool call is actually needed, reply exactly: NO_TOOL
+
+Previous output:
+${String(previousOutput || '').slice(0, 3000)}`;
+    }
+
     /**
      * Execute a message with tool chaining support
      * @param {string} message - User message
@@ -119,6 +140,7 @@ class ToolChainController {
         let workingHistory = [...conversationHistory];
         let finalResponse = null;
         let lastLLMResponse = null; // Track last response for fallback
+        let formatRepairAttempted = false;
 
         const maxSteps = Math.max(1, Number(options.maxChainSteps) || this.maxChainSteps);
 
@@ -167,11 +189,20 @@ class ToolChainController {
 
             // Parse tool calls from response
             const toolCalls = this.mcpServer.parseToolCall(response.content);
+            const hasParseFailures = toolCalls.some(call => call.parseFailed);
             await this._emitTrace(trace, 'onAssistantMessage', {
                 step: stepCount,
                 content: response.content,
                 toolCalls
             });
+
+            // One lightweight recovery attempt for malformed tool syntax.
+            if (!formatRepairAttempted && (hasParseFailures || (toolCalls.length === 0 && this._looksLikeToolIntent(response.content)))) {
+                formatRepairAttempted = true;
+                workingHistory.push({ role: 'assistant', content: response.content });
+                currentMessage = this._buildToolFormatRepairPrompt(response.content);
+                continue;
+            }
 
             if (toolCalls.length === 0) {
                 // No tool calls - this is the final answer
@@ -216,6 +247,7 @@ class ToolChainController {
                     if (completionTools.has(call.toolName)) {
                         finalResponse = {
                             content: this.stripToolPatterns(response.content) || response.content,
+                            reasoning: response.reasoning || '',
                             model: response.model,
                             usage: response.usage,
                             chainComplete: true,
@@ -229,6 +261,7 @@ class ToolChainController {
                     if (call.toolName === 'end_answer') {
                         finalResponse = {
                             content: result.result?.answer || this.stripToolPatterns(response.content) || response.content,
+                            reasoning: response.reasoning || '',
                             model: response.model,
                             usage: response.usage,
                             chainComplete: true
@@ -241,6 +274,7 @@ class ToolChainController {
                         // Return the LLM's text (stripped of TOOL: calls) with permission info
                         finalResponse = {
                             content: this.stripToolPatterns(response.content) || response.content,
+                            reasoning: response.reasoning || '',
                             model: response.model,
                             needsPermission: true,
                             permissionRequest: result

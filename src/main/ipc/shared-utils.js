@@ -4,7 +4,7 @@ function stripToolPatterns(text) {
   let i = 0;
 
   while (i < text.length) {
-    const toolMatch = text.slice(i).match(/^TOOL:\w+\{/);
+    const toolMatch = text.slice(i).match(/^TOOL\s*:\s*[A-Za-z0-9_]+\s*\{/i);
     if (toolMatch) {
       const braceStart = i + toolMatch[0].length - 1;
       let depth = 1;

@@ -311,6 +311,9 @@ Each knowledge file is max 200 lines. Use existing file tools to read and search
 
         ctx += `\n## How to Use Tools\n`;
         ctx += `Format: TOOL:tool_name{"param":"value"}\n`;
+        ctx += `Tool calls are parsed by backend syntax, not intent.\n`;
+        ctx += `If you intend to call a tool, emit a valid TOOL line exactly. Do not describe the call in prose.\n`;
+        ctx += `When calling tools, prefer outputting only TOOL lines (one per line), no markdown fences.\n`;
         ctx += `Use the APPROPRIATE tool for each request. Match the tool to the user's actual question.\n`;
         ctx += `If a tool times out or fails, tell the user the tool didn't respond - do NOT call a different tool instead.\n`;
         ctx += `Always use the exact JSON format shown in examples.\n`;

@@ -105,6 +105,25 @@ class MessageFormatter {
             );
         });
 
+        if (allowImages) {
+            // Auto-render plain image URLs even when the model does not emit Markdown image syntax.
+            content = content.replace(/(^|[\s(])((?:https?:\/\/|file:\/\/)[^\s<>"')]+)(?=[$\s),.!?;:])/gim, (match, prefix, url) => {
+                if (!this._isLikelyImageUrl(url)) {
+                    return match;
+                }
+
+                const safeUrl = this.sanitizeUrl(url, { allowFile: true, allowDataImage: true });
+                if (!safeUrl) {
+                    return match;
+                }
+
+                return `${prefix}${stash(
+                    `<img src="${this.escapeAttribute(safeUrl)}" alt="Image"`
+                    + ` class="chat-image" data-lightbox-src="${this.escapeAttribute(safeUrl)}" title="Click to enlarge">`
+                )}`;
+            });
+        }
+
         content = content.replace(/`([^`]+)`/g, (match, code) => {
             return stash(`<code>${this.escapeHtml(code)}</code>`);
         });
@@ -216,6 +235,14 @@ class MessageFormatter {
 
     renderPlainText(text) {
         return this.escapeHtml(String(text || '')).replace(/\n/g, '<br>');
+    }
+
+    _isLikelyImageUrl(url) {
+        const clean = String(url || '').trim();
+        if (!clean) return false;
+
+        // Common image extensions with optional query/hash.
+        return /\.(png|jpe?g|gif|webp|bmp|svg)(?:[?#].*)?$/i.test(clean);
     }
 
     sanitizeUrl(url, options = {}) {

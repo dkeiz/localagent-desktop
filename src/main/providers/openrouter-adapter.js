@@ -61,7 +61,7 @@ class OpenRouterAdapter extends BaseAdapter {
             this._endRequest();
 
             const message = response.data.choices?.[0]?.message || {};
-            const reasoning = this._extractReasoning(message);
+            const reasoning = this._extractReasoning(message, response.data);
 
             return this._normalizeResponse({
                 content: message.content || '',
@@ -124,7 +124,7 @@ class OpenRouterAdapter extends BaseAdapter {
         return result;
     }
 
-    _extractReasoning(message = {}) {
+    _extractReasoning(message = {}, payload = {}) {
         if (typeof message.reasoning === 'string' && message.reasoning.trim()) {
             return message.reasoning.trim();
         }
@@ -139,6 +139,19 @@ class OpenRouterAdapter extends BaseAdapter {
                 .filter(Boolean)
                 .join('\n')
                 .trim();
+        }
+
+        if (typeof payload.reasoning_content === 'string' && payload.reasoning_content.trim()) {
+            return payload.reasoning_content.trim();
+        }
+
+        if (typeof payload.reasoning === 'string' && payload.reasoning.trim()) {
+            return payload.reasoning.trim();
+        }
+
+        const choiceReasoning = payload?.choices?.[0]?.reasoning;
+        if (typeof choiceReasoning === 'string' && choiceReasoning.trim()) {
+            return choiceReasoning.trim();
         }
 
         return '';

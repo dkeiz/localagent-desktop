@@ -264,22 +264,51 @@ class MCPServer extends EventEmitter {
 
   parseToolCall(text) {
     const calls = [];
-    const toolPrefix = /TOOL:(\w+)/g;
+    const toolPrefix = /TOOL\s*:?\s*([A-Za-z0-9_]+)/gi;
     let match;
 
     while ((match = toolPrefix.exec(text)) !== null) {
+      const previousChar = match.index > 0 ? text[match.index - 1] : '';
+      const isBoundary = !previousChar || /\s|[`"'([{<]/.test(previousChar);
+      if (!isBoundary) {
+        continue;
+      }
+
       const toolName = match[1];
       const afterTool = text.slice(match.index + match[0].length);
       let params = {};
+      let parseFailed = false;
 
-      if (afterTool.startsWith('{')) {
+      const trimmedAfter = afterTool.trimStart();
+      let candidate = trimmedAfter;
+
+      // Accept fenced payloads:
+      // TOOL:name
+      // ```json
+      // {"a":1}
+      // ```
+      if (candidate.startsWith('```')) {
+        const firstNewline = candidate.indexOf('\n');
+        if (firstNewline !== -1) {
+          candidate = candidate.slice(firstNewline + 1).trimStart();
+          const fenceEnd = candidate.indexOf('```');
+          if (fenceEnd !== -1) {
+            candidate = candidate.slice(0, fenceEnd).trim();
+          }
+        }
+      }
+
+      const jsonStart = candidate.indexOf('{');
+      if (jsonStart !== -1) {
+        candidate = candidate.slice(jsonStart);
+
         let depth = 0;
         let end = 0;
         let inString = false;
         let escapeNext = false;
 
-        for (let i = 0; i < afterTool.length; i++) {
-          const char = afterTool[i];
+        for (let i = 0; i < candidate.length; i++) {
+          const char = candidate[i];
 
           if (escapeNext) {
             escapeNext = false;
@@ -310,10 +339,13 @@ class MCPServer extends EventEmitter {
 
         if (end > 0) {
           try {
-            params = JSON.parse(afterTool.slice(0, end));
+            params = JSON.parse(candidate.slice(0, end));
           } catch (error) {
+            parseFailed = true;
             console.error('Failed to parse tool params:', error);
           }
+        } else {
+          parseFailed = true;
         }
       }
 
@@ -321,6 +353,7 @@ class MCPServer extends EventEmitter {
       calls.push({
         toolName,
         params,
+        parseFailed,
         toolCallId,
         timestamp: new Date().toISOString()
       });

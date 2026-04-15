@@ -201,8 +201,51 @@ class OpenAICompatibleAdapter extends BaseAdapter {
             return message.reasoning_content.trim();
         }
 
+        if (Array.isArray(message.content)) {
+            const contentReasoning = message.content
+                .map(part => {
+                    if (!part || typeof part !== 'object') return '';
+                    if (part.type === 'reasoning') {
+                        return part.reasoning || part.text || part.content || '';
+                    }
+                    return '';
+                })
+                .filter(Boolean)
+                .join('\n')
+                .trim();
+            if (contentReasoning) {
+                return contentReasoning;
+            }
+        }
+
+        const choiceReasoning = payload?.choices?.[0]?.reasoning;
+        if (typeof choiceReasoning === 'string' && choiceReasoning.trim()) {
+            return choiceReasoning.trim();
+        }
+
         if (typeof payload.reasoning_content === 'string' && payload.reasoning_content.trim()) {
             return payload.reasoning_content.trim();
+        }
+
+        if (typeof payload.reasoning === 'string' && payload.reasoning.trim()) {
+            return payload.reasoning.trim();
+        }
+
+        if (Array.isArray(payload.output)) {
+            const outputReasoning = payload.output
+                .map(item => {
+                    if (!item || typeof item !== 'object') return '';
+                    if (item.type === 'reasoning') {
+                        return item.summary || item.text || item.content || item.reasoning || '';
+                    }
+                    return item.reasoning || item.reasoning_content || '';
+                })
+                .filter(Boolean)
+                .join('\n')
+                .trim();
+            if (outputReasoning) {
+                return outputReasoning;
+            }
         }
 
         return '';

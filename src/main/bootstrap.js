@@ -45,6 +45,9 @@ async function bootstrapApplication(options = {}) {
   const container = options.container || new ServiceContainer();
   const args = options.args || process.argv.slice(1);
   const isTestClientMode = options.isTestClientMode === true || args.includes('--testclient');
+  const isExternalTestMode = args.includes('--external-test');
+  const isTestMode = args.includes('--test');
+  const isNoWindowMode = args.includes('--nowindow') || args.includes('--windowless') || args.includes('-windowless');
   const ipcMain = options.ipcMain || null;
   const autoStartDaemons = options.autoStartDaemons !== false;
   const createInitialWindow = options.createInitialWindow !== false;
@@ -198,11 +201,8 @@ async function bootstrapApplication(options = {}) {
   await pluginManager.initialize();
 
   if (autoStartDaemons) {
-    const baseinitDone = await db.getSetting('baseinit.completed');
-    const daemonEnabled = await db.getSetting('baseinit.daemonEnabled');
-    const shouldAutoStartDaemons =
-      !isTestClientMode && (daemonEnabled === 'true' || (baseinitDone === 'true' && daemonEnabled !== 'false'));
-    if (shouldAutoStartDaemons) {
+    const isAnyTestMode = isTestClientMode || isExternalTestMode || isTestMode || isNoWindowMode;
+    if (!isAnyTestMode) {
       memoryDaemon.start().catch(e => console.error('[Bootstrap] Memory daemon start failed:', e));
       workflowScheduler.start().catch(e => console.error('[Bootstrap] Workflow scheduler start failed:', e));
     }
@@ -229,7 +229,8 @@ async function bootstrapApplication(options = {}) {
       const mcpSvc = container.optional('mcpServer');
       const dbSvc = container.optional('db');
 
-      if (pluginMgr) await pluginMgr.disableAll();
+      // Unload plugin runtime cleanly without changing persisted enabled state.
+      if (pluginMgr) await pluginMgr.disableAll({ persistStatus: false });
       if (memorySvc) memorySvc.stop();
       if (workflowSvc) workflowSvc.stop();
       if (loopSvc) await loopSvc.onAppQuit();

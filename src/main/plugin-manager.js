@@ -35,6 +35,10 @@ class PluginManager extends EventEmitter {
 
     async initialize() {
         await this.scanPlugins();
+        const cleanup = this._cleanupOrphanedPluginTools();
+        if (cleanup.removed > 0) {
+            console.warn(`[PluginManager] Removed ${cleanup.removed} stale plugin tool registration(s): ${cleanup.toolNames.join(', ')}`);
+        }
         // Auto-enable previously-enabled plugins
         for (const [id, plugin] of this.plugins) {
             const row = this.db.get('SELECT status FROM plugins WHERE id = ?', [id]);
@@ -46,6 +50,10 @@ class PluginManager extends EventEmitter {
                     this._updateDbStatus(id, 'error', e.message);
                 }
             }
+        }
+        const contract = this._validatePluginToolContracts();
+        if (!contract.ok) {
+            console.error('[PluginManager] Plugin contract validation failed:', contract.issues);
         }
         console.log(`[PluginManager] Initialized ${this.plugins.size} plugin(s)`);
     }
@@ -139,7 +147,8 @@ class PluginManager extends EventEmitter {
         console.log(`[PluginManager] Enabled "${pluginId}" with ${plugin.handlers.length} handler(s)`);
     }
 
-    async disablePlugin(pluginId) {
+    async disablePlugin(pluginId, options = {}) {
+        const persistStatus = options.persistStatus !== false;
         const plugin = this.plugins.get(pluginId);
         if (!plugin) throw new Error(`Plugin "${pluginId}" not found`);
         if (plugin.status !== 'enabled') return;
@@ -157,7 +166,9 @@ class PluginManager extends EventEmitter {
         plugin.status = 'disabled';
         plugin.module = null;
         plugin.context = null;
-        this._updateDbStatus(pluginId, 'disabled');
+        if (persistStatus) {
+            this._updateDbStatus(pluginId, 'disabled');
+        }
 
         this.emit('plugin-disabled', { id: pluginId });
         console.log(`[PluginManager] Disabled "${pluginId}"`);
@@ -313,6 +324,56 @@ class PluginManager extends EventEmitter {
         );
     }
 
+    _cleanupOrphanedPluginTools() {
+        let removed = 0;
+        const toolNames = [];
+        for (const [toolName, tool] of this.mcpServer.tools) {
+            const def = tool?.definition;
+            if (!def?.isPlugin) continue;
+            this.mcpServer.tools.delete(toolName);
+            if (this.capabilityManager) {
+                this.capabilityManager.unregisterCustomTool(toolName);
+            }
+            removed++;
+            toolNames.push(toolName);
+        }
+        return { removed, toolNames };
+    }
+
+    _validatePluginToolContracts() {
+        const issues = [];
+
+        for (const [toolName, tool] of this.mcpServer.tools) {
+            const def = tool?.definition;
+            if (!def?.isPlugin) continue;
+            const pluginId = def.pluginId;
+            const plugin = this.plugins.get(pluginId);
+            if (!plugin) {
+                issues.push(`Tool ${toolName} references missing plugin "${pluginId}"`);
+                continue;
+            }
+            if (plugin.status !== 'enabled') {
+                issues.push(`Tool ${toolName} is registered but plugin "${pluginId}" is status="${plugin.status}"`);
+                continue;
+            }
+            const listed = plugin.handlers.some(h => h.toolName === toolName);
+            if (!listed) {
+                issues.push(`Tool ${toolName} is registered but not tracked in plugin.handlers for "${pluginId}"`);
+            }
+        }
+
+        for (const [pluginId, plugin] of this.plugins) {
+            if (plugin.status !== 'enabled') continue;
+            for (const handler of plugin.handlers) {
+                if (!this.mcpServer.tools.has(handler.toolName)) {
+                    issues.push(`Enabled plugin "${pluginId}" missing registered tool "${handler.toolName}"`);
+                }
+            }
+        }
+
+        return { ok: issues.length === 0, issues };
+    }
+
     listPlugins() {
         const result = [];
         for (const [id, plugin] of this.plugins) {
@@ -364,11 +425,11 @@ class PluginManager extends EventEmitter {
 
     // ==================== Shutdown ====================
 
-    async disableAll() {
+    async disableAll(options = {}) {
         for (const [id, plugin] of this.plugins) {
             if (plugin.status === 'enabled') {
                 try {
-                    await this.disablePlugin(id);
+                    await this.disablePlugin(id, options);
                 } catch (e) {
                     console.error(`[PluginManager] Failed to disable "${id}":`, e.message);
                 }
