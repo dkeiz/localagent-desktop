@@ -49,9 +49,46 @@ function toPatternRegex(pattern) {
   return new RegExp(`^${escaped}$`, 'i');
 }
 
+function buildModelMatchCandidates(model) {
+  const raw = String(model || '').trim();
+  if (!raw) return [];
+
+  const normalized = raw
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+    .replace(/\/+/g, '/')
+    .replace(/:+/g, ':')
+    .trim();
+
+  const candidates = new Set([raw, normalized]);
+
+  const slashParts = normalized.split('/').filter(Boolean);
+  if (slashParts.length > 1) {
+    candidates.add(slashParts[slashParts.length - 1]);
+  }
+
+  const colonParts = normalized.split(':').filter(Boolean);
+  if (colonParts.length > 1) {
+    candidates.add(colonParts[0]);
+  }
+
+  if (slashParts.length > 1 && colonParts.length > 1) {
+    const tail = slashParts[slashParts.length - 1];
+    const tailColonParts = tail.split(':').filter(Boolean);
+    if (tailColonParts.length > 1) {
+      candidates.add(tailColonParts[0]);
+    }
+  }
+
+  return Array.from(candidates);
+}
+
 function matchesModel(model, patterns = []) {
-  const name = String(model || '').trim();
-  return patterns.some(pattern => toPatternRegex(pattern).test(name));
+  const candidates = buildModelMatchCandidates(model);
+  return patterns.some(pattern => {
+    const regex = toPatternRegex(pattern);
+    return candidates.some(name => regex.test(name));
+  });
 }
 
 function getProviderSpec(provider) {

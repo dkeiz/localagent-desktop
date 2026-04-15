@@ -51,9 +51,13 @@ class LMStudioAdapter extends BaseAdapter {
             });
 
             this._endRequest();
+            const message = response.data?.choices?.[0]?.message || {};
+            const content = this._coerceContent(message.content);
+            const reasoning = this._extractReasoning(message, response.data);
 
             return this._normalizeResponse({
-                content: response.data.choices[0].message.content,
+                content,
+                reasoning,
                 model: response.data.model,
                 usage: response.data.usage,
                 context_length: options.runtimeConfig?.contextWindow?.value || options.modelSpec?.runtime?.contextWindow?.value
@@ -119,6 +123,36 @@ class LMStudioAdapter extends BaseAdapter {
             result.unshift({ role: 'system', content: hint });
         }
         return result;
+    }
+
+    _extractReasoning(message = {}, payload = {}) {
+        if (typeof message.reasoning === 'string' && message.reasoning.trim()) {
+            return message.reasoning.trim();
+        }
+
+        if (typeof message.reasoning_content === 'string' && message.reasoning_content.trim()) {
+            return message.reasoning_content.trim();
+        }
+
+        if (typeof payload.reasoning_content === 'string' && payload.reasoning_content.trim()) {
+            return payload.reasoning_content.trim();
+        }
+
+        return '';
+    }
+
+    _coerceContent(value) {
+        if (typeof value === 'string') return value;
+        if (!Array.isArray(value)) return '';
+
+        return value
+            .map(part => {
+                if (typeof part === 'string') return part;
+                return part?.text || part?.content || '';
+            })
+            .filter(Boolean)
+            .join('\n')
+            .trim();
     }
 }
 

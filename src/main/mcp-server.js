@@ -263,103 +263,264 @@ class MCPServer extends EventEmitter {
   }
 
   parseToolCall(text) {
+    const source = String(text || '');
     const calls = [];
-    const toolPrefix = /TOOL\s*:?\s*([A-Za-z0-9_]+)/gi;
+    const invalidCandidates = [];
+    const acceptedKeys = new Set();
+    const toolPrefix = /TOOL\s*:\s*([A-Za-z0-9_]+)/gi;
     let match;
 
-    while ((match = toolPrefix.exec(text)) !== null) {
-      const previousChar = match.index > 0 ? text[match.index - 1] : '';
+    while ((match = toolPrefix.exec(source)) !== null) {
+      const previousChar = match.index > 0 ? source[match.index - 1] : '';
       const isBoundary = !previousChar || /\s|[`"'([{<]/.test(previousChar);
       if (!isBoundary) {
         continue;
       }
 
       const toolName = match[1];
-      const afterTool = text.slice(match.index + match[0].length);
-      let params = {};
-      let parseFailed = false;
-
-      const trimmedAfter = afterTool.trimStart();
-      let candidate = trimmedAfter;
-
-      // Accept fenced payloads:
-      // TOOL:name
-      // ```json
-      // {"a":1}
-      // ```
-      if (candidate.startsWith('```')) {
-        const firstNewline = candidate.indexOf('\n');
-        if (firstNewline !== -1) {
-          candidate = candidate.slice(firstNewline + 1).trimStart();
-          const fenceEnd = candidate.indexOf('```');
-          if (fenceEnd !== -1) {
-            candidate = candidate.slice(0, fenceEnd).trim();
-          }
-        }
+      const afterTool = source.slice(match.index + match[0].length);
+      const parsed = this._extractJsonObject(afterTool);
+      if (!parsed.ok) {
+        invalidCandidates.push({
+          toolName,
+          reason: parsed.reason,
+          snippet: source.slice(match.index, Math.min(source.length, match.index + 220))
+        });
+        continue;
       }
 
-      const jsonStart = candidate.indexOf('{');
-      if (jsonStart !== -1) {
-        candidate = candidate.slice(jsonStart);
-
-        let depth = 0;
-        let end = 0;
-        let inString = false;
-        let escapeNext = false;
-
-        for (let i = 0; i < candidate.length; i++) {
-          const char = candidate[i];
-
-          if (escapeNext) {
-            escapeNext = false;
-            continue;
-          }
-
-          if (char === '\\') {
-            escapeNext = true;
-            continue;
-          }
-
-          if (char === '"' && !escapeNext) {
-            inString = !inString;
-            continue;
-          }
-
-          if (!inString) {
-            if (char === '{') depth++;
-            else if (char === '}') {
-              depth--;
-              if (depth === 0) {
-                end = i + 1;
-                break;
-              }
-            }
-          }
-        }
-
-        if (end > 0) {
-          try {
-            params = JSON.parse(candidate.slice(0, end));
-          } catch (error) {
-            parseFailed = true;
-            console.error('Failed to parse tool params:', error);
-          }
-        } else {
-          parseFailed = true;
-        }
+      const validated = this._validateParsedToolCall(toolName, parsed.params);
+      if (!validated.ok) {
+        invalidCandidates.push({
+          toolName,
+          reason: validated.reason,
+          snippet: source.slice(match.index, Math.min(source.length, match.index + 220))
+        });
+        continue;
       }
 
       const toolCallId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const acceptedKey = `${toolName}:${JSON.stringify(validated.params)}`;
+      if (acceptedKeys.has(acceptedKey)) {
+        continue;
+      }
+      acceptedKeys.add(acceptedKey);
       calls.push({
         toolName,
-        params,
-        parseFailed,
+        params: validated.params,
         toolCallId,
         timestamp: new Date().toISOString()
       });
     }
 
+    // Recovery pass: tolerate malformed call shapes like:
+    // search_web_bing."query":"...","max_results":5}
+    for (const [toolName] of this.tools) {
+      const escapedTool = toolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const loosePattern = new RegExp(`\\b${escapedTool}\\b`, 'gi');
+      let looseMatch;
+
+      while ((looseMatch = loosePattern.exec(source)) !== null) {
+        const before = looseMatch.index > 0 ? source[looseMatch.index - 1] : '';
+        const afterStart = looseMatch.index + looseMatch[0].length;
+        const after = source.slice(afterStart);
+
+        // Skip already explicit TOOL:name forms (handled above).
+        if (before === ':') {
+          continue;
+        }
+
+        const startsLikeParams = /^\s*(\{|\.)/.test(after);
+        if (!startsLikeParams) {
+          continue;
+        }
+
+        const parsed = this._extractLooseKeyValueObject(after);
+        if (!parsed.ok) {
+          invalidCandidates.push({
+            toolName,
+            reason: parsed.reason,
+            snippet: source.slice(looseMatch.index, Math.min(source.length, looseMatch.index + 220))
+          });
+          continue;
+        }
+
+        const validated = this._validateParsedToolCall(toolName, parsed.params);
+        if (!validated.ok) {
+          invalidCandidates.push({
+            toolName,
+            reason: validated.reason,
+            snippet: source.slice(looseMatch.index, Math.min(source.length, looseMatch.index + 220))
+          });
+          continue;
+        }
+
+        const acceptedKey = `${toolName}:${JSON.stringify(validated.params)}`;
+        if (acceptedKeys.has(acceptedKey)) {
+          continue;
+        }
+        acceptedKeys.add(acceptedKey);
+        calls.push({
+          toolName,
+          params: validated.params,
+          toolCallId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    this._lastInvalidToolCandidates = invalidCandidates;
+    if (invalidCandidates.length > 0) {
+      console.warn(`[MCP] Ignored ${invalidCandidates.length} malformed/non-executable tool candidate(s)`);
+    }
+
     return calls;
+  }
+
+  _extractJsonObject(text) {
+    let candidate = String(text || '').trimStart();
+    if (!candidate) {
+      return { ok: false, reason: 'missing_params_json' };
+    }
+
+    if (candidate.startsWith('```')) {
+      const firstNewline = candidate.indexOf('\n');
+      if (firstNewline !== -1) {
+        candidate = candidate.slice(firstNewline + 1).trimStart();
+        const fenceEnd = candidate.indexOf('```');
+        if (fenceEnd !== -1) {
+          candidate = candidate.slice(0, fenceEnd).trim();
+        }
+      }
+    }
+
+    const jsonStart = candidate.indexOf('{');
+    if (jsonStart === -1) {
+      return { ok: false, reason: 'missing_json_object' };
+    }
+    candidate = candidate.slice(jsonStart);
+
+    let depth = 0;
+    let end = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < candidate.length; i++) {
+      const char = candidate[i];
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') {
+          depth++;
+        } else if (char === '}') {
+          depth--;
+          if (depth === 0) {
+            end = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    if (end === 0) {
+      return { ok: false, reason: 'unclosed_json_object' };
+    }
+
+    let params;
+    try {
+      params = JSON.parse(candidate.slice(0, end));
+    } catch (error) {
+      return { ok: false, reason: 'invalid_json' };
+    }
+
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      return { ok: false, reason: 'params_not_object' };
+    }
+
+    return { ok: true, params };
+  }
+
+  _extractLooseKeyValueObject(text) {
+    let candidate = String(text || '').trimStart();
+    if (!candidate) {
+      return { ok: false, reason: 'missing_loose_params' };
+    }
+
+    if (candidate.startsWith('```')) {
+      const firstNewline = candidate.indexOf('\n');
+      if (firstNewline !== -1) {
+        candidate = candidate.slice(firstNewline + 1).trimStart();
+        const fenceEnd = candidate.indexOf('```');
+        if (fenceEnd !== -1) {
+          candidate = candidate.slice(0, fenceEnd).trim();
+        }
+      }
+    }
+
+    if (candidate.startsWith('{')) {
+      return this._extractJsonObject(candidate);
+    }
+
+    if (candidate.startsWith('.')) {
+      candidate = candidate.slice(1).trimStart();
+    }
+
+    const firstLine = candidate.split(/\r?\n/)[0].trim();
+    if (!firstLine || !firstLine.startsWith('"')) {
+      return { ok: false, reason: 'missing_loose_object_body' };
+    }
+
+    let body = firstLine;
+    if (body.endsWith('}')) {
+      body = body.slice(0, -1).trimEnd();
+    }
+
+    try {
+      const params = JSON.parse(`{${body}}`);
+      if (!params || typeof params !== 'object' || Array.isArray(params)) {
+        return { ok: false, reason: 'loose_params_not_object' };
+      }
+      return { ok: true, params };
+    } catch (_) {
+      return { ok: false, reason: 'invalid_loose_json' };
+    }
+  }
+
+  _validateParsedToolCall(toolName, params) {
+    const tool = this.tools.get(toolName);
+    if (!tool) {
+      return { ok: false, reason: 'unknown_tool' };
+    }
+
+    const normalized = JSON.parse(JSON.stringify(params || {}));
+    if (tool.definition.inputSchema?.properties) {
+      for (const [key, prop] of Object.entries(tool.definition.inputSchema.properties)) {
+        if (normalized[key] === undefined && prop.default !== undefined) {
+          normalized[key] = prop.default;
+        }
+      }
+    }
+
+    if (tool.definition.inputSchema) {
+      try {
+        this.validateInput(normalized, tool.definition.inputSchema);
+      } catch (error) {
+        return { ok: false, reason: `schema_validation_failed:${error.message}` };
+      }
+    }
+
+    return { ok: true, params: normalized };
   }
 
   async executeToolCalls(text) {

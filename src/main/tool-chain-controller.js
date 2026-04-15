@@ -100,27 +100,6 @@ class ToolChainController {
         return alreadyExecuted;
     }
 
-    _looksLikeToolIntent(text) {
-        const value = String(text || '');
-        return /TOOL\s*:?\s*[A-Za-z0-9_]+/i.test(value);
-    }
-
-    _buildToolFormatRepairPrompt(previousOutput) {
-        return `Your previous response attempted a tool call, but formatting was invalid for backend parsing.
-
-Re-emit ONLY valid tool call lines in exact format:
-TOOL:tool_name{"param":"value"}
-
-Rules:
-- No prose before or after tool lines
-- No markdown code fences
-- JSON must be valid (double quotes, balanced braces)
-- If no tool call is actually needed, reply exactly: NO_TOOL
-
-Previous output:
-${String(previousOutput || '').slice(0, 3000)}`;
-    }
-
     /**
      * Execute a message with tool chaining support
      * @param {string} message - User message
@@ -140,7 +119,6 @@ ${String(previousOutput || '').slice(0, 3000)}`;
         let workingHistory = [...conversationHistory];
         let finalResponse = null;
         let lastLLMResponse = null; // Track last response for fallback
-        let formatRepairAttempted = false;
 
         const maxSteps = Math.max(1, Number(options.maxChainSteps) || this.maxChainSteps);
 
@@ -189,20 +167,11 @@ ${String(previousOutput || '').slice(0, 3000)}`;
 
             // Parse tool calls from response
             const toolCalls = this.mcpServer.parseToolCall(response.content);
-            const hasParseFailures = toolCalls.some(call => call.parseFailed);
             await this._emitTrace(trace, 'onAssistantMessage', {
                 step: stepCount,
                 content: response.content,
                 toolCalls
             });
-
-            // One lightweight recovery attempt for malformed tool syntax.
-            if (!formatRepairAttempted && (hasParseFailures || (toolCalls.length === 0 && this._looksLikeToolIntent(response.content)))) {
-                formatRepairAttempted = true;
-                workingHistory.push({ role: 'assistant', content: response.content });
-                currentMessage = this._buildToolFormatRepairPrompt(response.content);
-                continue;
-            }
 
             if (toolCalls.length === 0) {
                 // No tool calls - this is the final answer
@@ -216,18 +185,12 @@ ${String(previousOutput || '').slice(0, 3000)}`;
 
             // Execute tool calls
             const toolResults = [];
+            let executedThisStep = false;
             for (const call of toolCalls) {
                 try {
                     // Check for duplicate tool call
                     if (this._shouldSkipDuplicate(call)) {
                         console.log(`[Chain] Skipping duplicate tool call: ${call.toolName}`);
-                        toolResults.push({
-                            toolCallId: call.toolCallId,
-                            tool: call.toolName,
-                            params: call.params,
-                            success: true,
-                            result: '[Duplicate call skipped — already executed with same parameters]'
-                        });
                         continue;
                     }
 
@@ -252,7 +215,8 @@ ${String(previousOutput || '').slice(0, 3000)}`;
                             usage: response.usage,
                             chainComplete: true,
                             completionTool: call.toolName,
-                            completionResult: result.result
+                            completionResult: result.result,
+                            renderContext: response.renderContext
                         };
                         break;
                     }
@@ -264,7 +228,8 @@ ${String(previousOutput || '').slice(0, 3000)}`;
                             reasoning: response.reasoning || '',
                             model: response.model,
                             usage: response.usage,
-                            chainComplete: true
+                            chainComplete: true,
+                            renderContext: response.renderContext
                         };
                         break;
                     }
@@ -277,10 +242,12 @@ ${String(previousOutput || '').slice(0, 3000)}`;
                             reasoning: response.reasoning || '',
                             model: response.model,
                             needsPermission: true,
-                            permissionRequest: result
+                            permissionRequest: result,
+                            renderContext: response.renderContext
                         };
                         break;
                     }
+                    executedThisStep = true;
 
                     // Track this execution
                     this.executedToolCalls.set(call.toolCallId, {
@@ -336,6 +303,13 @@ ${String(previousOutput || '').slice(0, 3000)}`;
 
             // If we got a final response (end_answer or permission needed), break
             if (finalResponse) break;
+            if (!executedThisStep) {
+                finalResponse = {
+                    ...response,
+                    content: this.stripToolPatterns(response.content) || response.content
+                };
+                break;
+            }
 
             // Build tool results context with tracking metadata
             const toolContext = toolResults.map(r => {
@@ -374,7 +348,9 @@ Error: ${r.error}`;
                 ...lastLLMResponse,
                 content: this.stripToolPatterns(lastLLMResponse.content) || 'I ran into an issue processing your request. Please try again.',
                 chainExhausted: true,
-                maxChainSteps: maxSteps
+                maxChainSteps: maxSteps,
+                reasoning: lastLLMResponse.reasoning || '',
+                renderContext: lastLLMResponse.renderContext
             };
         }
 
@@ -383,7 +359,9 @@ Error: ${r.error}`;
             finalResponse = {
                 content: 'Sorry, I was unable to process your request. Please try again.',
                 model: 'unknown',
-                usage: { total_tokens: 0 }
+                usage: { total_tokens: 0 },
+                reasoning: '',
+                renderContext: null
             };
         }
 

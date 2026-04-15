@@ -290,6 +290,7 @@
         let currentModelProfile = null;
         let providerProfileMap = {};
         let syncModelsToChat = null;
+        let modelProfileRequestId = 0;
         const getProviderProfile = (provider) => providerProfileMap[provider] || null;
 
         const toggleCustomModelSection = (provider) => {
@@ -373,6 +374,7 @@
         };
 
         const loadModelProfile = async (provider, model) => {
+            const requestId = ++modelProfileRequestId;
             if (!provider || !model || model === 'Select a Model...' || model === 'No models found') {
                 currentModelProfile = null;
                 renderModelSettings(modelCapabilitiesContainer, modelConfigContainer, modelSettingsSection, null);
@@ -380,7 +382,11 @@
                 return null;
             }
 
-            currentModelProfile = await window.electronAPI.llm.getModelProfile(provider, model);
+            const profile = await window.electronAPI.llm.getModelProfile(provider, model);
+            if (requestId !== modelProfileRequestId) {
+                return currentModelProfile;
+            }
+            currentModelProfile = profile;
             renderModelSettings(modelCapabilitiesContainer, modelConfigContainer, modelSettingsSection, currentModelProfile);
             applyVisibilityToMainPanel(currentModelProfile?.runtimeConfig);
             mainPanel?.applyContextProfile?.(currentModelProfile);
@@ -395,6 +401,9 @@
                 return [];
             }
 
+            currentModelProfile = null;
+            renderModelSettings(modelCapabilitiesContainer, modelConfigContainer, modelSettingsSection, null);
+            mainPanel?.applyContextProfile?.(null);
             llmModelSelect.innerHTML = '<option disabled>Loading models...</option>';
             if (providerDiscoveryStatus) {
                 providerDiscoveryStatus.textContent = forceRefresh ? 'Refreshing model list...' : '';
@@ -584,6 +593,19 @@
             await persistConfig(config, `Switched to ${model}`);
         };
 
+        const updateDraftConfigLabel = () => {
+            const provider = llmProviderSelect?.value;
+            const model = llmModelSelect?.value;
+            if (!provider || provider === 'Select a Provider...') {
+                return;
+            }
+            setCurrentConfigLabel(currentConfigDisplay, currentConfigText, {
+                provider,
+                providerLabel: providerLabel(provider, providerProfileMap),
+                model: isPlaceholderModel(model) ? null : model
+            });
+        };
+
         if (modelConfigContainer) {
             const syncModelConfigState = () => {
                 if (!currentModelProfile) return;
@@ -604,6 +626,7 @@
                 await loadModelsForProvider(provider, false, null);
             }
             toggleCustomModelSection(provider);
+            updateDraftConfigLabel();
 
             if (chatProviderSelect) {
                 chatProviderSelect.value = provider;
@@ -614,6 +637,7 @@
             const provider = llmProviderSelect.value;
             const model = llmModelSelect.value;
             await loadModelProfile(provider, model);
+            updateDraftConfigLabel();
             if (chatModelSelect) {
                 chatModelSelect.value = model;
             }
@@ -814,6 +838,16 @@
                     await loadModelsForProvider(e.target.value, false, null);
                 }
                 syncModelsToChat();
+                if (chatModelSelect) {
+                    const firstUsable = Array.from(chatModelSelect.options)
+                        .find(opt => !opt.disabled && !isPlaceholderModel(opt.value));
+                    if (firstUsable) {
+                        chatModelSelect.value = firstUsable.value;
+                        llmModelSelect.value = firstUsable.value;
+                        await loadModelProfile(llmProviderSelect.value, firstUsable.value);
+                    }
+                }
+                await saveQuickSelection();
             });
 
             chatModelSelect.addEventListener('change', async (e) => {

@@ -162,6 +162,38 @@
           "notes": [
             "Reasoning is treated as inline output for local Ollama models."
           ]
+        },
+        {
+          "id": "ollama-gpt-oss-reasoning",
+          "label": "GPT OSS / Kimi Reasoning",
+          "match": [
+            "gpt-oss*",
+            "openai/gpt-oss-*",
+            "kimi*"
+          ],
+          "runtime": {
+            "reasoning": {
+              "enabled": true,
+              "effort": "medium"
+            }
+          },
+          "capabilities": {
+            "reasoning": {
+              "supported": true,
+              "toggle": true,
+              "effortLevels": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "outputChannel": "inline",
+              "parameterMode": "prompt_hint",
+              "defaultEnabled": true
+            }
+          },
+          "notes": [
+            "For GPT OSS / Kimi aliases on Ollama, reasoning is guided with prompt hints instead of slash commands."
+          ]
         }
       ]
     },
@@ -224,7 +256,10 @@
             "qwq*",
             "deepseek*",
             "r1*",
-            "gpt-oss*"
+            "gpt-oss*",
+            "gpt-oss-*",
+            "gpt-oss 120*",
+            "openai/gpt-oss-*"
           ],
           "capabilities": {
             "reasoning": {
@@ -291,7 +326,9 @@
           "label": "GPT OSS",
           "match": [
             "openai/gpt-oss-*",
-            "gpt-oss-*"
+            "gpt-oss-*",
+            "gpt-oss*",
+            "gpt-oss 120*"
           ],
           "runtime": {
             "reasoning": {
@@ -623,7 +660,9 @@
           "label": "GPT OSS on Groq",
           "match": [
             "openai/gpt-oss-*",
-            "gpt-oss-*"
+            "gpt-oss-*",
+            "gpt-oss*",
+            "gpt-oss 120*"
           ],
           "runtime": {
             "reasoning": {
@@ -636,9 +675,14 @@
           "capabilities": {
             "reasoning": {
               "supported": true,
-              "toggle": false,
+              "toggle": true,
+              "effortLevels": [
+                "low",
+                "medium",
+                "high"
+              ],
               "outputChannel": "inline",
-              "parameterMode": "none",
+              "parameterMode": "openai_reasoning_effort",
               "defaultEnabled": true
             },
             "contextWindow": {
@@ -884,7 +928,10 @@
             "qwq*",
             "deepseek*",
             "r1*",
-            "gpt-oss*"
+            "gpt-oss*",
+            "gpt-oss-*",
+            "gpt-oss 120*",
+            "openai/gpt-oss-*"
           ],
           "capabilities": {
             "reasoning": {
@@ -954,7 +1001,10 @@
             "qwq*",
             "deepseek*",
             "r1*",
-            "gpt-oss*"
+            "gpt-oss*",
+            "gpt-oss-*",
+            "gpt-oss 120*",
+            "openai/gpt-oss-*"
           ],
           "capabilities": {
             "reasoning": {

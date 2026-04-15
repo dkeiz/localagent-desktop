@@ -94,21 +94,32 @@ async function getEffectiveLlmSelection(db) {
   const lastWorking = await getLastWorkingSelection(db);
   const configuredProvider = normalizeProvider(
     await db.getSetting('llm.provider') || await db.getSetting('ai_provider')
-  ) || 'ollama';
+  );
   const configuredModel = normalizeModel(await db.getSetting('llm.model'));
+
+  if (configuredProvider || configuredModel) {
+    const provider = configuredProvider || lastWorking?.provider || 'ollama';
+    const model = configuredModel
+      || ((lastWorking?.provider || '') === provider ? (lastWorking?.model || null) : null);
+    return {
+      provider,
+      model,
+      source: 'configured'
+    };
+  }
 
   if (lastWorking && (lastWorking.provider || lastWorking.model)) {
     return {
-      provider: lastWorking.provider || configuredProvider,
-      model: lastWorking.model || configuredModel || null,
+      provider: lastWorking.provider || 'ollama',
+      model: lastWorking.model || null,
       source: 'last-working'
     };
   }
 
   return {
-    provider: configuredProvider,
-    model: configuredModel || null,
-    source: 'configured'
+    provider: 'ollama',
+    model: null,
+    source: 'default'
   };
 }
 
@@ -124,7 +135,13 @@ async function saveActiveSelection(db, provider, model) {
       const isCloudModel = isOllamaCloudModel(normalizedModel);
       await db.saveSetting('llm.modelType', isCloudModel ? 'cloud' : 'local');
     }
+    await db.saveSetting('llm.lastWorkingModel', normalizedModel);
+  } else {
+    // Prevent stale cross-provider fallback from pinning an old model.
+    await db.saveSetting('llm.lastWorkingModel', '');
   }
+  // Explicit UI/provider selection should become effective immediately.
+  await db.saveSetting('llm.lastWorkingProvider', normalizedProvider);
 
   return {
     provider: normalizedProvider,

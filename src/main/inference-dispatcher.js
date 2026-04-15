@@ -125,6 +125,11 @@ class InferenceDispatcher {
             this._lockPreemptible = preemptible;
             console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} skipLock=${skipLock} historyLen=${history.length}`);
             const response = await this.aiService.sendMessage(messages, options);
+            response.renderContext = {
+                provider,
+                model: options.model || response.model || '',
+                runtimeConfig: options.runtimeConfig ? JSON.parse(JSON.stringify(options.runtimeConfig)) : null
+            };
             await this._rememberWorkingRuntimeParams(provider, options.model, options.modelSpec, options.runtimeConfig, response);
             return response;
         } finally {

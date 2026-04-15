@@ -42,7 +42,8 @@ class PluginManager extends EventEmitter {
         // Auto-enable previously-enabled plugins
         for (const [id, plugin] of this.plugins) {
             const row = this.db.get('SELECT status FROM plugins WHERE id = ?', [id]);
-            if (row && row.status === 'enabled') {
+            const shouldEnable = (row?.status || plugin.persistedStatus) === 'enabled';
+            if (shouldEnable) {
                 try {
                     await this.enablePlugin(id);
                 } catch (e) {
@@ -89,7 +90,8 @@ class PluginManager extends EventEmitter {
                 this.plugins.set(manifest.id, {
                     manifest,
                     dir: path.join(this.pluginsDir, dir.name),
-                    status: existing?.status || 'disabled',
+                    status: 'disabled',
+                    persistedStatus: existing?.status || 'disabled',
                     module: null,
                     context: null,
                     handlers: []
@@ -105,7 +107,7 @@ class PluginManager extends EventEmitter {
     async enablePlugin(pluginId) {
         const plugin = this.plugins.get(pluginId);
         if (!plugin) throw new Error(`Plugin "${pluginId}" not found`);
-        if (plugin.status === 'enabled') return;
+        if (plugin.status === 'enabled' && plugin.module && plugin.context) return;
 
         const mainPath = path.join(plugin.dir, plugin.manifest.main);
         if (!fs.existsSync(mainPath)) {
@@ -138,6 +140,7 @@ class PluginManager extends EventEmitter {
         }
 
         plugin.status = 'enabled';
+        plugin.persistedStatus = 'enabled';
         this._updateDbStatus(pluginId, 'enabled');
         
         // Auto-generate knowledge item for this plugin
@@ -167,6 +170,7 @@ class PluginManager extends EventEmitter {
         plugin.module = null;
         plugin.context = null;
         if (persistStatus) {
+            plugin.persistedStatus = 'disabled';
             this._updateDbStatus(pluginId, 'disabled');
         }
 

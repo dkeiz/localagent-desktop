@@ -24,6 +24,16 @@ module.exports = {
     await pluginManager.disablePlugin('test-plugin');
     assert.equal(mcpServer.tools.has('plugin_test_plugin_hello'), false, 'Disabled plugin tool should be removed');
 
+    db.run('UPDATE plugins SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['enabled', null, 'test-plugin']);
+    const restartManager = new PluginManager(container);
+    await restartManager.initialize();
+    assert.equal(
+      mcpServer.tools.has('plugin_test_plugin_hello'),
+      true,
+      'Plugin marked enabled in DB should auto-enable and wire handlers on startup'
+    );
+    await restartManager.disablePlugin('test-plugin');
+
     const tempPluginId = `tmp-rollback-plugin-${Date.now()}`;
     const tempPluginDir = path.join(rootDir, 'agentin', 'plugins', tempPluginId);
     fs.mkdirSync(tempPluginDir, { recursive: true });

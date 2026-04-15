@@ -319,9 +319,14 @@ class QwenAdapter extends BaseAdapter {
 
         const content = this._coerceContent(message.content);
         const reasoning = this._coerceContent(
+            message.thinking ||
             message.reasoning_content ||
             message.reasoning ||
-            payload?.output?.reasoning_content
+            payload?.thinking ||
+            payload?.reasoning_content ||
+            payload?.reasoning ||
+            payload?.output?.reasoning_content ||
+            payload?.output?.thinking
         );
 
         return { content, reasoning };

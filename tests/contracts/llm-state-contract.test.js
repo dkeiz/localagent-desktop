@@ -36,9 +36,9 @@ module.exports = {
     await rememberLastWorkingModel(db, 'ollama', 'qwen3:latest');
 
     const effective = await getEffectiveLlmSelection(db);
-    assert.equal(effective.provider, 'ollama', 'Expected effective provider to prefer the last workable provider');
-    assert.equal(effective.model, 'qwen3:latest', 'Expected effective model to prefer the last workable model');
-    assert.equal(effective.source, 'last-working', 'Expected effective selection to report last-working source');
+    assert.equal(effective.provider, 'ollama', 'Expected effective provider to prefer explicitly configured provider');
+    assert.equal(effective.model, 'broken-model', 'Expected effective model to prefer explicitly configured model');
+    assert.equal(effective.source, 'configured', 'Expected effective selection to report configured source');
 
     const models = await getKnownModelsForProvider(db, 'ollama', ['llama3', 'qwen3:latest']);
     assert.deepEqual(
@@ -51,5 +51,11 @@ module.exports = {
     assert.equal(await db.getSetting('llm.provider'), 'ollama', 'Expected saveActiveSelection() to persist active provider');
     assert.equal(await db.getSetting('llm.model'), 'deepseek-v3.2:cloud', 'Expected saveActiveSelection() to persist active model');
     assert.equal(await db.getSetting('llm.modelType'), 'cloud', 'Expected Ollama cloud-like models to update llm.modelType');
+    assert.equal(await db.getSetting('llm.lastWorkingProvider'), 'ollama', 'Expected explicit selection to refresh last-working provider');
+    assert.equal(await db.getSetting('llm.lastWorkingModel'), 'deepseek-v3.2:cloud', 'Expected explicit selection to refresh last-working model');
+
+    await saveActiveSelection(db, 'openrouter', null);
+    const effectiveAfterProviderSwitch = await getEffectiveLlmSelection(db);
+    assert.equal(effectiveAfterProviderSwitch.provider, 'openrouter', 'Expected explicit provider switch to take effect immediately');
   }
 };

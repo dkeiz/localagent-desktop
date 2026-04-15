@@ -82,6 +82,28 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     return db.addConversation(message, sessionId);
   }
 
+  async function resolveRuntimeForResponse(response) {
+    const responseRuntime = response?.renderContext?.runtimeConfig;
+    if (responseRuntime && typeof responseRuntime === 'object') {
+      return responseRuntime;
+    }
+
+    const provider = response?.renderContext?.provider;
+    const model = response?.renderContext?.model;
+    if (provider && model) {
+      const { runtime } = await getModelRuntimeConfig(db, provider, model);
+      return runtime;
+    }
+
+    const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
+    if (activeProvider && activeModel) {
+      const { runtime } = await getModelRuntimeConfig(db, activeProvider, activeModel);
+      return runtime;
+    }
+
+    return null;
+  }
+
   ipcMain.handle('get-calendar-events', async () => db.getCalendarEvents());
 
   ipcMain.handle('add-calendar-event', async (event, calendarEvent) => {
@@ -346,13 +368,10 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         response = { content: 'Sorry, I was unable to generate a response. Please try again.', model: 'unknown' };
       }
 
-      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
-      const { runtime: runtimeConfig } = activeProvider && activeModel
-        ? await getModelRuntimeConfig(db, activeProvider, activeModel)
-        : { runtime: null };
-
+      const runtimeConfig = await resolveRuntimeForResponse(response);
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
       await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
+      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
       if (activeProvider && activeModel) {
         await rememberLastWorkingModel(db, activeProvider, activeModel);
       }
@@ -388,13 +407,11 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
 
       const toolContext = `Tool "${toolName}" was executed with parameters: ${JSON.stringify(params)}\n\nResult: ${JSON.stringify(toolResult, null, 2)}\n\nBased on this tool result, provide a natural, helpful response to the user. Do NOT call any tools.`;
       const response = await dispatcher.dispatch(toolContext, conversationHistory, { mode: 'chat', sessionId: effectiveSessionId });
-      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
-      const { runtime: runtimeConfig } = activeProvider && activeModel
-        ? await getModelRuntimeConfig(db, activeProvider, activeModel)
-        : { runtime: null };
+      const runtimeConfig = await resolveRuntimeForResponse(response);
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
 
       await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
+      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
       if (activeProvider && activeModel) {
         await rememberLastWorkingModel(db, activeProvider, activeModel);
       }
@@ -453,12 +470,10 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         response = await dispatcher.dispatch(message, conversationHistory, { mode: 'chat', sessionId: effectiveSessionId });
       }
 
-      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
-      const { runtime: runtimeConfig } = activeProvider && activeModel
-        ? await getModelRuntimeConfig(db, activeProvider, activeModel)
-        : { runtime: null };
+      const runtimeConfig = await resolveRuntimeForResponse(response);
       const cleanContent = stripToolPatterns(buildAssistantContent(response, runtimeConfig));
       await persistMessage({ role: 'assistant', content: cleanContent }, effectiveSessionId);
+      const { provider: activeProvider, model: activeModel } = await getEffectiveLlmSelection(db);
       if (activeProvider && activeModel) {
         await rememberLastWorkingModel(db, activeProvider, activeModel);
       }
