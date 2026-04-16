@@ -176,10 +176,12 @@ module.exports = {
     assert.equal(capturedOptions.sessionId, ack.childSessionId, 'Expected child session id to be passed to chain controller');
     assert.equal(capturedOptions.agentId, 7, 'Expected child agent id to be passed to chain controller');
 
-    assert.equal(deliveredMessages.length, 1, 'Expected completed result to be autosent to parent session');
-    assert.equal(deliveredMessages[0].sessionId, 10, 'Expected delivery to target the parent session');
-    assert.includes(deliveredMessages[0].message.content, ack.runDir, 'Expected parent delivery to mention run folder');
-    assert.includes(deliveredMessages[0].message.content, completed.result_path, 'Expected parent delivery to mention result file');
+    const childMessages = deliveredMessages.filter(entry => String(entry.sessionId) === String(ack.childSessionId));
+    const parentMessages = deliveredMessages.filter(entry => Number(entry.sessionId) === 10);
+    assert.ok(childMessages.length >= 3, 'Expected delegated child chat log to be persisted');
+    assert.equal(parentMessages.length, 1, 'Expected completed result to be autosent to parent session');
+    assert.includes(parentMessages[0].message.content, ack.runDir, 'Expected parent delivery to mention run folder');
+    assert.includes(parentMessages[0].message.content, completed.result_path, 'Expected parent delivery to mention result file');
 
     assert.deepEqual(
       statusUpdates.map(entry => entry.data.status),

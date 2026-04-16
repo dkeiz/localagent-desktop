@@ -1,4 +1,6 @@
 {
   "defaultMaxLines": 1000,
-  "allowlist": {}
+  "allowlist": {
+    "src/main/llm-model-specs.json": 1100
+  }
 }

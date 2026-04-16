@@ -110,8 +110,8 @@ class MockMCP {
     this.tools = new Map();
   }
 
-  registerTool(name, def, handler) {
-    this.tools.set(name, { def, handler });
+  registerTool(name, definition, handler) {
+    this.tools.set(name, { definition, handler });
   }
 }
 
@@ -156,7 +156,12 @@ async function main() {
     throw new Error('No plugins discovered in agentin/plugins');
   }
 
-  const id = plugins[0].id;
+  const testPlugin = plugins.find(plugin => plugin.id === 'test-plugin');
+  if (!testPlugin) {
+    throw new Error('Expected test-plugin to be discoverable');
+  }
+
+  const id = testPlugin.id;
   await pluginManager.enablePlugin(id);
   const detail = pluginManager.getPluginDetail(id);
 
@@ -165,6 +170,9 @@ async function main() {
   }
   if (!mcpServer.tools.has('plugin_test_plugin_hello')) {
     throw new Error('Expected test-plugin tool not registered');
+  }
+  if (!db.knowledge.has('plugin-test-plugin')) {
+    throw new Error('Expected plugin knowledge item to be generated');
   }
 
   await pluginManager.disablePlugin(id);

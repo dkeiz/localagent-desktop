@@ -27,9 +27,10 @@
     /* Reduced gap */
     padding: 0.2rem 0.3rem;
     /* More compact padding */
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 3px;
+    background: var(--chat-session-bg, transparent);
+    border: var(--chat-session-border, none);
+    border-radius: var(--chat-session-radius, var(--border-radius));
+    box-shadow: var(--chat-session-shadow, none);
     cursor: pointer;
     transition: all 0.2s;
     font-size: 0.7rem;
@@ -39,8 +40,8 @@
 }
 
 .chat-session-compact:hover {
-    background: var(--hover-bg);
-    border-color: var(--primary-color);
+    background: var(--chat-session-hover-bg, var(--hover-bg));
+    box-shadow: var(--chat-session-hover-shadow, var(--chat-session-shadow, none));
 }
 
 .chat-session-compact:hover .delete-session-btn {
@@ -606,6 +607,9 @@
 .widget-panel.collapsed .calendar-widget,
 .widget-panel.collapsed .agent-picker-widget,
 .widget-panel.collapsed .workflows-widget,
+.widget-panel.collapsed .widget-stack,
+.widget-panel.collapsed .calendar-dock,
+.widget-panel.collapsed .calendar-flyout,
 .widget-panel.collapsed .theme-picker {
     display: none;
 }

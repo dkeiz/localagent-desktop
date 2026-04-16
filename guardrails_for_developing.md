@@ -72,6 +72,12 @@ Keeping these lenses separate matters. A future change can preserve a button whi
 - Tool execution belongs in `src/main/mcp-server.js`. Routing tools through it keeps permissions, inventory, logging, and chaining coherent.
 - File-backed runtime state is intentional. Run folders, memory, workflows, prompts, knowledge, plugins, and connectors should stay inspectable on disk wherever possible.
 - Contract tests are part of the architecture. When a seam becomes important, give it a test that tells future developers what is safe to change.
+- Review and fix work must classify problems before changing code:
+  - real runtime issue: application behavior is wrong and must be fixed in the owning runtime seam
+  - stale or bad test: the test expectation is wrong, outdated, or too coupled to an implementation detail
+  - structural risk: ownership, coupling, or state-model drift is likely to cause future bugs even if current behavior still passes
+  - optional cleanup: nice-to-have cleanup that should not be presented as a required product fix
+- Tests are evidence, not the product definition. A failing test does not automatically mean the application is broken, and a passing test does not automatically mean the runtime model is coherent.
 - Keep files under the enforced line budget. `tests/contracts/line-budget-contract.test.js` enforces a default max of 1000 lines for tracked source, tests, CSS, HTML, JSON, and Markdown files.
 - Default behavior should remain strong when no optional plugin is enabled.
 

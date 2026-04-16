@@ -114,6 +114,25 @@
         "sidebar": "#1f2937",
         "accent": "#34d399"
       }
+    },
+    {
+      "id": "design-d",
+      "name": "Design D (Borderless)",
+      "compatible": true,
+      "description": "Minimalist, borderless AI interface pattern with floating inputs.",
+      "source": "ui-concepts/designD.html",
+      "supportedThemes": ["light", "dark", "solar"],
+      "defaultTheme": "dark",
+      "themeLabels": {
+        "light": "Clean",
+        "dark": "Midnight",
+        "solar": "Sepia"
+      },
+      "preview": {
+        "base": "#212121",
+        "sidebar": "#171717",
+        "accent": "#ffffff"
+      }
     }
   ]
 }

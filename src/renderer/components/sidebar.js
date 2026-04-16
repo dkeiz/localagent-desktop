@@ -722,7 +722,7 @@ class Sidebar {
                 const time = new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
                 const item = document.createElement('div');
-                item.className = 'chat-session-compact';
+                item.className = 'chat-session-compact nav-btn';
                 item.dataset.sessionId = String(session.id);
                 item.title = session.first_message || 'Empty chat';
 

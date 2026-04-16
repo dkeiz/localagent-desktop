@@ -63,7 +63,8 @@ class PluginManager extends EventEmitter {
         if (!fs.existsSync(this.pluginsDir)) return;
 
         const dirs = fs.readdirSync(this.pluginsDir, { withFileTypes: true })
-            .filter(d => d.isDirectory());
+            .filter(d => d.isDirectory())
+            .sort((a, b) => a.name.localeCompare(b.name));
 
         for (const dir of dirs) {
             const manifestPath = path.join(this.pluginsDir, dir.name, 'plugin.json');

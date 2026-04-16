@@ -13,13 +13,19 @@ const {
 } = require('./run-store-utils');
 
 class SubtaskRuntime {
-    constructor(db, sessionWorkspace = null, eventBus = null, basePath = null) {
+    constructor(db, sessionWorkspace = null, eventBus = null, basePath = null, options = {}) {
         this.db = db;
         this.sessionWorkspace = sessionWorkspace;
         this.eventBus = eventBus;
         this.basePath = basePath || path.join(__dirname, '../../agentin/subtasks');
         this.runsPath = path.join(this.basePath, 'runs');
         this.inboxesPath = path.join(this.basePath, 'inboxes');
+        this.persistConversationMessage = typeof options.persistConversationMessage === 'function'
+            ? options.persistConversationMessage
+            : null;
+        this.notifyConversationUpdate = typeof options.notifyConversationUpdate === 'function'
+            ? options.notifyConversationUpdate
+            : null;
     }
 
     initialize() {
@@ -301,11 +307,16 @@ class SubtaskRuntime {
         const numericParentId = String(run.parent_session_id).match(/^\d+$/)
             ? Number(run.parent_session_id)
             : null;
+        const targetSessionId = numericParentId !== null ? numericParentId : run.parent_session_id;
+        const conversationWriter = this.persistConversationMessage
+            || (numericParentId !== null && this.db?.addConversation
+                ? async (message, sessionId) => this.db.addConversation(message, sessionId)
+                : null);
 
-        if (numericParentId !== null && this.db?.addConversation) {
+        if (conversationWriter) {
             const content = this._buildParentDeliveryMessage(run, record);
             try {
-                await this.db.addConversation({
+                await conversationWriter({
                     role: 'system',
                     content,
                     metadata: {
@@ -317,7 +328,7 @@ class SubtaskRuntime {
                             run_dir: run.run_dir
                         }
                     }
-                }, numericParentId);
+                }, targetSessionId);
                 deliveredToParent = true;
                 record.delivered_to_parent = true;
                 writeJson(deliveryPath, record);
@@ -326,7 +337,11 @@ class SubtaskRuntime {
                     delivery_path: deliveryPath
                 });
                 try {
-                    this.eventBus?.sendToRenderer?.('conversation-update', { sessionId: numericParentId });
+                    if (this.notifyConversationUpdate) {
+                        this.notifyConversationUpdate(targetSessionId);
+                    } else {
+                        this.eventBus?.sendToRenderer?.('conversation-update', { sessionId: targetSessionId });
+                    }
                 } catch (error) {
                     console.error('[SubtaskRuntime] Failed to relay conversation update:', error.message);
                 }

@@ -1,0 +1,26 @@
+/* Design D - Light Theme (Clean) */
+
+html[data-skin-contract-token="design-d"][data-skin-theme-token="light"] {
+    --skin-main-bg: #ffffff;
+    --skin-sidebar-bg: #f9f9f9;
+    --skin-input-bg: #f4f4f4;
+    --skin-hover-bg: rgba(0, 0, 0, 0.05);
+    --skin-btn-bg: #e5e5e5;
+    
+    --skin-border-light: rgba(0, 0, 0, 0.04);
+    
+    --skin-text-main: #0d0d0d;
+    --skin-text-muted: #666666;
+    --skin-text-dim: #999999;
+    
+    --skin-accent: #000000;
+    --skin-accent-text: #ffffff;
+    
+    --skin-shadow-float: 0 4px 20px rgba(0, 0, 0, 0.05);
+
+    /* General application variable overrides */
+    --bg-base: var(--skin-main-bg);
+    --bg-panel: var(--skin-sidebar-bg);
+    --text-main: var(--skin-text-main);
+    --text-muted: var(--skin-text-muted);
+}

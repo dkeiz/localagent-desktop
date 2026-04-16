@@ -4,11 +4,23 @@ class CalendarWidget {
         const now = new Date();
         this.currentYear = now.getFullYear();
         this.currentMonth = now.getMonth();
+        this.flyoutAutoHideMs = 6000;
+        this.flyoutHideTimer = null;
+        this.isFlyoutOpen = false;
+        this.calendarDock = null;
+        this.calendarDockDate = null;
+        this.calendarFlyout = null;
+        this.handleDocumentPointerDown = this.handleDocumentPointerDown.bind(this);
+        this.handleDocumentKeyDown = this.handleDocumentKeyDown.bind(this);
+        this.handleWindowBlur = this.handleWindowBlur.bind(this);
         this.renderCalendar();
         this.initializeEvents();
     }
 
     initializeEvents() {
+        this.initializeDock();
+        this.updateDockDateLabel();
+
         // Load initial events
         this.loadEvents();
 
@@ -26,6 +38,124 @@ class CalendarWidget {
                 this.loadEvents();
             });
         }
+    }
+
+    initializeDock() {
+        this.calendarDock = document.getElementById('calendar-dock');
+        this.calendarDockDate = document.getElementById('calendar-dock-date');
+        this.calendarFlyout = document.getElementById('calendar-flyout');
+
+        if (!this.calendarDock || !this.calendarFlyout) {
+            return;
+        }
+
+        this.calendarDock.addEventListener('click', () => {
+            if (this.isFlyoutOpen) {
+                this.closeFlyout();
+                return;
+            }
+            this.openFlyout();
+        });
+
+        this.calendarDock.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+            }
+            event.preventDefault();
+            if (this.isFlyoutOpen) {
+                this.closeFlyout();
+                return;
+            }
+            this.openFlyout();
+        });
+
+        const keepOpen = () => this.bumpFlyoutTimer();
+        this.calendarFlyout.addEventListener('mouseenter', keepOpen);
+        this.calendarFlyout.addEventListener('pointerdown', keepOpen);
+        this.calendarFlyout.addEventListener('pointermove', keepOpen);
+        this.calendarFlyout.addEventListener('keydown', keepOpen);
+
+        document.addEventListener('pointerdown', this.handleDocumentPointerDown);
+        document.addEventListener('keydown', this.handleDocumentKeyDown);
+        window.addEventListener('blur', this.handleWindowBlur);
+    }
+
+    openFlyout() {
+        if (!this.calendarDock || !this.calendarFlyout) {
+            return;
+        }
+        this.isFlyoutOpen = true;
+        this.calendarFlyout.classList.add('open');
+        this.calendarFlyout.setAttribute('aria-hidden', 'false');
+        this.calendarDock.setAttribute('aria-expanded', 'true');
+        this.bumpFlyoutTimer();
+    }
+
+    closeFlyout() {
+        if (!this.calendarDock || !this.calendarFlyout) {
+            return;
+        }
+        this.isFlyoutOpen = false;
+        this.clearFlyoutTimer();
+        this.calendarFlyout.classList.remove('open');
+        this.calendarFlyout.setAttribute('aria-hidden', 'true');
+        this.calendarDock.setAttribute('aria-expanded', 'false');
+    }
+
+    bumpFlyoutTimer() {
+        if (!this.isFlyoutOpen) {
+            return;
+        }
+        this.clearFlyoutTimer();
+        this.flyoutHideTimer = setTimeout(() => {
+            this.closeFlyout();
+        }, this.flyoutAutoHideMs);
+    }
+
+    clearFlyoutTimer() {
+        if (this.flyoutHideTimer) {
+            clearTimeout(this.flyoutHideTimer);
+            this.flyoutHideTimer = null;
+        }
+    }
+
+    handleDocumentPointerDown(event) {
+        if (!this.isFlyoutOpen || !this.calendarFlyout || !this.calendarDock) {
+            return;
+        }
+        const target = event.target;
+        if (this.calendarFlyout.contains(target) || this.calendarDock.contains(target)) {
+            this.bumpFlyoutTimer();
+            return;
+        }
+        this.closeFlyout();
+    }
+
+    handleDocumentKeyDown(event) {
+        if (event.key === 'Escape' && this.isFlyoutOpen) {
+            this.closeFlyout();
+            if (this.calendarDock) {
+                this.calendarDock.focus();
+            }
+        }
+    }
+
+    handleWindowBlur() {
+        if (this.isFlyoutOpen) {
+            this.closeFlyout();
+        }
+    }
+
+    updateDockDateLabel() {
+        if (!this.calendarDockDate) {
+            return;
+        }
+        const now = new Date();
+        this.calendarDockDate.textContent = now.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        });
     }
 
     async loadEvents() {
@@ -81,6 +211,7 @@ class CalendarWidget {
         const year = this.currentYear;
         const month = this.currentMonth;
         const today = (now.getFullYear() === year && now.getMonth() === month) ? now.getDate() : null;
+        this.updateDockDateLabel();
 
         const firstDayOfMonth = new Date(year, month, 1);
         const lastDayOfMonth = new Date(year, month + 1, 0);
@@ -106,6 +237,7 @@ class CalendarWidget {
 
         this.renderWeekdays();
         const daysContainer = document.getElementById('calendar-days');
+        if (!daysContainer) return;
         daysContainer.innerHTML = '';
 
         // Add padding for days before the 1st
@@ -144,6 +276,7 @@ class CalendarWidget {
 
     renderWeekdays() {
         const weekdaysContainer = document.getElementById('calendar-weekdays');
+        if (!weekdaysContainer) return;
         weekdaysContainer.innerHTML = '';
         const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         weekdays.forEach(day => {

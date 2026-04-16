@@ -21,8 +21,8 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="styles/layout.css?v=7">
-    <link rel="stylesheet" href="styles/theme.css?v=7">
+    <link rel="stylesheet" href="styles/layout.css?v=8">
+    <link rel="stylesheet" href="styles/theme.css?v=8">
     <link rel="stylesheet" href="styles/buttons.css?v=7">
     <link rel="stylesheet" href="styles/api-provider-settings.css?v=1">
     <link rel="stylesheet" href="styles/rule-manager.css?v=7">
@@ -456,39 +456,47 @@
                 </button>
             </div>
 
-            <div class="calendar-widget">
+            <div class="widget-stack" id="widget-stack">
+                <div class="plugins-widget collapsible-widget">
+                    <div class="widget-header" id="toggle-plugins-widget">
+                        <span>🧩 Plugins</span>
+                        <span class="collapse-arrow">▼</span>
+                    </div>
+                    <div class="widget-content" id="plugins-widget-content">
+                        <div id="plugins-list" class="plugins-list"></div>
+                        <button id="manage-plugins-btn" class="compact-btn">Manage</button>
+                    </div>
+                </div>
+
+                <div class="agent-picker-widget">
+                    <h3>Agents</h3>
+                    <div id="agent-list" class="agent-list"></div>
+                    <button id="add-agent-btn" class="compact-btn" title="Configure Agents">+ Agent</button>
+                </div>
+
+                <div class="workflows-widget collapsible-widget">
+                    <div class="widget-header" id="toggle-workflows-widget">
+                        <span>⚡ Workflows</span>
+                        <span class="collapse-arrow">▼</span>
+                    </div>
+                    <div class="widget-content" id="saved-workflows-list">
+                        <!-- Saved workflows will be listed here -->
+                    </div>
+                </div>
+            </div>
+
+            <button id="calendar-dock" class="calendar-dock" aria-expanded="false" aria-controls="calendar-flyout"
+                title="Open calendar">
+                <span class="calendar-dock-icon">📅</span>
+                <span id="calendar-dock-date" class="calendar-dock-date">Calendar</span>
+            </button>
+
+            <div class="calendar-widget calendar-flyout" id="calendar-flyout" aria-hidden="true">
                 <h3 id="calendar-header">Calendar</h3>
                 <div id="calendar-weekdays"></div>
                 <div id="calendar-days"></div>
                 <button id="add-event-btn" class="compact-btn">+ Event</button>
                 <div id="calendar-events"></div>
-            </div>
-
-            <div class="plugins-widget collapsible-widget">
-                <div class="widget-header" id="toggle-plugins-widget">
-                    <span>🧩 Plugins</span>
-                    <span class="collapse-arrow">▼</span>
-                </div>
-                <div class="widget-content" id="plugins-widget-content">
-                    <div id="plugins-list" class="plugins-list"></div>
-                    <button id="manage-plugins-btn" class="compact-btn">Manage</button>
-                </div>
-            </div>
-
-            <div class="agent-picker-widget">
-                <h3>Agents</h3>
-                <div id="agent-list" class="agent-list"></div>
-                <button id="add-agent-btn" class="compact-btn" title="Configure Agents">+ Agent</button>
-            </div>
-
-            <div class="workflows-widget collapsible-widget">
-                <div class="widget-header" id="toggle-workflows-widget">
-                    <span>⚡ Workflows</span>
-                    <span class="collapse-arrow">▼</span>
-                </div>
-                <div class="widget-content" id="saved-workflows-list">
-                    <!-- Saved workflows will be listed here -->
-                </div>
             </div>
         </aside>
     </div>
@@ -530,7 +538,7 @@
     <script src="components/message-formatter.js?v=8"></script>
     <script src="components/api-provider-settings.js?v=1"></script>
     <script src="components/main-panel.js?v=10"></script>
-    <script src="components/calendar.js?v=7"></script>
+    <script src="components/calendar.js?v=8"></script>
     <script src="components/agent-picker.js?v=1"></script>
     <script src="components/shortcuts.js?v=7"></script>
     <script src="components/rule-manager.js?v=7"></script>

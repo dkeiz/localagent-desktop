@@ -8,6 +8,65 @@
     gap: 0.5rem;
     overflow-y: auto;
     overflow-x: hidden;
+    position: relative;
+}
+
+.widget-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 0;
+}
+
+.calendar-dock {
+    background: var(--main-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2rem;
+    padding: 0.4rem 0.55rem;
+    width: 100%;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.calendar-dock:hover,
+.calendar-dock:focus-visible {
+    background: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color), transparent 70%);
+    outline: none;
+}
+
+.calendar-dock-icon {
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.calendar-dock-date {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.calendar-flyout {
+    position: absolute;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 3.25rem;
+    z-index: 30;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.calendar-flyout.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
 }
 
 .calendar-widget {

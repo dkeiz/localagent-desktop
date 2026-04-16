@@ -61,7 +61,8 @@ async function bootstrapApplication(options = {}) {
   await db.init();
   container.register('db', db);
   container.register('testClientMode', isTestClientMode);
-  container.register('testClientStore', options.testClientStore || { sessions: new Map(), currentSessionId: null });
+  const testClientStore = options.testClientStore || { sessions: new Map(), currentSessionId: null };
+  container.register('testClientStore', testClientStore);
 
   const eventBus = new BackendEventBus({
     notifyPromptPath: paths.backgroundNotifyPromptPath
@@ -109,7 +110,39 @@ async function bootstrapApplication(options = {}) {
   sessionWorkspace.cleanupStale(30);
   container.register('sessionWorkspace', sessionWorkspace);
 
-  const subtaskRuntime = new SubtaskRuntime(db, sessionWorkspace, eventBus);
+  const persistConversationMessage = async (message, sessionId = null) => {
+    const isTestSession = typeof sessionId === 'string' && sessionId.startsWith('testclient-');
+    if (isTestClientMode && isTestSession) {
+      if (!testClientStore.sessions.has(sessionId)) {
+        testClientStore.sessions.set(sessionId, {
+          id: sessionId,
+          title: 'Test Client',
+          created_at: new Date().toISOString(),
+          messages: []
+        });
+      }
+      const session = testClientStore.sessions.get(sessionId);
+      session.messages.push({
+        role: message.role,
+        content: message.content,
+        metadata: message.metadata || null,
+        timestamp: new Date().toISOString()
+      });
+      testClientStore.currentSessionId = sessionId;
+      return message;
+    }
+
+    return db.addConversation(message, sessionId);
+  };
+  const subtaskRuntime = new SubtaskRuntime(db, sessionWorkspace, eventBus, null, {
+    persistConversationMessage,
+    notifyConversationUpdate(sessionId) {
+      if (sessionId === null || sessionId === undefined) {
+        return windowManager.send('conversation-update');
+      }
+      return windowManager.send('conversation-update', { sessionId });
+    }
+  });
   container.register('subtaskRuntime', subtaskRuntime);
 
   const promptFileManager = new PromptFileManager(db, paths.promptBasePath);
