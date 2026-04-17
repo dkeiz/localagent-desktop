@@ -96,7 +96,7 @@
         "run_python"
       ]
     },
-      "ports": {
+    "ports": {
       "name": "Connectors & Ports",
       "description": "External service connectors and HTTP/WebSocket listeners",
       "icon": "🔌",

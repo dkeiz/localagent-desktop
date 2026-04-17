@@ -93,6 +93,12 @@ module.exports = {
           result: { ok: true }
         });
 
+        await options.trace.onSyntheticUserMessage({
+          step: 1,
+          kind: 'tool_results',
+          content: '<tool_results>\nTool: read_file\nResult: {"ok":true}\n</tool_results>'
+        });
+
         return {
           chainComplete: true,
           completionTool: 'complete_subtask',
@@ -170,7 +176,7 @@ module.exports = {
     assert.includes(traceText, 'parent may inspect this run folder', 'Expected delegated-run guidance in trace');
     assert.includes(traceText, 'Searching sources', 'Expected assistant trace entry');
 
-    assert.includes(capturedPrompt, 'Required completion contract', 'Expected completion contract instructions in prompt');
+    assert.includes(capturedPrompt, 'Required completion envelope', 'Expected completion envelope instructions in prompt');
     assert.includes(capturedPrompt, 'Include findings and sources', 'Expected output instructions in prompt');
     assert.includes(capturedPrompt, ack.runDir, 'Expected run directory guidance in prompt');
     assert.equal(capturedOptions.sessionId, ack.childSessionId, 'Expected child session id to be passed to chain controller');
@@ -178,10 +184,13 @@ module.exports = {
 
     const childMessages = deliveredMessages.filter(entry => String(entry.sessionId) === String(ack.childSessionId));
     const parentMessages = deliveredMessages.filter(entry => Number(entry.sessionId) === 10);
-    assert.ok(childMessages.length >= 3, 'Expected delegated child chat log to be persisted');
+    assert.ok(childMessages.length >= 4, 'Expected delegated child chat log to be persisted');
+    assert.ok(childMessages.some(entry => entry.message.content.includes('<tool_results>')), 'Expected delegated child history to persist generated tool-results context');
     assert.equal(parentMessages.length, 1, 'Expected completed result to be autosent to parent session');
+    assert.includes(parentMessages[0].message.content, ack.runId, 'Expected parent delivery to include canonical run id');
     assert.includes(parentMessages[0].message.content, ack.runDir, 'Expected parent delivery to mention run folder');
     assert.includes(parentMessages[0].message.content, completed.result_path, 'Expected parent delivery to mention result file');
+    assert.includes(parentMessages[0].message.content, '"findings"', 'Expected parent delivery to inline structured contract data');
 
     assert.deepEqual(
       statusUpdates.map(entry => entry.data.status),

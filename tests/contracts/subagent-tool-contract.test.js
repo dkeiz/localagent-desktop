@@ -5,7 +5,8 @@ module.exports = {
   tags: ['contract', 'fast'],
   async run({ assert }) {
     const db = {
-      async getSetting() {
+      async getSetting(key) {
+        if (key === 'tool_timeout_ms') return '5';
         return null;
       }
     };
@@ -14,7 +15,8 @@ module.exports = {
     const calls = {
       create: [],
       invoke: [],
-      deactivate: []
+      deactivate: [],
+      wait: []
     };
 
     const searchAgent = {
@@ -52,6 +54,29 @@ module.exports = {
         calls.deactivate.push(id);
         return { success: true };
       },
+      async waitForSubagentRun(runId, timeoutMs) {
+        calls.wait.push({ runId, timeoutMs });
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return {
+          run_id: runId,
+          status: 'task_complete',
+          subagent_id: 5,
+          agent_name: 'Search Agent',
+          parent_session_id: 42,
+          child_session_id: 'subtask-test-1',
+          result: {
+            contract: {
+              status: 'task_complete',
+              summary: 'Found sources',
+              data: {
+                sources: ['a', 'b']
+              },
+              artifacts: [],
+              notes: ''
+            }
+          }
+        };
+      },
       async listSubagentRuns() {
         return [{
           run_id: 'subtask-test-1',
@@ -59,6 +84,25 @@ module.exports = {
           subagent_id: 5,
           agent_name: 'Search Agent'
         }];
+      },
+      async getSubagentRun(runId) {
+        return {
+          run_id: runId,
+          status: 'empty',
+          subagent_id: 5,
+          agent_name: 'Search Agent',
+          parent_session_id: 42,
+          child_session_id: 'subtask-test-1',
+          result: {
+            contract: {
+              status: 'empty',
+              summary: 'No result found',
+              data: {},
+              artifacts: [],
+              notes: ''
+            }
+          }
+        };
       }
     });
 
@@ -79,6 +123,31 @@ module.exports = {
     assert.equal(calls.invoke.length, 1, 'Expected invokeSubAgent to be called once');
     assert.equal(calls.invoke[0].parentSessionId, 42, 'Expected current session id to be forwarded');
     assert.equal(calls.invoke[0].subAgentId, 5, 'Expected run action to target the selected sub-agent');
+    assert.equal(calls.invoke[0].options.subagentMode, 'no_ui', 'Expected MCP default subagent mode to match backend default');
+    assert.equal(runResult.result.waited, false, 'Expected default run path to remain async');
+    assert.equal(runResult.result.identifiers.run_id, 'subtask-test-1', 'Expected canonical string run id refs');
+    assert.equal(runResult.result.identifiers.child_session_id, 'subtask-test-1', 'Expected canonical string child session refs');
+
+    const waitedRunResult = await server.executeTool('subagent', {
+      action: 'run',
+      id: 5,
+      task: 'Find sources and wait',
+      wait: true,
+      timeout_ms: 1234
+    });
+    assert.equal(waitedRunResult.success, true, 'Expected awaited subagent run to succeed');
+    assert.equal(waitedRunResult.result.waited, true, 'Expected awaited run flag');
+    assert.equal(waitedRunResult.result.done, true, 'Expected awaited run to report completion');
+    assert.equal(waitedRunResult.result.contract.summary, 'Found sources', 'Expected awaited run to expose final contract');
+    assert.equal(waitedRunResult.result.run.identifiers.parent_session_id, '42', 'Expected canonical parent session ref on waited run');
+    assert.deepEqual(calls.wait, [{ runId: 'subtask-test-1', timeoutMs: 1234 }], 'Expected awaited run to wait on the child completion');
+
+    const statusResult = await server.executeTool('subagent', {
+      action: 'status',
+      run_id: 'subtask-test-1'
+    });
+    assert.equal(statusResult.success, true, 'Expected status action to succeed');
+    assert.equal(statusResult.result.done, true, 'Expected status polling to treat completed result as done even with opaque statuses');
 
     const createResult = await server.executeTool('subagent', {
       action: 'new',

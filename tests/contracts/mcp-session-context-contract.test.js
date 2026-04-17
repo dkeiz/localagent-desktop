@@ -32,6 +32,11 @@ module.exports = {
       inputSchema: { type: 'object' }
     }, async () => ({ sessionId: server.getCurrentSessionId() || null }));
 
+    const toolEvents = [];
+    server.on('tool-executed', (event) => {
+      toolEvents.push(event);
+    });
+
     server.setCurrentSessionId('parent-session');
 
     const baseResult = await server.executeTool('session_echo_test', {});
@@ -43,8 +48,10 @@ module.exports = {
       }
     });
     assert.equal(childResult.result.sessionId, 'child-session', 'Expected execution context session id override');
+    assert.equal(toolEvents[1].sessionId, 'child-session', 'Expected emitted tool event to include scoped session id');
 
     const restoredResult = await server.executeTool('session_echo_test', {});
     assert.equal(restoredResult.result.sessionId, 'parent-session', 'Expected execution context to be restored after scoped tool call');
+    assert.equal(toolEvents[2].sessionId, 'parent-session', 'Expected emitted tool event to restore parent session context');
   }
 };

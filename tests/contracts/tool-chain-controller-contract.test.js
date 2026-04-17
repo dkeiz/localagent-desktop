@@ -72,6 +72,7 @@ module.exports = {
     {
       const mcp = createServer();
       let turn = 0;
+      const syntheticMessages = [];
       const dispatcher = {
         async dispatch() {
           turn++;
@@ -93,12 +94,19 @@ module.exports = {
       };
 
       const chain = new ToolChainController(dispatcher, mcp, db);
-      const result = await chain.executeWithChaining('hello', [], {});
+      const result = await chain.executeWithChaining('hello', [], {
+        trace: {
+          async onSyntheticUserMessage(payload) {
+            syntheticMessages.push(payload);
+          }
+        }
+      });
       assert.equal(result.content, 'done', 'Expected chain to continue after real tool execution');
       assert.equal(result.chain.steps, 2, 'Expected second step after successful tool run');
       assert.ok(result.chain.tools.includes('demo_echo'), 'Expected executed tool to be tracked in chain metadata');
       assert.equal(result.reasoning, 'r3', 'Expected latest reasoning to be returned');
+      assert.equal(syntheticMessages.length, 1, 'Expected backend-generated tool-results message to be traceable');
+      assert.includes(syntheticMessages[0].content, '<tool_results>', 'Expected synthetic message to preserve tool-results wrapper');
     }
   }
 };
-

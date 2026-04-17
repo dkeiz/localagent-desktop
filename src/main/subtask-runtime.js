@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { buildSubagentIdentifiers } = require('./subagent-contract');
 const {
     appendJsonLine,
     appendTraceSection,
@@ -58,6 +59,12 @@ class SubtaskRuntime {
             parent_session_id: parentSessionId,
             child_session_id: childSessionId,
             subagent_id: subagentId,
+            identifiers: buildSubagentIdentifiers({
+                run_id: runId,
+                parent_session_id: parentSessionId,
+                child_session_id: childSessionId,
+                subagent_id: subagentId
+            }),
             agent_name: agentName,
             task,
             contract_type: contractType,
@@ -82,6 +89,12 @@ class SubtaskRuntime {
             parent_session_id: parentSessionId,
             child_session_id: childSessionId,
             subagent_id: subagentId,
+            identifiers: buildSubagentIdentifiers({
+                run_id: runId,
+                parent_session_id: parentSessionId,
+                child_session_id: childSessionId,
+                subagent_id: subagentId
+            }),
             agent_name: agentName,
             contract_type: contractType,
             subagent_mode: subagentMode,
@@ -290,6 +303,7 @@ class SubtaskRuntime {
             run_id: run.run_id,
             child_session_id: run.child_session_id,
             subagent_id: run.subagent_id,
+            identifiers: buildSubagentIdentifiers(run),
             agent_name: run.agent_name,
             run_dir: run.run_dir,
             result_path: run.result_path,
@@ -402,13 +416,55 @@ class SubtaskRuntime {
     }
 
     _buildParentDeliveryMessage(run, delivery) {
+        const contractBlock = this._formatParentDeliveryContract(delivery?.contract, delivery);
+        const identifiers = buildSubagentIdentifiers(run);
+
         return [
             `Sub-agent "${run.agent_name}" completed a delegated task.`,
             `Status: ${delivery.status}`,
             `Summary: ${delivery.summary}`,
+            `Run ID: ${identifiers.run_id || 'n/a'}`,
+            `Child Session ID: ${identifiers.child_session_id || 'n/a'}`,
+            `Parent Session ID: ${identifiers.parent_session_id || 'none'}`,
+            `Sub-agent ID: ${identifiers.subagent_id || 'n/a'}`,
+            '',
+            'Structured Result:',
+            '```json',
+            contractBlock,
+            '```',
             `Run Folder: ${run.run_dir}`,
-            `Result File: ${run.result_path}`
+            `Result File: ${run.result_path}`,
+            'Inspect the run files only if you need deeper debugging or the structured result was truncated.'
         ].join('\n');
+    }
+
+    _formatParentDeliveryContract(contract, delivery) {
+        const normalized = {
+            status: contract?.status || delivery?.status || '',
+            summary: contract?.summary || delivery?.summary || '',
+            data: contract?.data && typeof contract.data === 'object' && !Array.isArray(contract.data)
+                ? contract.data
+                : {},
+            artifacts: Array.isArray(contract?.artifacts) ? contract.artifacts : [],
+            notes: contract?.notes ? String(contract.notes) : ''
+        };
+
+        const json = JSON.stringify(normalized, null, 2);
+        if (json.length <= 6000) {
+            return json;
+        }
+
+        const truncated = {
+            status: normalized.status,
+            summary: normalized.summary,
+            data_preview: JSON.stringify(normalized.data).slice(0, 2400),
+            artifacts: normalized.artifacts.slice(0, 10),
+            notes: normalized.notes,
+            truncated: true,
+            truncation_note: 'Full contract is available in the result file.'
+        };
+
+        return JSON.stringify(truncated, null, 2);
     }
 
     _writeTraceHeader(tracePath, request) {

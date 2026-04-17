@@ -50,7 +50,7 @@ class DatabaseWrapper {
     async createTables() {
         // Schema migrations - safely add columns/tables if they don't exist
         const migrations = [
-            'ALTER TABLE conversations ADD COLUMN session_id INTEGER',
+            'ALTER TABLE conversations ADD COLUMN session_id TEXT',
             'ALTER TABLE conversations ADD COLUMN metadata TEXT',
             'ALTER TABLE workflows ADD COLUMN visual_data TEXT',
             'ALTER TABLE workflows ADD COLUMN execution_count INTEGER DEFAULT 0',
@@ -97,7 +97,7 @@ class DatabaseWrapper {
 
             `CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER,
+                session_id TEXT,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 metadata TEXT,
@@ -177,8 +177,8 @@ class DatabaseWrapper {
 
             `CREATE TABLE IF NOT EXISTS subagent_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                parent_session_id INTEGER,
-                child_session_id INTEGER NOT NULL,
+                parent_session_id TEXT,
+                child_session_id TEXT NOT NULL,
                 subagent_id INTEGER NOT NULL,
                 task TEXT NOT NULL,
                 contract_type TEXT NOT NULL DEFAULT 'task_complete',

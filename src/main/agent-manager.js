@@ -1,14 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 const SubtaskRuntime = require('./subtask-runtime');
+const {
+    assessCompletionQuality,
+    buildCompletionCandidate,
+    buildForcedIncompleteContract,
+    buildSubagentIdentifiers,
+    buildSubagentReminderPrompt,
+    normalizeCompletionPayload,
+    summarizePlainText
+} = require('./subagent-contract');
 
-/**
- * AgentManager — Manages agent lifecycle, folders, and session routing.
- * 
- * Agent types:
- *   pro  — persistent, skill-focused agents with memory + compact
- *   sub  — ephemeral agents called by others, return result then go blank
- */
 class AgentManager {
     constructor(db, dispatcher, agentLoop, agentMemory, sessionWorkspace = null, chainController = null, eventBus = null, subtaskRuntime = null, options = {}) {
         this.db = db;
@@ -22,6 +24,7 @@ class AgentManager {
         this.pendingSubtasks = new Map();
         this.activeSubtaskCounts = new Map();
         this.basePath = options.basePath || path.join(__dirname, '../../agentin/agents');
+        this.maxDelegatedCompletionRetries = Math.max(0, Number(options.maxDelegatedCompletionRetries) || 2);
     }
 
     async initialize() {
@@ -345,9 +348,7 @@ Dashboard-style reports with metrics, status indicators, and recommendations.`
     }
 
     _buildSubAgentTask(task, contractType, expectedOutput = '', run = null) {
-        const outputHint = expectedOutput && String(expectedOutput).trim()
-            ? String(expectedOutput).trim()
-            : 'Return the most useful structured fields for the task in the data object.';
+        const outputHint = expectedOutput && String(expectedOutput).trim() ? String(expectedOutput).trim() : 'Return the most useful structured fields for the task in the data object.';
         const runGuidance = run
             ? `Run files for this delegated task:
 - Run Folder: ${run.run_dir}
@@ -364,14 +365,17 @@ Your parent may inspect this run folder later if clarification is needed. Keep y
 
 Complete only the requested task. Use available tools if needed.
 When the completion tool "complete_subtask" is available, call it to finish the run.
-If tool call is unavailable, return a strict JSON object (no wrappers, no markdown) matching the completion contract below.
+If tool call is unavailable, return a strict JSON object (no wrappers, no markdown) matching the completion envelope below.
+Silent stop is invalid. If the result is empty, blocked, or unavailable, deliver that noticed outcome instead of stopping.
 
-Required completion contract:
-- status: "${contractType}" on success, or "task_failed" on failure
-- summary: short human-readable summary
-- data: structured object with the actual result
+Required completion envelope:
+- status: short outcome label. "${contractType}" is preferred for a strong result, but labels like "partial", "empty", "blocked", or "task_failed" are valid too
+- summary: short human-readable outcome
+- data: structured object with the actual result or outcome details
 - artifacts: array of files created or relied on for the result
 - notes: optional string
+
+The parent is authoritative. It may accept your envelope, recall you, or send a new task based on what you deliver.
 
 Expected output details:
 ${outputHint}
@@ -444,59 +448,7 @@ ${task}`;
     }
 
     _summarizePlainText(text) {
-        const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-        if (!normalized) {
-            return 'Task completed';
-        }
-        const firstSentence = normalized.split(/[.!?]/)[0].trim();
-        const summary = firstSentence || normalized;
-        return summary.length > 180 ? `${summary.slice(0, 177)}...` : summary;
-    }
-
-    _normalizeCompletionPayload(payload, contractType) {
-        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-            throw new Error('Sub-agent completion payload must be an object');
-        }
-
-        const status = String(payload.status || '').trim();
-        if (!status) {
-            throw new Error('Sub-agent completion payload is missing status');
-        }
-        if (status !== contractType && status !== 'task_failed') {
-            throw new Error(`Sub-agent returned invalid status "${status}" for contract "${contractType}"`);
-        }
-
-        const summary = String(payload.summary || '').trim();
-        if (!summary) {
-            throw new Error('Sub-agent completion payload is missing summary');
-        }
-
-        const data = payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
-            ? payload.data
-            : {};
-
-        const artifacts = Array.isArray(payload.artifacts)
-            ? payload.artifacts.map(artifact => {
-                const normalizedPath = artifact?.path ? String(artifact.path) : '';
-                const normalizedName = artifact?.name
-                    ? String(artifact.name)
-                    : (normalizedPath ? path.basename(normalizedPath) : '');
-
-                return {
-                    ...artifact,
-                    path: normalizedPath,
-                    name: normalizedName
-                };
-            })
-            : [];
-
-        return {
-            status,
-            summary,
-            data,
-            artifacts,
-            notes: payload.notes ? String(payload.notes) : ''
-        };
+        return summarizePlainText(text);
     }
 
     _normalizeWorkspaceArtifacts(sessionId) {
@@ -557,66 +509,97 @@ ${task}`;
         }
     }
 
-    async _completeSubagentRun(runId, response, sessionId, contractType) {
-        const rawContent = String(response?.content || '').trim();
-        const inferredStatus = response?.chainExhausted ? 'task_failed' : contractType;
-        let completionPayload = response?.completionResult
-            ? response.completionResult
-            : this._extractJsonObject(rawContent);
-
-        if (!completionPayload) {
-            if (!rawContent) {
-                throw new Error('Sub-agent completion payload missing; expected complete_subtask call or strict JSON result');
-            }
-            completionPayload = {
-                status: inferredStatus,
-                summary: response?.chainExhausted
-                    ? 'Delegated run reached chain step limit without explicit completion payload.'
-                    : this._summarizePlainText(rawContent),
-                data: {
-                    output_text: rawContent
-                },
-                artifacts: [],
-                notes: response?.chainExhausted
-                    ? 'Auto-wrapped from plain-text response after chain exhaustion.'
-                    : 'Auto-wrapped from plain-text response because completion payload was missing.'
+    _resolveSubagentCompletion(response, sessionId, contractType) {
+        const candidate = buildCompletionCandidate(
+            response,
+            contractType,
+            (text) => this._extractJsonObject(text)
+        );
+        if (!candidate.payload) {
+            return {
+                ok: false,
+                retryable: true,
+                reason: 'missing_completion_contract',
+                message: candidate.source === 'missing'
+                    ? 'Sub-agent completion payload missing; expected complete_subtask call or strict JSON result.'
+                    : 'Sub-agent returned plain text instead of the required completion envelope.',
+                candidate
             };
-        } else if (typeof completionPayload !== 'object' || Array.isArray(completionPayload)) {
-            completionPayload = {
-                status: inferredStatus,
-                summary: this._summarizePlainText(rawContent || String(completionPayload)),
-                data: {
-                    output_text: rawContent || String(completionPayload)
-                },
-                artifacts: [],
-                notes: 'Auto-wrapped non-object completion payload.'
-            };
-        } else {
-            if (!completionPayload.status) {
-                completionPayload.status = inferredStatus;
-            }
-            if (!completionPayload.summary) {
-                completionPayload.summary = this._summarizePlainText(rawContent || JSON.stringify(completionPayload.data || {}));
-            }
-            if (!completionPayload.data || typeof completionPayload.data !== 'object' || Array.isArray(completionPayload.data)) {
-                completionPayload.data = rawContent ? { output_text: rawContent } : {};
-            }
-            if (!Array.isArray(completionPayload.artifacts)) {
-                completionPayload.artifacts = [];
-            }
-            if (completionPayload.notes === undefined || completionPayload.notes === null) {
-                completionPayload.notes = '';
-            }
         }
 
-        const normalized = this._normalizeCompletionPayload(completionPayload, contractType);
+        const payload = {
+            ...candidate.payload,
+            status: candidate.payload.status || candidate.inferredStatus,
+            summary: candidate.payload.summary
+                || summarizePlainText(candidate.rawContent || JSON.stringify(candidate.payload.data || {})),
+            data: candidate.payload.data && typeof candidate.payload.data === 'object' && !Array.isArray(candidate.payload.data)
+                ? candidate.payload.data
+                : {},
+            artifacts: Array.isArray(candidate.payload.artifacts) ? candidate.payload.artifacts : [],
+            notes: candidate.payload.notes === undefined || candidate.payload.notes === null
+                ? ''
+                : candidate.payload.notes
+        };
+
+        let normalized;
+        try {
+            normalized = normalizeCompletionPayload(payload, { preferredStatus: contractType });
+        } catch (error) {
+            return {
+                ok: false,
+                retryable: true,
+                reason: 'invalid_completion_contract',
+                message: error.message,
+                candidate
+            };
+        }
+
         const workspaceArtifacts = this._normalizeWorkspaceArtifacts(sessionId);
-        const artifacts = this._mergeArtifacts(normalized.artifacts, workspaceArtifacts);
+        const contract = {
+            ...normalized,
+            artifacts: this._mergeArtifacts(normalized.artifacts, workspaceArtifacts)
+        };
+        const quality = assessCompletionQuality(contract, candidate);
+        if (!quality.ok) {
+            return {
+                ok: false,
+                retryable: true,
+                reason: quality.reason,
+                message: quality.message,
+                candidate,
+                contract
+            };
+        }
 
         return {
-            ...normalized,
-            artifacts
+            ok: true,
+            retryable: false,
+            candidate,
+            contract
         };
+    }
+
+    async _loadSubagentConversationHistory(sessionId) {
+        if (!this.db || typeof this.db.getConversations !== 'function') {
+            return [];
+        }
+
+        const messages = await this.db.getConversations(100, sessionId);
+        return (Array.isArray(messages) ? messages : [])
+            .map(message => ({
+                role: message.role,
+                content: String(message.content || '')
+            }))
+            .filter(message => message.content.trim().length > 0);
+    }
+
+    async _persistDelegatedPrompt(runId, sessionId, content, metadata = {}) {
+        this.subtaskRuntime.appendMessage(runId, {
+            role: 'user',
+            content,
+            metadata
+        });
+        await this._persistSubagentConversation(sessionId, 'user', content, metadata);
     }
 
     async _setSubagentActive(agentId, active) {
@@ -636,11 +619,31 @@ ${task}`;
 
         return {
             onAssistantMessage: async ({ content }) => {
+                const visibleContent = this.chainController?.stripToolPatterns
+                    ? this.chainController.stripToolPatterns(content)
+                    : String(content || '').trim();
+                if (!visibleContent) {
+                    return;
+                }
                 this.subtaskRuntime.appendMessage(runId, {
                     role: 'assistant',
-                    content
+                    content: visibleContent
                 });
-                await this._persistSubagentConversation(sessionId, 'assistant', content);
+                await this._persistSubagentConversation(sessionId, 'assistant', visibleContent);
+            },
+            onSyntheticUserMessage: async ({ content, kind }) => {
+                this.subtaskRuntime.appendMessage(runId, {
+                    role: 'user',
+                    content,
+                    metadata: {
+                        auto_generated: true,
+                        kind: kind || 'synthetic_user'
+                    }
+                });
+                await this._persistSubagentConversation(sessionId, 'user', content, {
+                    auto_generated: true,
+                    kind: kind || 'synthetic_user'
+                });
             },
             onToolResult: async ({ toolName, params, success, result, error }) => {
                 this.subtaskRuntime.appendToolEvent(runId, {
@@ -713,11 +716,7 @@ ${task}`;
     async _executeDelegatedRun(run, agent, task, contractType, expectedOutput) {
         const traceHooks = this._createTraceHooks(run.run_id);
         const taskPrompt = this._buildSubAgentTask(task, contractType, expectedOutput, run);
-        this.subtaskRuntime.appendMessage(run.run_id, {
-            role: 'user',
-            content: taskPrompt
-        });
-        await this._persistSubagentConversation(run.child_session_id, 'user', taskPrompt, {
+        await this._persistDelegatedPrompt(run.run_id, run.child_session_id, taskPrompt, {
             delegated: true,
             parent_session_id: run.parent_session_id,
             run_id: run.run_id,
@@ -725,55 +724,95 @@ ${task}`;
         });
 
         this.subtaskRuntime.markRunning(run.run_id);
+        const identifiers = buildSubagentIdentifiers(run);
         this.eventBus?.publish('subagent:started', {
             runId: run.run_id,
             parentSessionId: run.parent_session_id,
             childSessionId: run.child_session_id,
             subagentId: run.subagent_id,
             agentName: run.agent_name,
-            subagentMode: run.subagent_mode || 'no_ui'
+            subagentMode: run.subagent_mode || 'no_ui',
+            identifiers
         });
 
         try {
-            const result = this.chainController
-                ? await this.chainController.executeWithChaining(
-                    taskPrompt,
-                    [],
-                    {
-                        mode: 'chat',
-                        sessionId: run.child_session_id,
-                        agentId: agent.id,
-                        includeTools: true,
-                        includeRules: false,
-                        skipMemoryOnStart: true,
-                        skipLock: true,
-                        completionTools: ['complete_subtask'],
-                        maxChainSteps: 24,
-                        trace: traceHooks
-                    }
-                )
-                : await this.dispatcher.dispatch(
-                    taskPrompt,
-                    [],
-                    {
-                        mode: 'chat',
-                        sessionId: run.child_session_id,
-                        agentId: agent.id,
-                        includeTools: true,
-                        includeRules: false,
-                        skipMemoryOnStart: true,
-                        skipLock: true
-                    }
-                );
+            let prompt = taskPrompt;
+            let history = [];
+            let result = null;
+            let validation = null;
+            let remindersSent = 0;
 
-            if (!this.chainController && result?.content) {
-                this.subtaskRuntime.appendMessage(run.run_id, {
-                    role: 'assistant',
-                    content: result.content
+            while (true) {
+                result = this.chainController
+                    ? await this.chainController.executeWithChaining(
+                        prompt,
+                        history,
+                        {
+                            mode: 'chat',
+                            sessionId: run.child_session_id,
+                            agentId: agent.id,
+                            includeTools: true,
+                            includeRules: false,
+                            skipMemoryOnStart: true,
+                            skipLock: true,
+                            completionTools: ['complete_subtask'],
+                            maxChainSteps: 24,
+                            trace: traceHooks
+                        }
+                    )
+                    : await this.dispatcher.dispatch(
+                        prompt,
+                        history,
+                        {
+                            mode: 'chat',
+                            sessionId: run.child_session_id,
+                            agentId: agent.id,
+                            includeTools: true,
+                            includeRules: false,
+                            skipMemoryOnStart: true,
+                            skipLock: true
+                        }
+                    );
+
+                if (!this.chainController && result?.content) {
+                    this.subtaskRuntime.appendMessage(run.run_id, {
+                        role: 'assistant',
+                        content: result.content
+                    });
+                }
+
+                validation = this._resolveSubagentCompletion(result, run.child_session_id, contractType);
+                if (validation.ok) {
+                    break;
+                }
+
+                if (remindersSent >= this.maxDelegatedCompletionRetries) {
+                    validation = {
+                        ok: true,
+                        contract: buildForcedIncompleteContract(
+                            contractType,
+                            validation,
+                            remindersSent,
+                            result
+                        )
+                    };
+                    break;
+                }
+
+                remindersSent += 1;
+                history = await this._loadSubagentConversationHistory(run.child_session_id);
+                prompt = buildSubagentReminderPrompt(contractType, validation, remindersSent);
+                await this._persistDelegatedPrompt(run.run_id, run.child_session_id, prompt, {
+                    delegated: true,
+                    auto_generated: true,
+                    kind: 'backend_completion_reminder',
+                    reminder_attempt: remindersSent,
+                    run_id: run.run_id,
+                    subagent_id: run.subagent_id
                 });
             }
 
-            const contract = await this._completeSubagentRun(run.run_id, result, run.child_session_id, contractType);
+            const contract = validation.contract;
             const completedRun = this.subtaskRuntime.completeRun(run.run_id, {
                 contract,
                 artifacts: contract.artifacts,
@@ -794,7 +833,8 @@ ${task}`;
                 subagentMode: run.subagent_mode || 'no_ui',
                 summary: contract.summary,
                 status: contract.status,
-                deliveryPath: delivery?.delivery_path || null
+                deliveryPath: delivery?.delivery_path || null,
+                identifiers
             });
 
             return completedRun;
@@ -804,7 +844,7 @@ ${task}`;
                 status: 'failed',
                 summary: error.message,
                 contract: {
-                    status: 'task_failed',
+                    status: 'delivery_error',
                     summary: error.message,
                     data: {},
                     artifacts: [],
@@ -818,7 +858,8 @@ ${task}`;
                 subagentId: run.subagent_id,
                 agentName: run.agent_name,
                 subagentMode: run.subagent_mode || 'no_ui',
-                error: error.message
+                error: error.message,
+                identifiers
             });
             return failedRun;
         } finally {
@@ -849,13 +890,19 @@ ${task}`;
         });
 
         await this._setSubagentActive(subAgentId, true);
+        const identifiers = buildSubagentIdentifiers({
+            ...run,
+            parent_session_id: parentSessionId,
+            subagent_id: subAgentId
+        });
         this.eventBus?.publish('subagent:queued', {
             runId: run.run_id,
             parentSessionId,
             childSessionId: run.child_session_id,
             subagentId: subAgentId,
             agentName: agent.name,
-            subagentMode
+            subagentMode,
+            identifiers
         });
 
         const pending = this._executeDelegatedRun(run, agent, task, contractType, expectedOutput)
@@ -884,6 +931,7 @@ ${task}`;
             subagentMode,
             subagent_mode: subagentMode,
             status: run.status,
+            identifiers,
             runDir: run.run_dir,
             run_dir: run.run_dir,
             resultPath: run.result_path,

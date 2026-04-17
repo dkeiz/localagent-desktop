@@ -120,14 +120,42 @@ class PromptFileManager {
         return { metadata, content: ruleContent };
     }
 
+    normalizeRuleActive(value, defaultValue = true) {
+        if (value === undefined || value === null || value === '') {
+            return Boolean(defaultValue);
+        }
+
+        if (typeof value === 'boolean') {
+            return value;
+        }
+
+        if (typeof value === 'number') {
+            return value !== 0;
+        }
+
+        if (typeof value === 'string') {
+            const normalized = value.trim().toLowerCase();
+            if (['true', '1', 'yes', 'on'].includes(normalized)) {
+                return true;
+            }
+            if (['false', '0', 'no', 'off'].includes(normalized)) {
+                return false;
+            }
+        }
+
+        return Boolean(value);
+    }
+
     /**
      * Generate YAML frontmatter for rule file
      */
     generateRuleFile(name, content, active = true, priority = 1) {
+        const normalizedActive = this.normalizeRuleActive(active, true);
+        const normalizedPriority = Number.isFinite(Number(priority)) ? Number(priority) : 1;
         return `---
 name: ${name}
-active: ${active}
-priority: ${priority}
+active: ${normalizedActive ? 'true' : 'false'}
+priority: ${normalizedPriority}
 ---
 ${content}`;
     }
@@ -164,7 +192,7 @@ ${content}`;
                 filename: file,
                 name: metadata.name || file.replace('.md', ''),
                 content: content,
-                active: metadata.active !== false,
+                active: this.normalizeRuleActive(metadata.active, true),
                 priority: metadata.priority || 1,
                 type: metadata.type || 'rule'
             });

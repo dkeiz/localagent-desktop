@@ -26,6 +26,10 @@ The goal is to catch seam breakage before large modules are split:
   Windowless Electron end-to-end workflow for plugin runtime via real IPC (enable plugin -> run search tool -> verify results -> disable plugin).
 - `npm run test:subagent-external`
   External-test windowless workflow for `subagent` dual-mode validation (`no_ui` + `ui`) with real IPC/event bus.
+- `npm run test:subagent-live-search`
+  External-test windowless workflow for a real `no_ui` subagent internet search using a live Ollama model and real web tools, with parent-delivery verification.
+- `npm run test:subagent-live-time`
+  External-test windowless workflow for a real `no_ui` subagent tool call using `current_time`, with child-session and parent-delivery verification.
 - `npm run test:all`
   Core plus skin plus live.
 - `npm run verify`
@@ -58,6 +62,8 @@ For externally driven test orchestration, run:
 
 Dedicated external tests:
 - `npm run test:subagent-external`
+- `npm run test:subagent-live-search`
+- `npm run test:subagent-live-time`
 
 It exposes a localhost control API:
 - `GET /health`

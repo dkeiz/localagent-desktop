@@ -61,6 +61,10 @@ module.exports = {
 
     assert.equal(delivered.length, 1, 'Expected parent mirror write for string-backed parent session');
     assert.equal(delivered[0].sessionId, 'testclient-parent', 'Expected delivery to target string parent session');
+    assert.includes(delivered[0].message.content, run.run_id, 'Expected parent delivery to include run id');
+    assert.includes(delivered[0].message.content, run.child_session_id, 'Expected parent delivery to include child session id');
+    assert.includes(delivered[0].message.content, 'Structured Result:', 'Expected parent delivery to inline structured contract data');
+    assert.includes(delivered[0].message.content, '"ok": true', 'Expected parent delivery to include contract payload fields');
     assert.equal(updates.length, 1, 'Expected conversation update notification');
     assert.equal(updates[0], 'testclient-parent', 'Expected update for string parent session');
     assert.equal(delivery.delivered_to_parent, true, 'Expected delivery status to reflect mirrored parent write');

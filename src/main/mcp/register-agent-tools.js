@@ -1,5 +1,10 @@
 const DEFAULT_SUBAGENT_SYSTEM_PROMPT = 'You are a delegated sub-agent. Complete only the assigned task, stay within scope, and return structured results when asked.';
 
+const {
+  buildSubagentIdentifiers,
+  normalizeCompletionPayload: normalizeCompletionEnvelope
+} = require('../subagent-contract');
+
 function formatSubagent(agent) {
   return {
     id: agent.id,
@@ -12,17 +17,19 @@ function formatSubagent(agent) {
 }
 
 function formatSubagentRun(run) {
+  const identifiers = buildSubagentIdentifiers(run);
   return {
-    run_id: run.run_id || run.runId || run.id || null,
+    run_id: identifiers.run_id,
     status: run.status || '',
-    subagent_id: run.subagent_id || run.subagentId || null,
+    subagent_id: identifiers.subagent_id,
     agent_name: run.agent_name || run.agentName || '',
-    parent_session_id: run.parent_session_id || run.parentSessionId || null,
-    child_session_id: run.child_session_id || run.childSessionId || null,
+    parent_session_id: identifiers.parent_session_id,
+    child_session_id: identifiers.child_session_id,
     summary: run.summary || run.result_summary || '',
     error: run.error || '',
     created_at: run.created_at || null,
-    completed_at: run.completed_at || null
+    completed_at: run.completed_at || null,
+    identifiers
   };
 }
 
@@ -45,6 +52,8 @@ function normalizeSubagentParams(params = {}) {
     contract_type: params.contract_type ? String(params.contract_type) : 'task_complete',
     expected_output: params.expected_output ? String(params.expected_output) : '',
     subagent_mode: params.subagent_mode ? String(params.subagent_mode) : '',
+    wait: params.wait === true,
+    timeout_ms: Number.isFinite(Number(params.timeout_ms)) ? Number(params.timeout_ms) : null,
     description: params.description ? String(params.description) : '',
     system_prompt: params.system_prompt ? String(params.system_prompt) : '',
     icon: params.icon ? String(params.icon) : '🤖',
@@ -91,35 +100,19 @@ function normalizeSubagentMode(rawMode, fallback = 'no_ui') {
 }
 
 function normalizeCompletionPayload(params) {
-  const status = String(params.status || '').trim();
-  const summary = String(params.summary || '').trim();
-  const notes = params.notes ? String(params.notes) : '';
-  const data = params.data && typeof params.data === 'object' && !Array.isArray(params.data)
-    ? params.data
-    : {};
-  const artifacts = Array.isArray(params.artifacts)
-    ? params.artifacts.map(artifact => ({
-      path: artifact?.path ? String(artifact.path) : '',
-      name: artifact?.name ? String(artifact.name) : '',
-      description: artifact?.description ? String(artifact.description) : '',
-      source: artifact?.source ? String(artifact.source) : 'contract'
-    })).filter(artifact => artifact.path || artifact.name)
-    : [];
-
-  if (!status) {
-    throw new Error('complete_subtask requires status');
-  }
-  if (!summary) {
-    throw new Error('complete_subtask requires summary');
-  }
-
-  return {
-    status,
-    summary,
-    data,
-    artifacts,
-    notes
-  };
+  return normalizeCompletionEnvelope({
+    ...params,
+    artifacts: Array.isArray(params.artifacts)
+      ? params.artifacts.map(artifact => ({
+        path: artifact?.path ? String(artifact.path) : '',
+        name: artifact?.name ? String(artifact.name) : '',
+        description: artifact?.description ? String(artifact.description) : '',
+        source: artifact?.source ? String(artifact.source) : 'contract'
+      })).filter(artifact => artifact.path || artifact.name)
+      : []
+  }, {
+    preferredStatus: 'delivered'
+  });
 }
 
 async function listSubagents(server) {
@@ -168,7 +161,7 @@ async function runSubagent(server, params) {
   }
 
   const agent = await resolveSubagent(server, params);
-  const defaultMode = 'ui';
+  const defaultMode = 'no_ui';
   const subagentMode = normalizeSubagentMode(params.subagent_mode, defaultMode);
   const result = await server._agentManager.invokeSubAgent(
     server.getCurrentSessionId() || null,
@@ -180,11 +173,51 @@ async function runSubagent(server, params) {
       subagentMode
     }
   );
+  const queuedRun = formatSubagentRun({
+    ...result,
+    subagent_id: result?.subagent_id ?? result?.agentId ?? agent.id,
+    agent_name: result?.agent_name || result?.agentName || agent.name,
+    parent_session_id: result?.parent_session_id ?? result?.parentSessionId ?? (server.getCurrentSessionId ? server.getCurrentSessionId() : null)
+  });
+
+  if (params.wait) {
+    if (typeof server._agentManager.waitForSubagentRun !== 'function') {
+      throw new Error('Awaited subagent runs are unavailable (AgentManager.waitForSubagentRun missing)');
+    }
+
+    const completed = await server._agentManager.waitForSubagentRun(
+      result.run_id || result.runId,
+      params.timeout_ms || 30000
+    );
+
+    return {
+      ...result,
+      action: 'run',
+      agent: formatSubagent(agent),
+      waited: true,
+      done: true,
+      status: completed?.status || result.status,
+      identifiers: queuedRun.identifiers,
+      run_id: queuedRun.run_id,
+      child_session_id: queuedRun.child_session_id,
+      parent_session_id: queuedRun.parent_session_id,
+      subagent_id: queuedRun.subagent_id,
+      run: formatSubagentRun(completed || {}),
+      result: completed?.result || null,
+      contract: completed?.result?.contract || null
+    };
+  }
 
   return {
     ...result,
     action: 'run',
-    agent: formatSubagent(agent)
+    agent: formatSubagent(agent),
+    waited: false,
+    identifiers: queuedRun.identifiers,
+    run_id: queuedRun.run_id,
+    child_session_id: queuedRun.child_session_id,
+    parent_session_id: queuedRun.parent_session_id,
+    subagent_id: queuedRun.subagent_id
   };
 }
 
@@ -210,10 +243,9 @@ async function getSubagentStatus(server, params) {
 
   const normalized = formatSubagentRun(run);
   const contract = run.result?.contract || null;
-  const terminalStatuses = new Set(['failed', 'task_failed', 'task_complete', 'completed']);
   const runStatus = String(run.status || '').trim();
   const contractStatus = String(contract?.status || '').trim();
-  const done = terminalStatuses.has(runStatus) || terminalStatuses.has(contractStatus);
+  const done = Boolean(run.result) || (runStatus && !new Set(['queued', 'running']).has(runStatus));
 
   return {
     success: true,
@@ -301,7 +333,17 @@ function registerAgentTools(server) {
         },
         subagent_mode: {
           type: 'string',
-          description: 'Subagent mode: "ui" (open child chat tab animation) or "no_ui" (backend only). If omitted, default is "ui".'
+          description: 'Subagent mode: "ui" (open child chat tab animation) or "no_ui" (backend only). If omitted, default is "no_ui".'
+        },
+        wait: {
+          type: 'boolean',
+          description: 'When true, wait for the delegated run to finish and return its final contract in this tool result.',
+          default: false
+        },
+        timeout_ms: {
+          type: 'number',
+          description: 'Optional wait timeout in milliseconds when wait=true.',
+          default: 30000
         },
         description: { type: 'string', description: 'Description for action="new"' },
         system_prompt: { type: 'string', description: 'System prompt for action="new"' },
@@ -338,6 +380,16 @@ function registerAgentTools(server) {
         subagent_mode: {
           type: 'string',
           description: 'Subagent mode: "ui" or "no_ui"'
+        },
+        wait: {
+          type: 'boolean',
+          description: 'When true, wait for the delegated run to finish and return its final contract.',
+          default: false
+        },
+        timeout_ms: {
+          type: 'number',
+          description: 'Optional wait timeout in milliseconds when wait=true.',
+          default: 30000
         }
       },
       required: ['task']
@@ -349,7 +401,9 @@ function registerAgentTools(server) {
     task: params.task,
     contract_type: params.contract_type,
     expected_output: params.expected_output,
-    subagent_mode: params.subagent_mode
+    subagent_mode: params.subagent_mode,
+    wait: params.wait,
+    timeout_ms: params.timeout_ms
   }));
 
   server.registerTool('complete_subtask', {
@@ -362,13 +416,13 @@ function registerAgentTools(server) {
     inputSchema: {
       type: 'object',
       properties: {
-        status: { type: 'string', description: 'Completion status, e.g. task_complete or task_failed' },
+        status: { type: 'string', description: 'Short outcome label, e.g. task_complete, partial, empty, blocked, or task_failed', default: 'delivered' },
         summary: { type: 'string', description: 'Short human-readable summary' },
         data: { type: 'object', description: 'Structured result payload' },
         artifacts: { type: 'array', description: 'Optional produced artifacts', default: [] },
         notes: { type: 'string', description: 'Optional notes', default: '' }
       },
-      required: ['status', 'summary']
+      required: ['summary']
     }
   }, async (params) => normalizeCompletionPayload(params));
 }

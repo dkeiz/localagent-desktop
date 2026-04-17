@@ -128,9 +128,29 @@ class MCPServer extends EventEmitter {
     }
   }
 
+  _resolveTimeoutMs(toolName, params, defaultTimeoutMs) {
+    const baseTimeout = Math.max(1, Number(defaultTimeoutMs) || 5000);
+    const normalizedName = String(toolName || '').trim();
+    const requestedTimeout = Math.max(1, Number(params?.timeout_ms) || 0);
+    const isAwaitedSubagent = (
+      (normalizedName === 'subagent' || normalizedName === 'run_subagent')
+      && params?.wait === true
+      && requestedTimeout > 0
+    );
+
+    if (!isAwaitedSubagent) {
+      return baseTimeout;
+    }
+
+    // Let awaited delegated runs use the requested child timeout, plus a small
+    // cushion so the outer MCP tool wrapper does not fire first.
+    return Math.max(baseTimeout, requestedTimeout + 1000);
+  }
+
   async executeTool(toolName, params = {}, toolCallId = null, options = {}) {
     const bypassPermissions = options && options.bypassPermissions === true;
     const executionContext = options && options.context ? options.context : null;
+    const activeContext = executionContext || this.getCurrentExecutionContext() || null;
     const tool = this.tools.get(toolName);
     if (!tool) {
       this.emit('tool-executed', { toolName, success: false, error: 'Tool not found' });
@@ -177,7 +197,8 @@ class MCPServer extends EventEmitter {
         this.validateInput(params, tool.definition.inputSchema);
       }
 
-      const timeoutMs = parseInt(await this.db.getSetting('tool_timeout_ms') || '5000');
+      const configuredTimeoutMs = parseInt(await this.db.getSetting('tool_timeout_ms') || '5000', 10);
+      const timeoutMs = this._resolveTimeoutMs(toolName, params, configuredTimeoutMs);
       const result = executionContext
         ? await this.withExecutionContext(
           executionContext,
@@ -193,6 +214,9 @@ class MCPServer extends EventEmitter {
         toolName,
         timestamp: new Date().toISOString(),
         success: true,
+        sessionId: activeContext?.sessionId !== undefined ? activeContext.sessionId : this.getCurrentSessionId(),
+        source: activeContext?.source || null,
+        agentId: activeContext?.agentId ?? null,
         params,
         result
       };
@@ -205,6 +229,9 @@ class MCPServer extends EventEmitter {
         toolName,
         timestamp: new Date().toISOString(),
         success: false,
+        sessionId: activeContext?.sessionId !== undefined ? activeContext.sessionId : this.getCurrentSessionId(),
+        source: activeContext?.source || null,
+        agentId: activeContext?.agentId ?? null,
         params,
         error: error.message
       };
