@@ -9,15 +9,22 @@
         (() => {
             try {
                 const savedTheme = localStorage.getItem('theme') || 'light';
+                const savedTypeSize = Number.parseInt(localStorage.getItem('uiTypeSize') || '', 10);
+                const resolvedTypeSize = Number.isFinite(savedTypeSize) ? Math.min(18, Math.max(11, savedTypeSize)) : 13;
+                const resolvedTypeScale = resolvedTypeSize / 13;
                 document.documentElement.setAttribute('data-theme', savedTheme);
                 document.documentElement.setAttribute('data-active-skin', 'default');
                 document.documentElement.setAttribute('data-skin-contract-token', 'default');
                 document.documentElement.setAttribute('data-skin-theme-token', savedTheme);
+                document.documentElement.style.setProperty('--type-base', `${resolvedTypeSize}px`);
+                document.documentElement.style.setProperty('--type-scale', `${resolvedTypeScale}`);
             } catch (error) {
                 document.documentElement.setAttribute('data-theme', 'light');
                 document.documentElement.setAttribute('data-active-skin', 'default');
                 document.documentElement.setAttribute('data-skin-contract-token', 'default');
                 document.documentElement.setAttribute('data-skin-theme-token', 'light');
+                document.documentElement.style.setProperty('--type-base', '13px');
+                document.documentElement.style.setProperty('--type-scale', '1');
             }
         })();
     </script>
@@ -205,6 +212,14 @@
                     <label>
                         <input type="checkbox" id="minimize-to-tray"> Minimize to system tray
                     </label>
+                    <div class="type-size-setting">
+                        <div class="slider-labels">
+                            <label for="type-size-slider">Type Size</label>
+                            <span id="type-size-display">13px</span>
+                        </div>
+                        <input type="range" id="type-size-slider" min="11" max="18" step="1" value="13">
+                        <p class="settings-description">Sets the default text size used by UI typography tokens.</p>
+                    </div>
                 </div>
 
                 <div class="settings-group privacy-section">

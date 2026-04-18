@@ -1,4 +1,8 @@
 class App {
+    static TYPE_SIZE_MIN = 11;
+    static TYPE_SIZE_MAX = 18;
+    static TYPE_SIZE_DEFAULT = 13;
+
     constructor() {
         // MainPanel is bootstrapped in components/main-panel.js.
         // Reuse the existing instance to avoid duplicate listener registration.
@@ -17,6 +21,7 @@ class App {
                 await this.mainPanel.loadModelsForProvider(e.target.value);
             });
         }
+        await this.initializeSettingsTab();
     }
 
     initializePanelToggles() {
@@ -150,6 +155,75 @@ class App {
 
         // Save preference
         localStorage.setItem('theme', theme);
+    }
+
+    parseTypeSize(value) {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed)) {
+            return App.TYPE_SIZE_DEFAULT;
+        }
+        return Math.min(App.TYPE_SIZE_MAX, Math.max(App.TYPE_SIZE_MIN, parsed));
+    }
+
+    applyTypeSize(sizePx) {
+        const clamped = this.parseTypeSize(sizePx);
+        const scale = clamped / App.TYPE_SIZE_DEFAULT;
+        document.documentElement.style.setProperty('--type-base', `${clamped}px`);
+        document.documentElement.style.setProperty('--type-scale', `${scale}`);
+        const display = document.getElementById('type-size-display');
+        if (display) {
+            display.textContent = `${clamped}px`;
+        }
+        return clamped;
+    }
+
+    async initializeSettingsTab() {
+        const autoStartCheckbox = document.getElementById('auto-start');
+        const minimizeToTrayCheckbox = document.getElementById('minimize-to-tray');
+        const typeSizeSlider = document.getElementById('type-size-slider');
+
+        try {
+            const settings = await window.electronAPI.getSettings();
+            if (autoStartCheckbox) {
+                autoStartCheckbox.checked = settings?.auto_start === 'true';
+                autoStartCheckbox.addEventListener('change', async (event) => {
+                    await window.electronAPI.saveSetting('auto_start', event.target.checked ? 'true' : 'false');
+                });
+            }
+
+            if (minimizeToTrayCheckbox) {
+                minimizeToTrayCheckbox.checked = settings?.minimize_to_tray === 'true';
+                minimizeToTrayCheckbox.addEventListener('change', async (event) => {
+                    await window.electronAPI.saveSetting('minimize_to_tray', event.target.checked ? 'true' : 'false');
+                });
+            }
+
+            const savedFromSettings = settings?.['ui.typeSize'];
+            const savedFromLocal = localStorage.getItem('uiTypeSize');
+            const initialTypeSize = this.applyTypeSize(savedFromSettings || savedFromLocal || App.TYPE_SIZE_DEFAULT);
+
+            if (typeSizeSlider) {
+                typeSizeSlider.value = `${initialTypeSize}`;
+                const saveTypeSize = async (event) => {
+                    const nextSize = this.applyTypeSize(event.target.value);
+                    localStorage.setItem('uiTypeSize', `${nextSize}`);
+                    await window.electronAPI.saveSetting('ui.typeSize', `${nextSize}`);
+                };
+                typeSizeSlider.addEventListener('input', (event) => this.applyTypeSize(event.target.value));
+                typeSizeSlider.addEventListener('change', saveTypeSize);
+            }
+        } catch (error) {
+            console.error('Failed to initialize settings tab:', error);
+            const fallbackTypeSize = this.applyTypeSize(localStorage.getItem('uiTypeSize') || App.TYPE_SIZE_DEFAULT);
+            if (typeSizeSlider) {
+                typeSizeSlider.value = `${fallbackTypeSize}`;
+                typeSizeSlider.addEventListener('input', (event) => this.applyTypeSize(event.target.value));
+                typeSizeSlider.addEventListener('change', (event) => {
+                    const nextSize = this.applyTypeSize(event.target.value);
+                    localStorage.setItem('uiTypeSize', `${nextSize}`);
+                });
+            }
+        }
     }
 }
 
