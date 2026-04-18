@@ -189,7 +189,7 @@ class ToolChainController {
 
             // Execute tool calls
             const toolResults = [];
-            let executedThisStep = false;
+            let attemptedThisStep = false;
             for (const call of toolCalls) {
                 try {
                     // Check for duplicate tool call
@@ -197,6 +197,7 @@ class ToolChainController {
                         console.log(`[Chain] Skipping duplicate tool call: ${call.toolName}`);
                         continue;
                     }
+                    attemptedThisStep = true;
 
                     // Pass tool call ID to executeTool
                     const result = await this.mcpServer.executeTool(
@@ -252,12 +253,11 @@ class ToolChainController {
                         };
                         break;
                     }
-                    executedThisStep = true;
-
                     // Track this execution
                     this.executedToolCalls.set(call.toolCallId, {
                         toolName: call.toolName,
                         params: call.params,
+                        success: true,
                         result: result.result,
                         timestamp: result.timestamp
                     });
@@ -288,6 +288,13 @@ class ToolChainController {
                     });
 
                 } catch (error) {
+                    this.executedToolCalls.set(call.toolCallId, {
+                        toolName: call.toolName,
+                        params: call.params,
+                        success: false,
+                        error: error.message,
+                        timestamp: new Date().toISOString()
+                    });
                     toolResults.push({
                         toolCallId: call.toolCallId,
                         tool: call.toolName,
@@ -308,7 +315,7 @@ class ToolChainController {
 
             // If we got a final response (end_answer or permission needed), break
             if (finalResponse) break;
-            if (!executedThisStep) {
+            if (!attemptedThisStep) {
                 finalResponse = {
                     ...response,
                     content: this.stripToolPatterns(response.content) || response.content

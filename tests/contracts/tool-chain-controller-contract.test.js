@@ -33,6 +33,18 @@ function createServer() {
       }
     }
   }, async (params) => ({ echoed: params.text }));
+  server.registerTool('demo_fail', {
+    name: 'demo_fail',
+    description: 'Always fails',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        city: { type: 'string' }
+      }
+    }
+  }, async () => {
+    throw new Error('upstream server unreachable');
+  });
   return server;
 }
 
@@ -107,6 +119,45 @@ module.exports = {
       assert.equal(result.reasoning, 'r3', 'Expected latest reasoning to be returned');
       assert.equal(syntheticMessages.length, 1, 'Expected backend-generated tool-results message to be traceable');
       assert.includes(syntheticMessages[0].content, '<tool_results>', 'Expected synthetic message to preserve tool-results wrapper');
+    }
+
+    {
+      const mcp = createServer();
+      let turn = 0;
+      const syntheticMessages = [];
+      const dispatcher = {
+        async dispatch() {
+          turn++;
+          if (turn === 1) {
+            return {
+              content: 'TOOL:demo_fail{"city":"Moscow"}',
+              reasoning: 'r4',
+              model: 'demo-model',
+              renderContext: { provider: 'ollama', model: 'demo-model', runtimeConfig: { reasoning: { visibility: 'show' } } }
+            };
+          }
+          return {
+            content: 'Weather service is unavailable right now.',
+            reasoning: 'r5',
+            model: 'demo-model',
+            renderContext: { provider: 'ollama', model: 'demo-model', runtimeConfig: { reasoning: { visibility: 'show' } } }
+          };
+        }
+      };
+
+      const chain = new ToolChainController(dispatcher, mcp, db);
+      const result = await chain.executeWithChaining('weather?', [], {
+        trace: {
+          async onSyntheticUserMessage(payload) {
+            syntheticMessages.push(payload);
+          }
+        }
+      });
+
+      assert.equal(result.content, 'Weather service is unavailable right now.', 'Expected failed tool to still continue with synthetic tool_results context');
+      assert.equal(result.chain.steps, 2, 'Expected a second step after tool failure');
+      assert.equal(syntheticMessages.length, 1, 'Expected one synthetic tool-results message for failed tool');
+      assert.includes(syntheticMessages[0].content, 'Error: upstream server unreachable', 'Expected error details to be forwarded to the model');
     }
   }
 };

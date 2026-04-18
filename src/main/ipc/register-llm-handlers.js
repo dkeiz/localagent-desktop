@@ -47,9 +47,87 @@ function registerLlmHandlers(ipcMain, runtime) {
     return resolvedRuntime;
   }
 
+  const DISCOVERED_MODELS_SETTING = 'llm.discoveredModels';
+
+  function normalizeProviderId(provider) {
+    return String(provider || '').trim().toLowerCase();
+  }
+
+  function normalizeModelList(models = []) {
+    const seen = new Set();
+    const output = [];
+    for (const model of Array.isArray(models) ? models : []) {
+      const value = String(model || '').trim();
+      if (!value) continue;
+      const key = value.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(value);
+    }
+    return output;
+  }
+
+  async function getDiscoveredModelStore() {
+    const raw = await db.getSetting(DISCOVERED_MODELS_SETTING);
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  async function saveDiscoveredModelStore(store) {
+    await db.saveSetting(DISCOVERED_MODELS_SETTING, JSON.stringify(store || {}));
+  }
+
+  async function rememberDiscoveredModels(provider, models = []) {
+    const providerId = normalizeProviderId(provider);
+    const normalized = normalizeModelList(models);
+    if (!providerId || normalized.length === 0) return normalized;
+
+    const store = await getDiscoveredModelStore();
+    store[providerId] = {
+      models: normalized,
+      updatedAt: new Date().toISOString()
+    };
+    await saveDiscoveredModelStore(store);
+    return normalized;
+  }
+
+  async function getCachedDiscoveredModels(provider) {
+    const providerId = normalizeProviderId(provider);
+    if (!providerId) return [];
+    const store = await getDiscoveredModelStore();
+    return normalizeModelList(store[providerId]?.models || []);
+  }
+
   async function getCatalogAwareModels(provider, discovered = []) {
-    const seededModels = [...getProviderCatalogModels(provider), ...discovered];
-    return getKnownModelsForProvider(db, provider, seededModels);
+    const providerId = normalizeProviderId(provider);
+    const providerSpec = getProviderSpec(providerId);
+    const normalizedDiscovered = normalizeModelList(discovered);
+    if (normalizedDiscovered.length > 0) {
+      await rememberDiscoveredModels(providerId, normalizedDiscovered);
+    }
+
+    const cachedDiscovered = await getCachedDiscoveredModels(providerId);
+    const shouldUseCatalogFallback = providerId !== 'openrouter';
+    const seededModels = [
+      ...(shouldUseCatalogFallback ? getProviderCatalogModels(providerId) : []),
+      ...normalizedDiscovered,
+      ...cachedDiscovered
+    ];
+
+    const models = await getKnownModelsForProvider(db, providerId, seededModels);
+
+    // If discovery-capable provider has no models, still allow fallback catalog except OpenRouter
+    // where stale static IDs are often misleading.
+    if (models.length === 0 && shouldUseCatalogFallback && providerSpec?.settings?.supportsModelDiscovery) {
+      return getKnownModelsForProvider(db, providerId, getProviderCatalogModels(providerId));
+    }
+
+    return models;
   }
 
   function normalizeConnectionPayload(config = {}) {
@@ -92,8 +170,9 @@ function registerLlmHandlers(ipcMain, runtime) {
   ipcMain.handle('llm:get-models', async (event, provider, forceRefresh = false) => {
     console.log('llm:get-models called with provider:', provider, 'forceRefresh:', forceRefresh);
     try {
-      const discovered = await aiService.getModels(provider.toLowerCase(), forceRefresh);
-      const models = await getCatalogAwareModels(provider, discovered);
+      const providerId = normalizeProviderId(provider);
+      const discovered = await aiService.getModels(providerId, forceRefresh);
+      const models = await getCatalogAwareModels(providerId, discovered);
       console.log(`Models from ${provider}:`, models);
       return models;
     } catch (error) {
@@ -144,7 +223,8 @@ function registerLlmHandlers(ipcMain, runtime) {
       }
 
       aiService.getModels(config.provider)
-        .then(models => {
+        .then(async models => {
+          await getCatalogAwareModels(config.provider, models);
           console.log(`Refreshed ${models.length} models for ${config.provider}`);
         })
         .catch(err => {
