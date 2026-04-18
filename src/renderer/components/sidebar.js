@@ -84,6 +84,10 @@ class Sidebar {
         });
 
         this.currentTab = tabName;
+
+        if (tabName === 'chat') {
+            this.focusPrimaryChatTab();
+        }
         if (this.isSettingsFlyoutOpen && tabName !== 'chat') {
             this.closeSettingsFlyout();
         }
@@ -591,6 +595,36 @@ class Sidebar {
 
     getCurrentTab() {
         return this.currentTab;
+    }
+
+    async focusPrimaryChatTab() {
+        try {
+            const panel = window.app?.mainPanel || window.mainPanel;
+            if (!panel?.chatTabs || panel.chatTabs.size === 0 || typeof panel.switchTab !== 'function') {
+                return;
+            }
+
+            // Main chat = first regular tab (non-agent, non-subtask).
+            let targetSessionId = null;
+            for (const [sessionId, tab] of panel.chatTabs) {
+                const isAgentTab = Boolean(tab?.agentId) || String(sessionId).startsWith('subtask-');
+                if (!isAgentTab) {
+                    targetSessionId = sessionId;
+                    break;
+                }
+            }
+
+            // Fallback: if only agent tabs exist, focus the first available tab.
+            if (targetSessionId === null) {
+                targetSessionId = panel.chatTabs.keys().next().value;
+            }
+
+            if (targetSessionId !== undefined && targetSessionId !== null) {
+                await panel.switchTab(targetSessionId);
+            }
+        } catch (error) {
+            console.error('Failed to focus primary chat tab:', error);
+        }
     }
 
     setupSettingsDock() {

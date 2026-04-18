@@ -3,6 +3,54 @@
         return document.getElementById('messages-container');
     }
 
+    async function resolveAgentType(tab) {
+        if (!tab?.agentId) {
+            return null;
+        }
+        if (tab.agentType) {
+            return tab.agentType;
+        }
+        try {
+            const agent = await window.electronAPI.agents.get(tab.agentId);
+            return agent?.type || null;
+        } catch (error) {
+            console.warn('Failed to resolve agent type during tab close:', error);
+            return null;
+        }
+    }
+
+    async function maybeDeactivateAgentAfterTabClose(panel, closingSessionId, closingTab) {
+        const agentId = closingTab?.agentId;
+        if (!agentId) {
+            return;
+        }
+        const isSubtaskSession = String(closingSessionId).startsWith('subtask-');
+        if (isSubtaskSession) {
+            return;
+        }
+
+        const agentType = await resolveAgentType(closingTab);
+        if (agentType !== 'pro') {
+            return;
+        }
+
+        const hasAnotherTabForSameAgent = [...panel.chatTabs.entries()]
+            .some(([sessionId, tab]) =>
+                sessionId !== closingSessionId
+                && Number(tab?.agentId) === Number(agentId)
+                && !String(sessionId).startsWith('subtask-')
+            );
+        if (hasAnotherTabForSameAgent) {
+            return;
+        }
+
+        try {
+            await window.electronAPI.agents.deactivate(agentId);
+        } catch (error) {
+            console.warn(`Failed to auto-deactivate agent ${agentId}:`, error);
+        }
+    }
+
     function getClearedTabTitle(tab, sessionId) {
         const isAgentTab = Boolean(tab?.agentId) || String(sessionId).startsWith('subtask-');
         return isAgentTab ? (tab.title || 'Agent Chat') : 'New Chat';
@@ -131,6 +179,7 @@
             panel.chatTabs.set(sessionId, {
                 title: agent ? agent.name : `Agent ${agentId}`,
                 agentId,
+                agentType: agent?.type || null,
                 agentIcon: agent ? agent.icon : '🤖',
                 messagesHTML: '',
                 isSending: false,
@@ -164,6 +213,7 @@
             panel.chatTabs.set(sessionId, {
                 title: agentName,
                 agentId,
+                agentType: 'sub',
                 agentIcon: '🛰️',
                 messagesHTML: '',
                 isSending: false,
@@ -386,6 +436,8 @@
             return;
         }
 
+        const closingTab = panel.chatTabs.get(sessionId);
+        await maybeDeactivateAgentAfterTabClose(panel, sessionId, closingTab);
         panel.chatTabs.delete(sessionId);
 
         if (sessionId === panel.activeTabId) {
