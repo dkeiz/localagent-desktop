@@ -7,22 +7,29 @@
     right: 0;
     background: var(--card-bg, #fff);
     border: 1px solid var(--border-color, #ddd);
-    border-radius: 6px;
-    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: var(--radius-md, 4px);
+    box-shadow: var(--shadow-lg, 0 -8px 20px rgba(0, 0, 0, 0.2));
     max-height: 240px;
     overflow-y: auto;
-    z-index: 1000;
+    z-index: 5000;
     margin-bottom: 4px;
 }
 
+/* Allow command menu to render outside the fixed-height composer area. */
+.input-container,
+.chat-input-row {
+    overflow: visible !important;
+}
+
 .cmd-autocomplete-item {
-    padding: 8px 12px;
+    padding: var(--space-2, 6px) var(--space-3, 10px);
     cursor: pointer;
     display: flex;
-    gap: 12px;
-    align-items: baseline;
+    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
     transition: background 0.15s ease;
-    border-bottom: 1px solid var(--border-color, #eee);
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color, #eee) 80%, transparent 20%);
 }
 
 .cmd-autocomplete-item:last-child {
@@ -33,20 +40,31 @@
     background: var(--hover-bg, #f0f0f0);
 }
 
+.cmd-autocomplete-item.active {
+    background: color-mix(in srgb, var(--primary-color, #007bff) 10%, transparent);
+    outline: 1px solid color-mix(in srgb, var(--primary-color, #007bff) 40%, transparent);
+    outline-offset: -1px;
+}
+
 .cmd-name {
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: inherit;
     font-weight: 600;
     color: var(--primary-color, #007bff);
-    font-size: 0.85rem;
+    font-size: var(--text-sm, 13px);
+    line-height: 1.35;
     white-space: nowrap;
 }
 
 .cmd-desc {
     color: var(--text-secondary, #888);
-    font-size: 0.8rem;
+    font-family: inherit;
+    font-size: var(--text-sm, 13px);
+    line-height: 1.35;
+    opacity: 0.95;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: right;
 }
 
 /* Terminal-style output messages */

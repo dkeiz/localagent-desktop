@@ -1,3 +1,83 @@
+.sidebar {
+    position: relative;
+    padding-bottom: calc(var(--control-h-md, 30px) + 1.4rem);
+}
+
+.sidebar .agent-picker-widget {
+    margin-bottom: 0.25rem;
+}
+
+.sidebar .agent-picker-widget #add-agent-btn {
+    width: 100%;
+}
+
+.sidebar-footer {
+    position: absolute;
+    left: var(--space-2, 6px);
+    right: var(--space-2, 6px);
+    bottom: var(--space-2, 6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    background: transparent;
+    z-index: 60;
+}
+
+.sidebar-footer-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.sidebar-footer-actions .icon-btn {
+    font-size: 1.5rem;
+    padding: 0.5rem;
+    line-height: 1;
+}
+
+.settings-dock {
+    position: relative;
+}
+
+.settings-flyout {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 0.4rem);
+    z-index: 80;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(10px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.settings-flyout.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.settings-flyout-panel {
+    width: 100%;
+    background: var(--main-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 4px);
+    box-shadow: var(--shadow-lg, 0 6px 18px rgba(0, 0, 0, 0.2));
+    padding: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.settings-flyout-panel .nav-btn {
+    width: 100%;
+}
+
 .chat-history-sidebar {
     flex: 1;
     display: flex;
@@ -590,6 +670,7 @@
 
 .sidebar.collapsed .logo,
 .sidebar.collapsed .collapsible-section,
+.sidebar.collapsed .agent-picker-widget,
 .sidebar.collapsed .sidebar-footer {
     display: none;
 }

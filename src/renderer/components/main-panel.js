@@ -10,6 +10,9 @@ class MainPanel {
         this.activeTabId = null;
         // Initialize immediately since we're already in DOMContentLoaded
         this.commandHandler = new CommandHandler(this);
+        this._autocompleteVisible = false;
+        this._autocompleteItems = [];
+        this._autocompleteIndex = 0;
         this.initializeEvents();
         this.initializeVoice();
         this.initContextSettings();
@@ -58,6 +61,10 @@ class MainPanel {
         voiceBtn.addEventListener('click', () => this.toggleVoiceInput());
         speakBtn.addEventListener('click', () => this.toggleAutoSpeak());
         messageInput.addEventListener('keypress', (e) => {
+            if (this._autocompleteVisible && e.key === 'Enter') {
+                e.preventDefault();
+                return;
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.hideCommandAutocomplete();
@@ -67,18 +74,41 @@ class MainPanel {
         // Autocomplete for /commands
         messageInput.addEventListener('input', () => {
             const val = messageInput.value;
-            if (val.startsWith('/') && !val.includes(' ')) {
-                const completions = this.commandHandler.getCompletions(val);
-                this.showCommandAutocomplete(completions);
-            } else {
+            if (!val.startsWith('/') || val.includes(' ')) {
                 this.hideCommandAutocomplete();
+                return;
             }
+
+            const completions = val === '/'
+                ? this.commandHandler.getAllCommands(10)
+                : this.commandHandler.getCompletions(val, 10);
+            this.showCommandAutocomplete(completions);
         });
         messageInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') this.hideCommandAutocomplete();
-            if (e.key === 'Tab' && this._autocompleteVisible) {
+            if (e.key === 'Escape') {
+                this.hideCommandAutocomplete();
+                return;
+            }
+            if (!this._autocompleteVisible) return;
+
+            if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                this.acceptFirstAutocomplete();
+                this.moveCommandAutocomplete(1);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                this.moveCommandAutocomplete(-1);
+                return;
+            }
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                this.acceptHighlightedAutocomplete();
+                return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.acceptHighlightedAutocomplete();
             }
         });
         // Drag and drop
@@ -370,10 +400,15 @@ class MainPanel {
             this.hideCommandAutocomplete();
             return;
         }
+        this._autocompleteItems = completions.slice(0, 10);
+        this._autocompleteIndex = Math.min(
+            this._autocompleteIndex,
+            Math.max(0, this._autocompleteItems.length - 1)
+        );
         dropdown.innerHTML = '';
-        completions.forEach(c => {
+        this._autocompleteItems.forEach((c, index) => {
             const item = document.createElement('div');
-            item.className = 'cmd-autocomplete-item';
+            item.className = `cmd-autocomplete-item${index === this._autocompleteIndex ? ' active' : ''}`;
             const nameSpan = document.createElement('span');
             nameSpan.className = 'cmd-name';
             nameSpan.textContent = c.name;
@@ -381,12 +416,10 @@ class MainPanel {
             descSpan.className = 'cmd-desc';
             descSpan.textContent = c.description;
             item.appendChild(nameSpan);
-            item.appendChild(document.createTextNode(' '));
             item.appendChild(descSpan);
-            item.addEventListener('click', () => {
-                document.getElementById('message-input').value = c.name + ' ';
-                document.getElementById('message-input').focus();
-                this.hideCommandAutocomplete();
+            item.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                this.acceptHighlightedAutocomplete(index);
             });
             dropdown.appendChild(item);
         });
@@ -397,15 +430,28 @@ class MainPanel {
         const dropdown = document.getElementById('cmd-autocomplete');
         if (dropdown) dropdown.style.display = 'none';
         this._autocompleteVisible = false;
+        this._autocompleteItems = [];
+        this._autocompleteIndex = 0;
     }
-    acceptFirstAutocomplete() {
+    moveCommandAutocomplete(step) {
+        if (!this._autocompleteVisible || this._autocompleteItems.length === 0) return;
+        const total = this._autocompleteItems.length;
+        this._autocompleteIndex = (this._autocompleteIndex + step + total) % total;
         const dropdown = document.getElementById('cmd-autocomplete');
-        if (dropdown) {
-            const first = dropdown.querySelector('.cmd-autocomplete-item .cmd-name');
-            if (first) {
-                document.getElementById('message-input').value = first.textContent + ' ';
-                document.getElementById('message-input').focus();
-            }
+        if (!dropdown) return;
+        const items = dropdown.querySelectorAll('.cmd-autocomplete-item');
+        items.forEach((item, index) => item.classList.toggle('active', index === this._autocompleteIndex));
+        const activeItem = items[this._autocompleteIndex];
+        if (activeItem) {
+            activeItem.scrollIntoView({ block: 'nearest' });
+        }
+    }
+    acceptHighlightedAutocomplete(index = this._autocompleteIndex) {
+        const choice = this._autocompleteItems[index];
+        if (choice) {
+            const input = document.getElementById('message-input');
+            input.value = `${choice.name} `;
+            input.focus();
         }
         this.hideCommandAutocomplete();
     }

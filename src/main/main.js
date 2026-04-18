@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const { bootstrapApplication } = require('./bootstrap');
 const { runCheckSkins } = require('../../tools/check-skins');
@@ -10,6 +10,7 @@ let externalTestControl = null;
 
 const args = process.argv.slice(1);
 const isTestMode = args.includes('--test');
+const isDevMode = args.includes('--dev');
 const isNoWindowMode = args.includes('--nowindow');
 const isTestClientMode = args.includes('--testclient');
 const isExternalTestMode = args.includes('--external-test');
@@ -110,6 +111,11 @@ async function runSeedScript(container) {
 
 app.whenReady().then(async () => {
   try {
+    // Hide native app menu in normal mode; keep it visible when explicitly running with --dev.
+    if (!isDevMode && Menu && typeof Menu.setApplicationMenu === 'function') {
+      Menu.setApplicationMenu(null);
+    }
+
     if (isTestMode && isNoWindowMode) {
       await runHeadlessSkinChecks();
       return;

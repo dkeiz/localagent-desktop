@@ -1,6 +1,7 @@
 /**
- * AgentPickerWidget — Displays agent icons below the calendar in the right panel.
- * Click an agent to open/switch to its dedicated chat session.
+ * AgentPickerWidget — Splits agent display by type:
+ * - Pro agents in the left sidebar.
+ * - Sub-agents in the right widget panel.
  */
 class AgentPickerWidget {
     constructor() {
@@ -32,40 +33,34 @@ class AgentPickerWidget {
     }
 
     renderAgents() {
-        const container = document.getElementById('agent-list');
-        if (!container) return;
-        container.innerHTML = '';
+        const proContainer = document.getElementById('agent-list');
+        const subContainer = document.getElementById('subagent-list');
+        if (proContainer) proContainer.innerHTML = '';
+        if (subContainer) subContainer.innerHTML = '';
 
-        if (this.agents.length === 0) {
-            container.innerHTML = '<p class="no-agents">No agents configured</p>';
-            return;
-        }
-
-        // Pro agents first, then sub agents
         const proAgents = this.agents.filter(a => a.type === 'pro');
         const subAgents = this.agents.filter(a => a.type === 'sub');
 
-        if (proAgents.length > 0) {
+        if (proContainer && proAgents.length > 0) {
             const proGrid = document.createElement('div');
             proGrid.className = 'agent-grid';
             proAgents.forEach(agent => {
                 proGrid.appendChild(this._createAgentItem(agent));
             });
-            container.appendChild(proGrid);
+            proContainer.appendChild(proGrid);
+        } else if (proContainer) {
+            proContainer.innerHTML = '<p class="no-agents">No pro agents configured</p>';
         }
 
-        if (subAgents.length > 0) {
-            const subLabel = document.createElement('div');
-            subLabel.className = 'agent-section-label';
-            subLabel.textContent = 'Sub-agents';
-            container.appendChild(subLabel);
-
+        if (subContainer && subAgents.length > 0) {
             const subGrid = document.createElement('div');
             subGrid.className = 'agent-grid';
             subAgents.forEach(agent => {
                 subGrid.appendChild(this._createAgentItem(agent));
             });
-            container.appendChild(subGrid);
+            subContainer.appendChild(subGrid);
+        } else if (subContainer) {
+            subContainer.innerHTML = '<p class="no-agents">No sub-agents configured</p>';
         }
     }
 

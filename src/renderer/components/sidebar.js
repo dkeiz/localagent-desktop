@@ -5,11 +5,18 @@ class Sidebar {
         this.unseenToolCount = 0;  // Track unseen tool activities
         this.currentSessionId = null;
         this.selectedDate = null;
+        this.settingsDock = null;
+        this.settingsFlyout = null;
+        this.isSettingsFlyoutOpen = false;
+        this.handleSettingsPointerDown = this.handleSettingsPointerDown.bind(this);
+        this.handleSettingsKeyDown = this.handleSettingsKeyDown.bind(this);
+        this.handleSettingsWindowBlur = this.handleSettingsWindowBlur.bind(this);
         this.initializeEvents();
         this.setupToolListeners();
         this.loadChatSessions();
         this.setupCollapsibleSections();  // Added collapsible functionality
         this.setupCapabilityListener();   // Keep MCP tab in sync with capability changes
+        this.setupSettingsDock();
     }
 
     resetUnseenToolCount() {
@@ -77,6 +84,9 @@ class Sidebar {
         });
 
         this.currentTab = tabName;
+        if (this.isSettingsFlyoutOpen && tabName !== 'chat') {
+            this.closeSettingsFlyout();
+        }
 
         // Load tab-specific data if needed
         this.loadTabData(tabName);
@@ -581,6 +591,73 @@ class Sidebar {
 
     getCurrentTab() {
         return this.currentTab;
+    }
+
+    setupSettingsDock() {
+        this.settingsDock = document.getElementById('settings-dock');
+        this.settingsFlyout = document.getElementById('settings-flyout');
+
+        if (!this.settingsDock || !this.settingsFlyout) {
+            return;
+        }
+
+        this.settingsDock.addEventListener('click', () => {
+            if (this.isSettingsFlyoutOpen) {
+                this.closeSettingsFlyout();
+            } else {
+                this.openSettingsFlyout();
+            }
+        });
+
+        this.settingsDock.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            if (this.isSettingsFlyoutOpen) {
+                this.closeSettingsFlyout();
+            } else {
+                this.openSettingsFlyout();
+            }
+        });
+
+        document.addEventListener('pointerdown', this.handleSettingsPointerDown);
+        document.addEventListener('keydown', this.handleSettingsKeyDown);
+        window.addEventListener('blur', this.handleSettingsWindowBlur);
+    }
+
+    openSettingsFlyout() {
+        if (!this.settingsDock || !this.settingsFlyout) return;
+        this.isSettingsFlyoutOpen = true;
+        this.settingsFlyout.classList.add('open');
+        this.settingsFlyout.setAttribute('aria-hidden', 'false');
+        this.settingsDock.setAttribute('aria-expanded', 'true');
+    }
+
+    closeSettingsFlyout() {
+        if (!this.settingsDock || !this.settingsFlyout) return;
+        this.isSettingsFlyoutOpen = false;
+        this.settingsFlyout.classList.remove('open');
+        this.settingsFlyout.setAttribute('aria-hidden', 'true');
+        this.settingsDock.setAttribute('aria-expanded', 'false');
+    }
+
+    handleSettingsPointerDown(event) {
+        if (!this.isSettingsFlyoutOpen || !this.settingsDock || !this.settingsFlyout) return;
+        const target = event.target;
+        if (this.settingsFlyout.contains(target) || this.settingsDock.contains(target)) return;
+        this.closeSettingsFlyout();
+    }
+
+    handleSettingsKeyDown(event) {
+        if (event.key === 'Escape' && this.isSettingsFlyoutOpen) {
+            this.closeSettingsFlyout();
+            this.settingsDock?.focus();
+        }
+    }
+
+    handleSettingsWindowBlur() {
+        if (this.isSettingsFlyoutOpen) {
+            this.closeSettingsFlyout();
+        }
     }
 
     setupToolListeners() {

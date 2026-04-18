@@ -48,15 +48,35 @@ class CommandHandler {
     /**
      * Get list of commands matching a prefix (for autocomplete).
      */
-    getCompletions(prefix) {
-        const lower = prefix.toLowerCase();
+    getCompletions(prefix, limit = 10) {
+        const normalized = typeof prefix === 'string' ? prefix.trim().toLowerCase() : '';
+        const query = normalized.startsWith('/') ? normalized : `/${normalized}`;
+        const isRootQuery = query === '/';
+        const maxItems = Math.max(1, Number(limit) || 10);
         const matches = [];
+
         for (const [name, cmd] of this.commands) {
-            if (name.startsWith(lower)) {
-                matches.push({ name, description: cmd.description });
+            if (isRootQuery || name.startsWith(query)) {
+                matches.push({ name, description: cmd.description || '' });
             }
         }
-        return matches;
+
+        return matches.slice(0, maxItems);
+    }
+
+    /**
+     * Return all commands in display order, optionally capped.
+     */
+    getAllCommands(limit = null) {
+        const items = [];
+        for (const [name, cmd] of this.commands) {
+            items.push({ name, description: cmd.description || '' });
+        }
+        if (limit === null || limit === undefined) {
+            return items;
+        }
+        const maxItems = Math.max(1, Number(limit) || 10);
+        return items.slice(0, maxItems);
     }
 
     _registerBuiltInCommands() {
@@ -78,6 +98,22 @@ class CommandHandler {
             execute: async () => {
                 await this.mainPanel.clearCurrentChat();
                 return { output: '🧹 Chat cleared.', style: 'system' };
+            }
+        });
+
+        // /new and /newchat
+        this.commands.set('/new', {
+            description: 'Create a new chat tab',
+            execute: async () => {
+                await this.mainPanel.newChat();
+                return { output: '🆕 New chat created.', style: 'system' };
+            }
+        });
+        this.commands.set('/newchat', {
+            description: 'Alias for /new',
+            execute: async () => {
+                await this.mainPanel.newChat();
+                return { output: '🆕 New chat created.', style: 'system' };
             }
         });
 
