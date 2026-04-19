@@ -11,6 +11,7 @@
   "current_weather",
   "delete_file",
   "download_file",
+  "edit_file",
   "end_answer",
   "extract_text",
   "fetch_url",

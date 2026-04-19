@@ -271,6 +271,10 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
       if (mcpServer.setCurrentSessionId) {
         mcpServer.setCurrentSessionId(sessionId);
       }
+      if (mcpServer.setCurrentAgentContext) {
+        const sessionRow = db.get('SELECT agent_id FROM chat_sessions WHERE id = ?', [sessionId]);
+        mcpServer.setCurrentAgentContext(sessionRow?.agent_id ? { sessionId, agentId: sessionRow.agent_id } : null);
+      }
       return { success: true, sessionId };
     } catch (error) {
       console.error('Error switching session:', error);
@@ -350,6 +354,9 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
         ? db.get('SELECT agent_id FROM chat_sessions WHERE id = ?', [effectiveSessionId])
         : null;
       const agentId = sessionRow ? sessionRow.agent_id : null;
+      if (!isTestSession && mcpServer.setCurrentAgentContext) {
+        mcpServer.setCurrentAgentContext(agentId ? { sessionId: effectiveSessionId, agentId } : null);
+      }
 
       let response;
       if (chainController && useChaining) {

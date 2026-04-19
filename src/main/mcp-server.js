@@ -33,6 +33,7 @@ class MCPServer extends EventEmitter {
     this.toolStates = new Map();
     this.proxyServers = new Map();
     this._executionContextStack = [];
+    this._currentAgentContext = null;
     this.initializeBuiltInTools();
   }
 
@@ -58,6 +59,21 @@ class MCPServer extends EventEmitter {
 
   getCurrentExecutionContext() {
     return this._executionContextStack[this._executionContextStack.length - 1] || null;
+  }
+
+  setCurrentAgentContext(context = null) {
+    this._currentAgentContext = context && typeof context === 'object' ? { ...context } : null;
+  }
+
+  getCurrentAgentContext() {
+    const activeContext = this.getCurrentExecutionContext();
+    if (!activeContext && !this._currentAgentContext) {
+      return null;
+    }
+    return {
+      ...(this._currentAgentContext || {}),
+      ...(activeContext || {})
+    };
   }
 
   setConnectorRuntime(connectorRuntime) {
@@ -150,7 +166,7 @@ class MCPServer extends EventEmitter {
   async executeTool(toolName, params = {}, toolCallId = null, options = {}) {
     const bypassPermissions = options && options.bypassPermissions === true;
     const executionContext = options && options.context ? options.context : null;
-    const activeContext = executionContext || this.getCurrentExecutionContext() || null;
+    const activeContext = executionContext || this.getCurrentAgentContext() || null;
     const tool = this.tools.get(toolName);
     if (!tool) {
       this.emit('tool-executed', { toolName, success: false, error: 'Tool not found' });

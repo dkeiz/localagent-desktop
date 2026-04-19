@@ -21,6 +21,7 @@ module.exports = {
     const html = fs.readFileSync(indexPath, 'utf8');
     const scripts = collectScriptSources(html);
     const required = [
+      'components/chart-renderer.js',
       'components/main-panel-tabs.js',
       'components/main-panel-permissions.js',
       'components/message-formatter.js',

@@ -1,3 +1,48 @@
+const fs = require('fs');
+const path = require('path');
+
+function assertInside(baseDir, targetPath) {
+  const base = path.resolve(baseDir);
+  const target = path.resolve(targetPath);
+  if (target !== base && !target.startsWith(base + path.sep)) {
+    throw new Error('Requested path is outside the agent folder');
+  }
+  return target;
+}
+
+function listFilesRecursive(baseDir, relativeDir = '', depth = 0, maxDepth = 4) {
+  const dirPath = assertInside(baseDir, path.join(baseDir, relativeDir));
+  if (!fs.existsSync(dirPath) || depth > maxDepth) return [];
+
+  return fs.readdirSync(dirPath, { withFileTypes: true })
+    .filter(entry => !entry.name.startsWith('.'))
+    .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
+    .map(entry => {
+      const relativePath = path.join(relativeDir, entry.name).replace(/\\/g, '/');
+      const fullPath = path.join(baseDir, relativePath);
+      const stat = fs.statSync(fullPath);
+      const item = {
+        name: entry.name,
+        relativePath,
+        type: entry.isDirectory() ? 'directory' : 'file',
+        size: entry.isDirectory() ? 0 : stat.size,
+        modifiedAt: stat.mtime.toISOString()
+      };
+      if (entry.isDirectory()) {
+        item.children = listFilesRecursive(baseDir, relativePath, depth + 1, maxDepth);
+      }
+      return item;
+    });
+}
+
+async function getAgentUiInfo(agentManager, agentId) {
+  const agent = await agentManager.getAgent(agentId);
+  if (!agent) return null;
+  const folderPath = await agentManager.resolveAgentFolder(agentId);
+  const slug = agentManager._getSafeFolderName(agent.name);
+  return { ...agent, slug, folderPath };
+}
+
 function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
   const {
     mcpServer,
@@ -8,6 +53,7 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     agentLoop,
     connectorRuntime,
     agentManager,
+    pluginManager,
     eventBus,
     memoryDaemon,
     workflowScheduler,
@@ -187,6 +233,61 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     if (!agentManager) throw new Error('AgentManager not initialized');
     await agentManager.compactAgent(id);
     return { success: true };
+  });
+
+  ipcMain.handle('list-agent-files', async (event, agentId) => {
+    if (!agentManager) throw new Error('AgentManager not initialized');
+    const folderPath = await agentManager.resolveAgentFolder(agentId);
+    if (!folderPath) return { success: false, error: 'Agent folder not found', files: [] };
+    return { success: true, root: folderPath, files: listFilesRecursive(folderPath) };
+  });
+
+  ipcMain.handle('read-agent-file', async (event, agentId, relativePath) => {
+    if (!agentManager) throw new Error('AgentManager not initialized');
+    const folderPath = await agentManager.resolveAgentFolder(agentId);
+    if (!folderPath) return { success: false, error: 'Agent folder not found' };
+    try {
+      const filePath = assertInside(folderPath, path.join(folderPath, String(relativePath || '')));
+      const stat = fs.statSync(filePath);
+      if (!stat.isFile()) return { success: false, error: 'Requested path is not a file' };
+      const content = fs.readFileSync(filePath, 'utf-8');
+      return { success: true, relativePath: String(relativePath || ''), path: filePath, content, size: content.length };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('get-agent-chat-ui', async (event, agentId) => {
+    if (!agentManager || !pluginManager?.getAgentChatUI) return null;
+    const agentInfo = await getAgentUiInfo(agentManager, agentId);
+    if (!agentInfo) return null;
+    return pluginManager.getAgentChatUI(agentInfo);
+  });
+
+  ipcMain.handle('run-agent-chat-ui-action', async (event, agentId, action, payload = {}) => {
+    if (!agentManager || !pluginManager?.runAgentChatUIAction) {
+      return { success: false, error: 'Agent chat UI actions are unavailable' };
+    }
+    const agentInfo = await getAgentUiInfo(agentManager, agentId);
+    if (!agentInfo) return { success: false, error: 'Agent not found' };
+    try {
+      return await pluginManager.runAgentChatUIAction(agentInfo, action, payload);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('agent-chat-ui-event', async (event, agentId, eventName, payload = {}) => {
+    if (!agentManager || !pluginManager?.handleAgentChatUIEvent) {
+      return { success: false, error: 'Agent chat UI events are unavailable' };
+    }
+    const agentInfo = await getAgentUiInfo(agentManager, agentId);
+    if (!agentInfo) return { success: false, error: 'Agent not found' };
+    try {
+      return await pluginManager.handleAgentChatUIEvent(agentInfo, eventName, payload);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   });
   ipcMain.handle('daemon:memory-start', async () => {
     if (testClientMode) return { error: 'Disabled in --testclient mode' };

@@ -222,6 +222,7 @@ async function bootstrapApplication(options = {}) {
   const pluginManager = new PluginManager(container, { pluginsDir: paths.pluginsDir });
   container.register('pluginManager', pluginManager);
   await pluginManager.initialize();
+  agentManager.setPluginManager(pluginManager);
 
   if (ipcMain) {
     setupIpcHandlers(ipcMain, container);

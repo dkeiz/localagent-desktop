@@ -95,7 +95,8 @@ class PluginManager extends EventEmitter {
                     persistedStatus: existing?.status || 'disabled',
                     module: null,
                     context: null,
-                    handlers: []
+                    handlers: [],
+                    chatUIs: []
                 });
             } catch (e) {
                 console.error(`[PluginManager] Failed to read manifest in ${dir.name}:`, e.message);
@@ -105,10 +106,17 @@ class PluginManager extends EventEmitter {
 
     // ==================== Lifecycle ====================
 
-    async enablePlugin(pluginId) {
+    async enablePlugin(pluginId, options = {}) {
+        const persistStatus = options.persistStatus !== false;
         const plugin = this.plugins.get(pluginId);
         if (!plugin) throw new Error(`Plugin "${pluginId}" not found`);
-        if (plugin.status === 'enabled' && plugin.module && plugin.context) return;
+        if (plugin.status === 'enabled' && plugin.module && plugin.context) {
+            if (persistStatus && plugin.persistedStatus !== 'enabled') {
+                plugin.persistedStatus = 'enabled';
+                this._updateDbStatus(pluginId, 'enabled');
+            }
+            return;
+        }
 
         try {
             const mainPath = path.join(plugin.dir, plugin.manifest.main);
@@ -122,6 +130,7 @@ class PluginManager extends EventEmitter {
             const pluginModule = require(mainPath);
             plugin.module = pluginModule;
             plugin.handlers = [];
+            plugin.chatUIs = [];
 
             // Build context for the plugin
             const context = this._buildPluginContext(pluginId, plugin);
@@ -141,8 +150,10 @@ class PluginManager extends EventEmitter {
         }
 
         plugin.status = 'enabled';
-        plugin.persistedStatus = 'enabled';
-        this._updateDbStatus(pluginId, 'enabled');
+        if (persistStatus) {
+            plugin.persistedStatus = 'enabled';
+            this._updateDbStatus(pluginId, 'enabled');
+        }
         
         // Auto-generate knowledge item for this plugin
         await this._generatePluginKnowledge(pluginId, plugin);
@@ -217,6 +228,24 @@ class PluginManager extends EventEmitter {
                 // Track handler for cleanup on disable
                 plugin.handlers.push({ name, toolName, definition });
                 console.log(`[PluginManager] Registered handler: ${toolName}`);
+            },
+
+            registerChatUI(contribution) {
+                if (!contribution || typeof contribution !== 'object') {
+                    throw new Error('registerChatUI requires a contribution object');
+                }
+                plugin.chatUIs.push({
+                    title: contribution.title || plugin.manifest.name,
+                    renderPanel: contribution.renderPanel || null,
+                    html: contribution.html || '',
+                    css: contribution.css || '',
+                    actions: contribution.actions && typeof contribution.actions === 'object'
+                        ? contribution.actions
+                        : {},
+                    onTabActivated: contribution.onTabActivated || null,
+                    onTabDeactivated: contribution.onTabDeactivated || null
+                });
+                console.log(`[PluginManager] Registered chat UI for "${pluginId}"`);
             },
 
             log(message) {
@@ -387,12 +416,146 @@ class PluginManager extends EventEmitter {
                 name: plugin.manifest.name,
                 version: plugin.manifest.version || '0.0.0',
                 description: plugin.manifest.description || '',
+                agentSlug: plugin.manifest.agentSlug || null,
+                agentSlugs: plugin.manifest.agentSlugs || [],
                 status: plugin.status,
                 handlerCount: plugin.handlers.length,
-                handlers: plugin.handlers.map(h => h.toolName)
+                handlers: plugin.handlers.map(h => h.toolName),
+                chatUICount: plugin.chatUIs?.length || 0
             });
         }
         return result;
+    }
+
+    getAgentPlugin(agentSlug) {
+        return this.getAgentPlugins(agentSlug)[0] || null;
+    }
+
+    getAgentPlugins(agentSlug) {
+        const slug = String(agentSlug || '').trim();
+        if (!slug) return [];
+        const matches = [];
+        for (const [id, plugin] of this.plugins) {
+            const manifest = plugin.manifest || {};
+            const slugs = [
+                manifest.agentSlug,
+                ...(Array.isArray(manifest.agentSlugs) ? manifest.agentSlugs : [])
+            ].filter(Boolean).map(value => String(value).trim());
+
+            if (slugs.includes(slug) || slugs.includes('*')) {
+                matches.push(id);
+            }
+        }
+
+        return matches;
+    }
+
+    async getAgentChatUI(agentInfo) {
+        const slug = String(agentInfo?.slug || '').trim();
+        const pluginIds = this.getAgentPlugins(slug);
+        const panels = [];
+        const css = [];
+        const actions = {};
+
+        for (const pluginId of pluginIds) {
+            const plugin = this.plugins.get(pluginId);
+            if (!plugin || plugin.status !== 'enabled' || !plugin.chatUIs?.length) {
+                continue;
+            }
+
+            for (const contribution of plugin.chatUIs) {
+                try {
+                    const html = typeof contribution.renderPanel === 'function'
+                        ? await contribution.renderPanel(agentInfo)
+                        : contribution.html;
+                    if (!html) continue;
+                    panels.push(`<div class="agent-ui-plugin" data-agent-ui-plugin-id="${pluginId}">${html}</div>`);
+                    if (contribution.css) {
+                        css.push(`/* ${pluginId} */\n${contribution.css}`);
+                    }
+                    actions[pluginId] = Object.keys(contribution.actions || {});
+                } catch (error) {
+                    console.error(`[PluginManager] Chat UI render failed for "${pluginId}":`, error.message);
+                }
+            }
+        }
+
+        if (panels.length === 0) {
+            return null;
+        }
+
+        return {
+            pluginIds,
+            title: agentInfo?.name || 'Agent',
+            html: panels.join('\n'),
+            css: css.join('\n\n'),
+            actions
+        };
+    }
+
+    _getEnabledChatContributions(agentInfo, pluginId = null) {
+        const slug = String(agentInfo?.slug || '').trim();
+        const pluginIds = pluginId ? [pluginId] : this.getAgentPlugins(slug);
+        const output = [];
+
+        for (const id of pluginIds) {
+            const plugin = this.plugins.get(id);
+            if (!plugin || plugin.status !== 'enabled' || !plugin.chatUIs?.length) {
+                continue;
+            }
+            for (const contribution of plugin.chatUIs) {
+                output.push({ pluginId: id, plugin, contribution });
+            }
+        }
+
+        return output;
+    }
+
+    async runAgentChatUIAction(agentInfo, action, payload = {}) {
+        const actionName = String(action || '').trim();
+        if (!actionName) {
+            throw new Error('Agent chat UI action is required');
+        }
+
+        const requestedPluginId = payload?.pluginId || payload?._pluginId || null;
+        const contributions = this._getEnabledChatContributions(agentInfo, requestedPluginId);
+        for (const { pluginId, plugin, contribution } of contributions) {
+            const handler = contribution.actions?.[actionName];
+            if (typeof handler !== 'function') {
+                continue;
+            }
+            return handler({
+                agentInfo,
+                payload,
+                pluginId,
+                context: plugin.context,
+                render: () => {
+                    if (typeof contribution.renderPanel === 'function') {
+                        return contribution.renderPanel(agentInfo);
+                    }
+                    return contribution.html || '';
+                }
+            });
+        }
+
+        throw new Error(`Agent chat UI action "${actionName}" not found`);
+    }
+
+    async handleAgentChatUIEvent(agentInfo, eventName, payload = {}) {
+        const key = eventName === 'activated'
+            ? 'onTabActivated'
+            : eventName === 'deactivated'
+                ? 'onTabDeactivated'
+                : null;
+        if (!key) return null;
+
+        const results = [];
+        for (const { pluginId, plugin, contribution } of this._getEnabledChatContributions(agentInfo)) {
+            const handler = contribution[key];
+            if (typeof handler !== 'function') continue;
+            results.push(await handler(agentInfo, payload, plugin.context, pluginId));
+        }
+        return { success: true, results };
     }
 
     getPluginDetail(pluginId) {
@@ -450,6 +613,7 @@ class PluginManager extends EventEmitter {
             }
         }
         plugin.handlers = [];
+        plugin.chatUIs = [];
     }
 }
 

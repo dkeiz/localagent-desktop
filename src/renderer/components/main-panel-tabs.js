@@ -3,6 +3,192 @@
         return document.getElementById('messages-container');
     }
 
+    function getAgentChatPanel() {
+        let panel = document.getElementById('agent-chat-ui-panel');
+        if (panel) return panel;
+
+        const messages = getMessagesContainer();
+        if (!messages?.parentElement) return null;
+
+        panel = document.createElement('div');
+        panel.id = 'agent-chat-ui-panel';
+        panel.className = 'agent-chat-ui-panel';
+        panel.hidden = true;
+        messages.parentElement.insertBefore(panel, messages);
+        return panel;
+    }
+
+    function updateAgentPanelStyle(css = '') {
+        let styleEl = document.getElementById('agent-chat-ui-plugin-style');
+        if (!css) {
+            if (styleEl) styleEl.remove();
+            return;
+        }
+        if (!styleEl) {
+            styleEl = document.createElement('style');
+            styleEl.id = 'agent-chat-ui-plugin-style';
+            document.head.appendChild(styleEl);
+        }
+        styleEl.textContent = css;
+    }
+
+    function hydrateAgentCharts(root) {
+        if (window.agentChartRenderer?.hydrate) {
+            window.agentChartRenderer.hydrate(root);
+        }
+    }
+
+    function activateAgentPanelTab(root, tabName) {
+        root.querySelectorAll('[data-agent-ui-tab]').forEach(button => {
+            button.classList.toggle('active', button.dataset.agentUiTab === tabName);
+        });
+        root.querySelectorAll('[data-agent-ui-section]').forEach(section => {
+            section.hidden = section.dataset.agentUiSection !== tabName;
+        });
+    }
+
+    function readActionPayload(element) {
+        const payload = {};
+        const rawPayload = element.dataset.agentUiPayload || element.dataset.pluginPayload || '';
+        if (rawPayload) {
+            try {
+                Object.assign(payload, JSON.parse(rawPayload));
+            } catch (error) {
+                payload.rawPayload = rawPayload;
+            }
+        }
+
+        for (const [key, value] of Object.entries(element.dataset || {})) {
+            if (['agentUiAction', 'pluginAction', 'agentUiPayload', 'pluginPayload', 'agentUiBound', 'agentUiTabBound'].includes(key)) {
+                continue;
+            }
+            payload[key] = value;
+        }
+
+        const pluginRoot = element.closest('[data-agent-ui-plugin-id]');
+        if (pluginRoot?.dataset.agentUiPluginId) {
+            payload.pluginId = pluginRoot.dataset.agentUiPluginId;
+        }
+        return payload;
+    }
+
+    function applyAgentActionResult(root, result, fallbackPluginId = '') {
+        if (!result || result.success === false) {
+            if (result?.error) console.warn('Agent UI action failed:', result.error);
+            return;
+        }
+        if (result.css !== undefined) {
+            updateAgentPanelStyle(result.css);
+        }
+        const pluginId = result.pluginId || fallbackPluginId;
+
+        if (result.replaceHtml) {
+            const replacements = Array.isArray(result.replaceHtml) ? result.replaceHtml : [result.replaceHtml];
+            replacements.forEach(item => {
+                const target = root.querySelector(item.selector);
+                if (target) target.innerHTML = item.html || '';
+            });
+        }
+        if (result.text) {
+            const updates = Array.isArray(result.text) ? result.text : [result.text];
+            updates.forEach(item => {
+                const target = root.querySelector(item.selector);
+                if (target) {
+                    target.hidden = item.hidden === undefined ? false : Boolean(item.hidden);
+                    target.textContent = item.text || '';
+                }
+            });
+        }
+        if (result.show) {
+            root.querySelectorAll(result.show).forEach(target => { target.hidden = false; });
+        }
+        if (result.hide) {
+            root.querySelectorAll(result.hide).forEach(target => { target.hidden = true; });
+        }
+        if (result.html !== undefined) {
+            const wrapper = pluginId
+                ? root.querySelector(`[data-agent-ui-plugin-id="${pluginId}"]`)
+                : null;
+            if (wrapper) wrapper.innerHTML = result.html;
+            else root.innerHTML = result.html;
+        }
+        hydrateAgentCharts(root);
+    }
+
+    async function sendAgentUiEvent(panel, sessionId, eventName) {
+        const tab = panel.chatTabs.get(sessionId);
+        if (!tab?.agentId || !window.electronAPI?.agents?.chatUIEvent) return;
+        try {
+            await window.electronAPI.agents.chatUIEvent(tab.agentId, eventName, { sessionId });
+        } catch (error) {
+            console.warn(`Agent UI ${eventName} event failed:`, error);
+        }
+    }
+
+    function bindAgentPanelActions(panel, root, agentId) {
+        root.querySelectorAll('[data-agent-ui-tab]').forEach(button => {
+            if (button.dataset.agentUiTabBound === 'true') return;
+            button.dataset.agentUiTabBound = 'true';
+            button.addEventListener('click', () => activateAgentPanelTab(root, button.dataset.agentUiTab));
+        });
+
+        root.querySelectorAll('[data-agent-ui-action], [data-plugin-action]').forEach(element => {
+            if (element.dataset.agentUiBound === 'true') return;
+            element.dataset.agentUiBound = 'true';
+            const runAction = async (event) => {
+                event.preventDefault();
+                const action = element.dataset.agentUiAction || element.dataset.pluginAction;
+                const payload = readActionPayload(element);
+                const pluginId = payload.pluginId || '';
+                try {
+                    const result = await window.electronAPI.agents.runChatUIAction(agentId, action, payload);
+                    applyAgentActionResult(root, result, pluginId);
+                    bindAgentPanelActions(panel, root, agentId);
+                    if (result?.refresh === true) {
+                        await renderAgentPanel(panel, panel.activeTabId);
+                    }
+                } catch (error) {
+                    console.warn(`Agent UI action "${action}" failed:`, error);
+                }
+            };
+            element.addEventListener(element.tagName === 'FORM' ? 'submit' : 'click', runAction);
+        });
+    }
+
+    async function renderAgentPanel(panel, sessionId) {
+        const root = getAgentChatPanel();
+        if (!root) return;
+
+        const tab = panel.chatTabs.get(sessionId);
+        if (!tab?.agentId) {
+            root.hidden = true;
+            root.innerHTML = '';
+            updateAgentPanelStyle('');
+            return;
+        }
+
+        try {
+            const ui = await window.electronAPI.agents.getChatUI(tab.agentId);
+            if (!ui?.html) {
+                root.hidden = true;
+                root.innerHTML = '';
+                updateAgentPanelStyle('');
+                return;
+            }
+            root.innerHTML = ui.html;
+            root.hidden = false;
+            updateAgentPanelStyle(ui.css || '');
+            hydrateAgentCharts(root);
+            bindAgentPanelActions(panel, root, tab.agentId);
+            await sendAgentUiEvent(panel, sessionId, 'activated');
+        } catch (error) {
+            console.warn('Failed to render agent chat UI:', error);
+            root.hidden = true;
+            root.innerHTML = '';
+            updateAgentPanelStyle('');
+        }
+    }
+
     async function resolveAgentType(tab) {
         if (!tab?.agentId) {
             return null;
@@ -85,6 +271,7 @@
                 if (sessionId === panel.activeTabId) {
                     const container = getMessagesContainer();
                     if (container) container.innerHTML = '';
+                    await renderAgentPanel(panel, sessionId);
                     panel.updateContextUsage(null);
                 }
                 renderTabs(panel);
@@ -115,6 +302,7 @@
                 panel.activeTabId = newSessionId;
                 const container = getMessagesContainer();
                 if (container) container.innerHTML = '';
+                await renderAgentPanel(panel, newSessionId);
                 panel.updateContextUsage(null);
                 await window.electronAPI.switchChatSession(newSessionId);
             }
@@ -155,6 +343,7 @@
             if (container) {
                 container.innerHTML = '';
             }
+            await renderAgentPanel(panel, sessionId);
 
             renderTabs(panel);
             saveOpenTabIds(panel);
@@ -191,6 +380,7 @@
             panel.activeTabId = sessionId;
 
             await loadTabConversations(panel, sessionId);
+            await renderAgentPanel(panel, sessionId);
             renderTabs(panel);
             saveOpenTabIds(panel);
 
@@ -326,6 +516,7 @@
             panel.activeTabId = (activeId && panel.chatTabs.has(activeId)) ? activeId : regularTabIds[0];
 
             await loadTabConversations(panel, panel.activeTabId);
+            await renderAgentPanel(panel, panel.activeTabId);
             await window.electronAPI.switchChatSession(panel.activeTabId);
 
             for (const sessionId of regularTabIds) {
@@ -377,6 +568,8 @@
             return;
         }
 
+        const previousTabId = panel.activeTabId;
+        await sendAgentUiEvent(panel, previousTabId, 'deactivated');
         saveCurrentTabMessages(panel);
         panel.activeTabId = sessionId;
 
@@ -391,6 +584,7 @@
         } else {
             await loadTabConversations(panel, sessionId);
         }
+        await renderAgentPanel(panel, sessionId);
 
         if (tab.followOutput === false && typeof tab.scrollTop === 'number') {
             container.scrollTop = tab.scrollTop;
@@ -437,6 +631,9 @@
         }
 
         const closingTab = panel.chatTabs.get(sessionId);
+        if (sessionId === panel.activeTabId) {
+            await sendAgentUiEvent(panel, sessionId, 'deactivated');
+        }
         await maybeDeactivateAgentAfterTabClose(panel, sessionId, closingTab);
         panel.chatTabs.delete(sessionId);
 

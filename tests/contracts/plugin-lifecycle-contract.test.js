@@ -24,6 +24,34 @@ module.exports = {
     await pluginManager.disablePlugin('test-plugin');
     assert.equal(mcpServer.tools.has('plugin_test_plugin_hello'), false, 'Disabled plugin tool should be removed');
 
+    await pluginManager.enablePlugin('agent-file-browser');
+    await pluginManager.enablePlugin('agent-research-orchestrator-ui');
+    const researchPlugins = pluginManager.getAgentPlugins('research-orchestrator');
+    assert.equal(
+      pluginManager.getAgentPlugin('research-orchestrator'),
+      'agent-file-browser',
+      'Agent-bound plugin lookup should resolve companion plugin'
+    );
+    assert.ok(
+      researchPlugins.includes('agent-research-orchestrator-ui'),
+      'Agent should support multiple UI companion plugins'
+    );
+    const chatUI = await pluginManager.getAgentChatUI({
+      slug: 'research-orchestrator',
+      name: 'Research Orchestrator',
+      folderPath: path.join(rootDir, 'agentin', 'agents', 'pro', 'research-orchestrator')
+    });
+    assert.includes(chatUI.html, 'Artifacts', 'Agent chat UI should render artifact panel');
+    assert.includes(chatUI.html, 'Research Orchestrator', 'Agent chat UI should render individual agent panel');
+    const refreshResult = await pluginManager.runAgentChatUIAction(
+      { slug: 'research-orchestrator', name: 'Research Orchestrator', folderPath: path.join(rootDir, 'agentin', 'agents', 'pro', 'research-orchestrator') },
+      'refresh',
+      { pluginId: 'agent-research-orchestrator-ui' }
+    );
+    assert.includes(refreshResult.html, 'Research Orchestrator', 'Agent UI action should return updated plugin HTML');
+    await pluginManager.disablePlugin('agent-research-orchestrator-ui');
+    await pluginManager.disablePlugin('agent-file-browser');
+
     db.run('UPDATE plugins SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['enabled', null, 'test-plugin']);
     const restartManager = new PluginManager(container);
     await restartManager.initialize();

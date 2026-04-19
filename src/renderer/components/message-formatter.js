@@ -16,12 +16,14 @@ class MessageFormatter {
 
         if (role === 'assistant') {
             messageDiv.innerHTML = this.renderAssistantContent(content, thinkingVisibility);
+            this.hydrateDynamicContent(messageDiv);
             return;
         }
 
         messageDiv.innerHTML = this.renderMarkdown(String(content || ''), {
             allowImages: role !== 'system'
         });
+        this.hydrateDynamicContent(messageDiv);
     }
 
     renderAssistantContent(text, thinkingVisibility = 'show') {
@@ -74,7 +76,13 @@ class MessageFormatter {
         let content = String(text || '');
         const allowImages = options.allowImages === true;
 
-        content = content.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+        content = content.replace(/```([\w-]+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+            const language = String(lang || '').toLowerCase();
+            if (['chart', 'chart-json', 'agent-chart'].includes(language)) {
+                return stash(
+                    `<div class="agent-chart-host" data-agent-chart="${this.escapeAttribute(code.trim())}"></div>`
+                );
+            }
             return stash(
                 `<pre><code class="language-${this.escapeAttribute(lang || 'text')}">`
                 + `${this.escapeHtml(code.trim())}</code></pre>`
@@ -235,6 +243,12 @@ class MessageFormatter {
 
     renderPlainText(text) {
         return this.escapeHtml(String(text || '')).replace(/\n/g, '<br>');
+    }
+
+    hydrateDynamicContent(root) {
+        if (window.agentChartRenderer?.hydrate) {
+            window.agentChartRenderer.hydrate(root);
+        }
     }
 
     _isLikelyImageUrl(url) {

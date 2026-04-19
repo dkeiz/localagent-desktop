@@ -37,6 +37,7 @@ function normalizeSubagentAction(rawAction) {
   const value = String(rawAction || 'list').trim().toLowerCase();
   if (value === 'list' || value === 'ls' || value === 'show') return 'list';
   if (value === 'run' || value === 'start' || value === 'invoke') return 'run';
+  if (value === 'run_batch' || value === 'batch' || value === 'invoke_multiple') return 'run_batch';
   if (value === 'status' || value === 'get' || value === 'inspect') return 'status';
   if (value === 'new' || value === 'create' || value === 'add') return 'new';
   if (value === 'stop' || value === 'deactivate' || value === 'disable') return 'stop';
@@ -52,6 +53,7 @@ function normalizeSubagentParams(params = {}) {
     contract_type: params.contract_type ? String(params.contract_type) : 'task_complete',
     expected_output: params.expected_output ? String(params.expected_output) : '',
     subagent_mode: params.subagent_mode ? String(params.subagent_mode) : '',
+    tasks: Array.isArray(params.tasks) ? params.tasks : [],
     wait: params.wait === true,
     timeout_ms: Number.isFinite(Number(params.timeout_ms)) ? Number(params.timeout_ms) : null,
     description: params.description ? String(params.description) : '',
@@ -59,6 +61,24 @@ function normalizeSubagentParams(params = {}) {
     icon: params.icon ? String(params.icon) : '🤖',
     run_id: params.run_id ? String(params.run_id) : ''
   };
+}
+
+async function runBatchSubagents(server, params) {
+  if (!Array.isArray(params.tasks) || params.tasks.length === 0) {
+    throw new Error('subagent action="run_batch" requires non-empty tasks array');
+  }
+  if (!server._agentManager || typeof server._agentManager.invokeMultipleSubAgents !== 'function') {
+    throw new Error('Batch subagent invocation is unavailable');
+  }
+
+  return server._agentManager.invokeMultipleSubAgents(
+    server.getCurrentSessionId() || null,
+    params.tasks,
+    {
+      wait: params.wait,
+      timeout_ms: params.timeout_ms
+    }
+  );
 }
 
 async function resolveSubagent(server, params) {
@@ -296,6 +316,8 @@ async function handleSubagentOperation(server, rawParams = {}) {
       return createSubagent(server, params);
     case 'run':
       return runSubagent(server, params);
+    case 'run_batch':
+      return runBatchSubagents(server, params);
     case 'stop':
       return stopSubagent(server, params);
     default:
@@ -306,21 +328,25 @@ async function handleSubagentOperation(server, rawParams = {}) {
 function registerAgentTools(server) {
   server.registerTool('subagent', {
     name: 'subagent',
-    description: 'Manage sub-agents through a single tool. Use action="list" to inspect sub-agents, action="run" to delegate, action="status" to poll a run, action="new" to create, or action="stop" to deactivate.',
-    userDescription: 'List, create, run, check status, or stop sub-agents',
-    example: 'TOOL:subagent{"action":"run","id":5,"task":"Find 3 reliable sources about topic X"}',
+    description: 'Manage sub-agents through a single tool. Use action="list" to inspect sub-agents, action="run" to delegate one task, action="run_batch" to delegate multiple tasks with provider-aware queuing, action="status" to poll a run, action="new" to create, or action="stop" to deactivate.',
+    userDescription: 'List, create, run, batch run, check status, or stop sub-agents',
+    example: 'TOOL:subagent{"action":"run_batch","tasks":[{"id":5,"task":"Find 3 reliable sources about topic X"}]}',
     exampleOutput: '{"accepted":true,"run_id":"subtask-20260408-ab12cd","status":"queued","child_session_id":"subtask-20260408-ab12cd"}',
     inputSchema: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          description: 'Sub-agent action: list, run, status, new, or stop',
+          description: 'Sub-agent action: list, run, run_batch, status, new, or stop',
           default: 'list'
         },
         id: { type: 'number', description: 'Sub-agent id. Prefer id over name; use action="list" first if needed.' },
         name: { type: 'string', description: 'Sub-agent name for run/new/stop actions' },
         task: { type: 'string', description: 'Focused task for action="run"' },
+        tasks: {
+          type: 'array',
+          description: 'Batch entries for action="run_batch". Each entry supports id/name, task, provider, contract_type, expected_output, and subagent_mode.'
+        },
         contract_type: {
           type: 'string',
           description: 'Expected completion status for action="run"',

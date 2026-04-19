@@ -1,6 +1,7 @@
 const path = require('path');
 const { getModelRuntimeConfig, saveModelRuntimeConfig, sanitizeRuntimeConfig } = require('./llm-config');
 const { getEffectiveLlmSelection } = require('./llm-state');
+const { buildPathTokenMap } = require('./path-tokens');
 
 /**
  * InferenceDispatcher — Central routing layer for all LLM inference calls.
@@ -235,6 +236,22 @@ Knowledge includes: user preferences, usage patterns, plugin guides, contacts, a
 Explore on-demand when the user's request suggests prior context would help.
 Each knowledge file is max 200 lines. Use existing file tools to read and search within.
 </knowledge_guidance>`;
+        }
+
+        if (agentId && this.agentManager) {
+            const tokens = await buildPathTokenMap({
+                agentManager: this.agentManager,
+                sessionWorkspace: this.agentManager.sessionWorkspace,
+                sessionId,
+                agentId
+            });
+            const tokenLines = Object.entries(tokens)
+                .map(([token, value]) => `${token}: ${value}`)
+                .join('\n');
+            prompt += `\n\n<path_tokens>
+Use these portable path tokens in file tool calls instead of hard-coded absolute paths:
+${tokenLines}
+</path_tokens>`;
         }
 
         // Active rules

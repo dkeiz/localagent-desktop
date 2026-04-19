@@ -1,5 +1,44 @@
 # Current Suggestions
 
+## Part 1 SuperAgent Foundation Ready
+1. Agent-owned folders now include `tasks/` and `outputs/` for all agents.
+2. File tools support portable path tokens such as `{agent_home}`, `{agent_tasks}`, `{agent_outputs}`, and `{workspace}`.
+3. `edit_file` gives agents exact search/replace editing without full-file overwrites.
+4. `subagent action="run_batch"` starts provider-aware batches while queueing same-provider work.
+5. Agent-bound plugins can contribute chat-tab UI, CSS, actions, and activation/deactivation hooks.
+6. The Research Orchestrator is seeded as a normal pro agent, with a dedicated UI plugin plus the shared artifact/file browser.
+7. Chat tabs now have a small built-in chart renderer that plugins and messages can use through declarative chart JSON, so charts are a UI capability rather than a separate chart plugin.
+
+## Verified In This Pass
+1. `tests/contracts/agent-chat-ui-contract.test.js`
+   Covers multiple UI plugins on one agent, plugin CSS composition, action routing, file-preview action behavior, and lifecycle event delivery.
+2. `tests/contracts/plugin-lifecycle-contract.test.js`
+   Extended to cover agent-bound plugin lookup, multiple companion plugins, chat UI rendering, and UI action refresh.
+3. `tests/contracts/chat-chart-renderer-contract.test.js`
+   Covers chart spec normalization, renderer hydration, and chart fences in chat messages.
+4. `tests/contracts/edit-file-tool-contract.test.js`
+   Covers tokenized writes plus exact multi-edit behavior and skipped edits.
+5. `tests/contracts/path-token-contract.test.js`
+   Covers agent/workspace token construction and resolution.
+6. `tests/contracts/subagent-batch-contract.test.js`
+   Covers provider grouping metadata and queue-provider routing.
+7. `tests/contracts/mcp-tool-inventory-contract.test.js`
+   Confirms `edit_file` is now an intentional MCP inventory addition.
+8. `tests/contracts/line-budget-contract.test.js`
+   Confirms touched source/test files remain under the line budget.
+
+## Suggested Next Part: Research Runtime And Artifact Model
+1. Add a durable research run manifest under `agentin/research/runs/<runId>/` with goal, acceptance criteria, task matrix, provider/model settings, spawned subagents, artifacts, scores, and final recommendation.
+2. Add an artifact registry used by agent UIs: markdown, HTML, CSV, JSON, chart specs, screenshots, and generated media should have metadata, owner agent/folder, parent run, and preview type. Privacy should come from the owning folder/root, not per-artifact UI hiding.
+3. Add acceptance criteria prompts and validators so the Research Orchestrator can decide whether results are acceptable, need rerun, or need the user to clarify success conditions.
+4. Add per-agent provider/runtime overrides in agent config so batch research can intentionally compare models/providers instead of only queueing by discovered config.
+5. Add `--testuser` and `--privateuser` profile behavior before wider automation: separate storage roots, folder-owner export policy, and a scrubber at root/export boundaries.
+6. Add headless research CLI mode that can start a Research Orchestrator run, stream status, and emit final artifacts without opening the Electron UI.
+7. Extend the Research Orchestrator UI plugin around the shared chart renderer: let the plugin decide which charts, tables, files, and summaries belong in its tab layout, while the renderer only supplies the primitive.
+8. Add agent-created plugin draft flow: generate plugin files into a disabled draft area, validate schema/actions, then require explicit promotion before execution.
+9. Add sandbox/runtime policy for code-oriented subagents: workspace root, allowed tools, terminal policy, and optional Docker runner later.
+10. After the research loop is stable, wire speech/TTS/STT and Telegram delivery as plugins around runs and artifacts, not inside the core agent manager.
+
 ## Fixed In This Pass
 1. `src/main/plugin-manager.js`
    Plugin handlers now register with `CapabilityManager`, so enabled plugins are executable instead of being blocked by `capability_group_disabled`.

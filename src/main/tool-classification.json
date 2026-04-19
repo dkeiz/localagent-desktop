@@ -81,6 +81,7 @@
           "read_file",
           "list_directory",
           "file_exists",
+          "edit_file",
           "write_file",
           "delete_file"
         ]

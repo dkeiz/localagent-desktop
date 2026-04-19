@@ -1,5 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const { getDefaultAgents } = require('./agent-defaults');
+const { enableCompanionPlugin, disableCompanionPlugin } = require('./agent-companion-plugins');
+const { invokeMultipleSubAgents } = require('./agent-batch-invoker');
 const SubtaskRuntime = require('./subtask-runtime');
 const {
     assessCompletionQuality,
@@ -23,8 +26,14 @@ class AgentManager {
         this.subtaskRuntime = subtaskRuntime || new SubtaskRuntime(db, sessionWorkspace, eventBus);
         this.pendingSubtasks = new Map();
         this.activeSubtaskCounts = new Map();
+        this.providerSubtaskQueues = new Map();
+        this.pluginManager = options.pluginManager || null;
         this.basePath = options.basePath || path.join(__dirname, '../../agentin/agents');
         this.maxDelegatedCompletionRetries = Math.max(0, Number(options.maxDelegatedCompletionRetries) || 2);
+    }
+
+    setPluginManager(pluginManager) {
+        this.pluginManager = pluginManager;
     }
 
     async initialize() {
@@ -40,11 +49,8 @@ class AgentManager {
             }
         }
 
-        // Seed predefined agents if none exist
-        const existing = await this.db.getAgents();
-        if (existing.length === 0) {
-            await this._seedDefaultAgents();
-        }
+        // Seed any missing predefined agents
+        await this._seedDefaultAgents(await this.db.getAgents());
 
         // Ensure folders exist for all agents
         for (const agent of await this.db.getAgents()) {
@@ -56,113 +62,34 @@ class AgentManager {
         }
     }
 
-    async _seedDefaultAgents() {
-        const defaults = [
-            {
-                name: 'Web Researcher',
-                type: 'pro',
-                icon: '🔍',
-                description: 'Searches the web, fetches URLs, and summarizes findings',
-                system_prompt: `You are a **Web Research Agent**. Your primary job is to search the web, fetch and parse URLs, and deliver concise, structured research reports.
-
-## Behavior
-- Use search_web_bing as your primary search tool for broad queries
-- Use search_web_insta for quick factual lookups (definitions, entities)
-- Use fetch_url to get full page content from promising results
-- Use extract_text to convert fetched HTML to readable text
-- Use search_fetched_text to find specific info in large pages
-- Provide sources with every claim
-- Structure findings with headers, bullet points, and key takeaways
-- When asked to research a topic, be thorough — check multiple sources
-- Save important findings to your memory for future reference
-
-## Output Format
-Start with a brief summary, then provide detailed findings organized by subtopic.`
-            },
-            {
-                name: 'Code Reviewer',
-                type: 'pro',
-                icon: '🔬',
-                description: 'Reviews code for bugs, security issues, and best practices',
-                system_prompt: `You are a **Code Review Agent**. You specialize in reading, analyzing, and reviewing code.
-
-## Behavior
-- Use read_file and list_directory to explore codebases
-- Look for: bugs, security vulnerabilities, performance issues, code smells
-- Suggest concrete improvements with code examples
-- Rate severity: 🔴 Critical, 🟡 Warning, 🟢 Suggestion
-- Respect the existing code style and architecture
-
-## Output Format
-Organize findings by file, with severity ratings and actionable suggestions.`
-            },
-            {
-                name: 'File Manager',
-                type: 'pro',
-                icon: '📂',
-                description: 'Manages files, organizes directories, performs bulk operations',
-                system_prompt: `You are a **File Management Agent**. You handle file operations, directory organization, and bulk file processing.
-
-## Behavior
-- Use file tools (read_file, write_file, list_directory, delete_file) for all operations
-- Always confirm before destructive operations (delete, overwrite)
-- Provide clear summaries of what was changed
-- Can organize files by type, date, or custom criteria
-- Use run_command for complex file operations when needed
-
-## Output Format
-Report actions taken with file paths and results.`
-            },
-            {
-                name: 'System Monitor',
-                type: 'pro',
-                icon: '📊',
-                description: 'Monitors system resources, runs diagnostics, checks health',
-                system_prompt: `You are a **System Monitor Agent**. You check system health, resource usage, and run diagnostics.
-
-## Behavior
-- Use get_memory_usage, get_disk_space, run_command for system checks
-- Proactively identify issues (low disk, high memory, etc.)
-- Run common diagnostic commands for the user's OS
-- Track system changes over time using your memory
-- Provide clear, actionable recommendations
-
-## Output Format
-Dashboard-style reports with metrics, status indicators, and recommendations.`
-            },
-            {
-                name: 'Search Agent',
-                type: 'sub',
-                icon: '🌐',
-                description: 'Sub-agent: performs focused web searches and returns structured results',
-                system_prompt: `You are a **Search Sub-Agent**. You receive a search task, execute it, and return structured results.
-
-## Behavior
-- Use search_web_bing for broad queries, search_web_insta for quick facts
-- Use fetch_url to get full page content from promising results
-- Use extract_text or search_fetched_text to process large pages
-- Return a concise, structured summary of findings
-- Always include source URLs
-- Focus only on the specific task given — do not expand scope`
-            }
-        ];
+    async _seedDefaultAgents(existingAgents = null) {
+        const defaults = getDefaultAgents();
+        const existingNames = new Set((existingAgents || await this.db.getAgents())
+            .map(agent => String(agent.name || '').toLowerCase()));
+        let created = 0;
 
         for (const agentDef of defaults) {
+            if (existingNames.has(String(agentDef.name).toLowerCase())) {
+                continue;
+            }
             try {
                 await this.createAgent(agentDef);
+                created++;
             } catch (e) {
                 console.error(`[AgentManager] Failed to seed agent "${agentDef.name}":`, e.message);
             }
         }
 
-        console.log(`[AgentManager] Seeded ${defaults.length} default agents`);
+        if (created > 0) {
+            console.log(`[AgentManager] Seeded ${created} default agent(s)`);
+        }
     }
 
     _ensureAgentFolder(agent) {
         const folderPath = this._getAgentFolderPath(agent);
         const subDirs = agent.type === 'pro'
-            ? ['memory', 'config']
-            : ['temp'];
+            ? ['memory', 'config', 'tasks', 'outputs']
+            : ['temp', 'tasks', 'outputs'];
 
         if (!fs.existsSync(folderPath)) {
             fs.mkdirSync(folderPath, { recursive: true });
@@ -254,6 +181,9 @@ Dashboard-style reports with metrics, status indicators, and recommendations.`
             session = await this.db.createAgentSession(agentId);
         }
 
+        // Auto-enable companion plugin if exists
+        await this._enableCompanionPlugin(agent);
+
         return { agent, sessionId: session.id };
     }
 
@@ -269,6 +199,9 @@ Dashboard-style reports with metrics, status indicators, and recommendations.`
                 console.error(`[AgentManager] Compact failed for agent ${agentId}:`, e.message);
             }
         }
+
+        // Auto-disable companion plugin if exists
+        await this._disableCompanionPlugin(agent);
 
         await this.db.updateAgent(agentId, { status: 'idle' });
     }
@@ -867,6 +800,35 @@ ${task}`;
         }
     }
 
+    _startDelegatedRun(run, agent, task, contractType, expectedOutput, queueProvider = null) {
+        const execute = () => this._executeDelegatedRun(run, agent, task, contractType, expectedOutput)
+            .catch(error => {
+                console.error('[AgentManager] Delegated subtask failed:', error.message);
+                return null;
+            });
+        let pending;
+
+        if (queueProvider) {
+            const previous = this.providerSubtaskQueues.get(queueProvider) || Promise.resolve();
+            const queued = previous.catch(() => null).then(execute);
+            const providerPending = queued.finally(() => {
+                if (this.providerSubtaskQueues.get(queueProvider) === providerPending) {
+                    this.providerSubtaskQueues.delete(queueProvider);
+                }
+            });
+            pending = providerPending;
+            this.providerSubtaskQueues.set(queueProvider, pending);
+        } else {
+            pending = execute();
+        }
+
+        pending = pending.finally(() => {
+            this.pendingSubtasks.delete(run.run_id);
+        });
+        this.pendingSubtasks.set(run.run_id, pending);
+        return pending;
+    }
+
     // ── Sub-Agent Invocation ──
 
     async invokeSubAgent(parentSessionId, subAgentId, task, options = {}) {
@@ -905,15 +867,7 @@ ${task}`;
             identifiers
         });
 
-        const pending = this._executeDelegatedRun(run, agent, task, contractType, expectedOutput)
-            .catch(error => {
-                console.error('[AgentManager] Delegated subtask failed:', error.message);
-                return null;
-            })
-            .finally(() => {
-                this.pendingSubtasks.delete(run.run_id);
-            });
-        this.pendingSubtasks.set(run.run_id, pending);
+        this._startDelegatedRun(run, agent, task, contractType, expectedOutput, options.queueProvider || null);
 
         return {
             accepted: true,
@@ -941,6 +895,35 @@ ${task}`;
             workspaceDir: run.workspace_dir,
             workspace_dir: run.workspace_dir
         };
+    }
+
+    // ── Companion Plugin Auto-Enable/Disable ──
+
+    async _enableCompanionPlugin(agent) {
+        return enableCompanionPlugin(this, agent);
+    }
+
+    async _disableCompanionPlugin(agent) {
+        return disableCompanionPlugin(this, agent);
+    }
+
+    // ── Agent Folder Path for External Access ──
+
+    getAgentFolderPathById(agentId) {
+        // Synchronous lookup via cached agents — used by MCP context
+        return null; // Will be resolved async via getAgent
+    }
+
+    async resolveAgentFolder(agentId) {
+        const agent = await this.db.getAgent(agentId);
+        if (!agent) return null;
+        return this._getAgentFolderPath(agent);
+    }
+
+    // ── Batch Subagent Invocation ──
+
+    async invokeMultipleSubAgents(parentSessionId, tasks, options = {}) {
+        return invokeMultipleSubAgents(this, parentSessionId, tasks, options);
     }
 
     // ── Cleanup ──
