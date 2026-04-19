@@ -27,7 +27,16 @@
 8. `tests/contracts/line-budget-contract.test.js`
    Confirms touched source/test files remain under the line budget.
 
-## Suggested Next Part: Research Runtime And Artifact Model
+## Part 2 Plugin Voice Layer Started
+1. Plugin manifests can now advertise capabilities such as `tts`, declare `capabilityContracts`, and the plugin manager can resolve enabled providers by capability.
+2. Core exposes a standard `tts.v1` bridge over IPC: list providers, list voices, speak, stop, get contract, and save global defaults.
+3. Chat has a TTS helper for assistant-message speak buttons, stop playback, default provider/voice selection, and auto-speak persistence.
+4. Plugin Studio now supports richer config schema field types, but the TTS bridge keeps the visible setup simple: IP/server URL, API key, style, config file, and a Probe button that speaks a sample.
+5. A disabled-by-default `http-tts-bridge` plugin provides the future wiring point for a local or remote HTTP TTS server without assuming the Python server is ready now; advanced adapter details live in the optional config file.
+6. Per-agent voice override is left to the TTS plugin contract: core passes agent id/name/slug into `speak`, and a plugin can map that to voices however it wants.
+7. `docs/tts-plugin-contract.md` documents the plugin contract so other users can adapt any TTS server through a plugin or the HTTP bridge.
+
+## Suggested Later: Research Runtime And Artifact Model
 1. Add a durable research run manifest under `agentin/research/runs/<runId>/` with goal, acceptance criteria, task matrix, provider/model settings, spawned subagents, artifacts, scores, and final recommendation.
 2. Add an artifact registry used by agent UIs: markdown, HTML, CSV, JSON, chart specs, screenshots, and generated media should have metadata, owner agent/folder, parent run, and preview type. Privacy should come from the owning folder/root, not per-artifact UI hiding.
 3. Add acceptance criteria prompts and validators so the Research Orchestrator can decide whether results are acceptable, need rerun, or need the user to clarify success conditions.

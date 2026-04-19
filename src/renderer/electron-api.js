@@ -162,6 +162,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
 
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),
+    scan: () => ipcRenderer.invoke('plugins:scan'),
     enable: (pluginId) => ipcRenderer.invoke('plugins:enable', pluginId),
     disable: (pluginId) => ipcRenderer.invoke('plugins:disable', pluginId),
     inspect: (pluginId) => ipcRenderer.invoke('plugins:inspect', pluginId),
@@ -170,6 +171,16 @@ window.electronAPI = Object.assign(ipcRenderer, {
     runAction: (pluginId, action, params = {}) => ipcRenderer.invoke('plugins:run-action', pluginId, action, params),
     openStudio: (options = {}) => ipcRenderer.invoke('plugins:open-studio', options),
     quickSetup: (pluginName) => ipcRenderer.invoke('plugins:quick-setup', pluginName)
+  },
+
+  tts: {
+    getContract: () => ipcRenderer.invoke('tts:get-contract'),
+    getSettings: () => ipcRenderer.invoke('tts:get-settings'),
+    saveSettings: (settings) => ipcRenderer.invoke('tts:save-settings', settings),
+    listProviders: (options = {}) => ipcRenderer.invoke('tts:list-providers', options),
+    listVoices: (params = {}) => ipcRenderer.invoke('tts:list-voices', params),
+    speak: (params = {}) => ipcRenderer.invoke('tts:speak', params),
+    stop: (params = {}) => ipcRenderer.invoke('tts:stop', params)
   },
 
   // EventBus API

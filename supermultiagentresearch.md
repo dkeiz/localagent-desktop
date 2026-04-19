@@ -2,14 +2,12 @@ the things is here: this project works, event bus works, agent--subagent works. 
 i want to introduce system, where i can, for example, testing out with power of inference differnt things.
 how it works: i say - test/research me that things (dont mix with application code testing in developing here), so my main chat agent goes like that: i got research skill, i gonna make this and that subagent, i gonna make nice plan about it, so plan file is that: i will run different subagents with _this_ prompts, tasks, and setups (even different provider settings). i make all required setups:
 tasks description, task data. i overlording subagent execution (backend do this, but whatever, parent agent can look at result). when subagent execute - o cimplete the data and introduce to user, with graphs, charts, sheets and text. i suggest to user best way to extract data in files - xls, html, charts, diagrams, texts, anything and everything. if required - model restart testing/research, since result dont met execution requirements. but to do this model must suggest what outcomes of such result would be accepatable. running any subagents in parallel, like up to 10 or anything. gather this data or call subagent to gather data. stay interactive. running different llm providers with different prompts, even make scripts to autorestart them and wired it with backend, in case such behavior will stop main agent from connection to its inference server. so idea here - llm do all research with subagents, make any tools for them, any rules, anything that my application is capable to provide (and i work a lot for that). if something required but not exist - make a suggestion to create it, like new plugins or tools, or agents. even make new skills for subagent proper works. control subagents, since they could be invoked with complete new system prompts. control autovalidation to incremental improve test-agent behavior. i mean anything. llm can analyze this data as long as user answered for suggstions for what is requirements for acceptable outcome. 
-also, as i seen this now, selected agents (superagents to be clear, but i dont call them in code this way) have its own ui structure. like coding one make plan, project structure, artifacts visible lements. its all part of big application, but it things that mostly not used n general chat. researcj agent can make interactive charts and get data from them. so its its like giant self app inside multitabs, but configurable by user requirements. since its just js element inside chat tab, i think it could be done, for example, via self-plugins with self-tools for easch superagent.  
 make such research runs with console headless runs in cli mode of required. 
 additional very best of it - make artifact via ui. make good ui for file scope for user. since ui is here and user dont want to get into some additional applications, until its requried, its electron browser after all, with enough plugins it can run any file exploration inside. 
 lets this artifact belong to subagent and master files to original researcher. 
 like every subagent can make its own chart, user can look at them interactivly, parent watch and read this to transcribe. this is my vision.
 with that i can finally autotest what different models can or cant do in its own inside powerfull agent. 
-and i need --testuser and --privateuser (like dont save or save in secure dataplace)
-and i need 3rd party autorization for inner security(like using android fingerprint / face id / password but via telegram token security transit) 
+and i really need /compact and compact tool usage. like priority for small task here. 
 whatelse. i need good plugin for speech generation. good backend fpr speech recongnition ( + plugin to change engine).
 i need good structure to plugin into well telegram superbot and make it delivered to any new user. 
 and i want to make crossplatform application + mobile application. 
@@ -21,8 +19,7 @@ tts already here, kek, but i need wired my tts server with well.
 and ship it into github without any credentials, at least for now as standalone individual application. yay. 
 and make plugin to trick setup with 0credentials of json injections into different subscribe models, like openai/claude/z.ai, cause everyone doing this, so at least i can make it safer for app (dont destribute plugin, cause its almost illigal)
 file exploration tree.
-autosandboxing subagent when they work in certain directions, like when make code in user project applications.
- 
+autosandboxing subagent when they work in certain directions, like when make code in suer project applications. 
 and make superplugin so that well assistance could inject inteslf into game and play with player! that final destination. 
 
 but for research reason, i also need superagent that collect all the data, public for dataset rl-training, private for auto training personal lora for user only

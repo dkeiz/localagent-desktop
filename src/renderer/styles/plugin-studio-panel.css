@@ -111,6 +111,34 @@
     gap: 8px;
 }
 
+.plugin-studio-form-tts {
+    gap: 10px;
+}
+
+.plugin-studio-tts-panel {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+}
+
+.plugin-studio-tts-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.plugin-studio-tts-text {
+    min-height: 74px;
+}
+
+.plugin-studio-tts-actions {
+    display: flex;
+    gap: 8px;
+}
+
 .plugin-studio-field {
     display: grid;
     gap: 5px;
@@ -121,12 +149,25 @@
     color: var(--text-secondary);
 }
 
-.plugin-studio-field input {
+.plugin-studio-config-link-field a {
+    color: var(--primary-color);
+    font-size: 0.78rem;
+    text-decoration: none;
+}
+
+.plugin-studio-field input,
+.plugin-studio-field select,
+.plugin-studio-field textarea {
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--input-bg);
     color: var(--text-primary);
     padding: 7px 8px;
+}
+
+.plugin-studio-field textarea {
+    min-height: 76px;
+    resize: vertical;
 }
 
 .plugin-studio-result {

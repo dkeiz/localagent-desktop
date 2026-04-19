@@ -13,6 +13,7 @@
             this.saveBtn = document.getElementById('plugin-studio-save');
             this.form = document.getElementById('plugin-studio-form');
             this.result = document.getElementById('plugin-studio-result');
+            this.previewAudio = null;
 
             this.plugins = [];
             this.selectedPluginId = null;
@@ -59,6 +60,20 @@
             this.result.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
         }
 
+        playAudioPayload(payload) {
+            const result = payload?.result || payload;
+            const audio = result?.audio || {};
+            const url = audio.url || result?.audioUrl || result?.audio_url || result?.url || '';
+            const base64 = audio.base64 || result?.audioBase64 || result?.audio_base64 || '';
+            const mimeType = audio.mimeType || result?.mimeType || result?.mime_type || 'audio/wav';
+            const source = url || (base64 ? `data:${mimeType};base64,${base64}` : '');
+            if (!source) return false;
+            this.stopAllTts();
+            this.previewAudio = new Audio(source);
+            this.previewAudio.play().catch((error) => this.setResult({ success: false, error: error.message }));
+            return true;
+        }
+
         hide() {
             this.overlay.classList.add('hidden');
         }
@@ -73,6 +88,7 @@
         }
 
         async loadPlugins(focusPluginId = null) {
+            await window.electronAPI.plugins.scan?.();
             this.plugins = await window.electronAPI.plugins.list();
             if (focusPluginId) this.selectedPluginId = focusPluginId;
             if (!this.selectedPluginId && this.plugins.length) this.selectedPluginId = this.plugins[0].id;
@@ -132,15 +148,25 @@
             this.title.textContent = this.selectedDetail?.manifest?.name || plugin.name;
             this.meta.textContent = `${plugin.id} · v${this.selectedDetail?.manifest?.version || '0.0.0'} · ${plugin.status}`;
             this.toggleBtn.textContent = plugin.status === 'enabled' ? 'Disable' : 'Enable';
+            const capabilities = this.selectedDetail?.capabilities || this.selectedDetail?.manifest?.capabilities || [];
+            const isTts = capabilities.includes('tts');
+            this.discoverBtn.hidden = isTts;
+            this.discoverBtn.textContent = isTts ? 'Probe' : 'Discover';
 
-            this.renderForm();
+            await this.renderForm();
         }
 
-        renderForm() {
+        async renderForm() {
             this.form.replaceChildren();
             const schema = this.selectedDetail?.manifest?.configSchema || {};
             const entries = Object.entries(schema);
-            if (!entries.length) {
+            const isTts = this.isSelectedTts();
+            this.form.classList.toggle('plugin-studio-form-tts', isTts);
+
+            if (isTts) {
+                await this.renderTtsPanel();
+                return;
+            } else if (!entries.length) {
                 const none = document.createElement('div');
                 none.textContent = 'No configurable fields.';
                 this.form.appendChild(none);
@@ -152,15 +178,14 @@
                 field.className = 'plugin-studio-field';
 
                 const label = document.createElement('label');
-                label.textContent = def?.description ? `${key} - ${def.description}` : key;
+                label.textContent = def?.label || key;
+                if (def?.description) label.title = def.description;
 
-                const input = document.createElement('input');
+                const type = def?.type || 'string';
+                const input = this.createConfigInput(type, def);
                 input.dataset.key = key;
-                input.dataset.type = def?.type || 'string';
-                const raw = this.selectedDetail?.config?.[key];
-                if (def?.type === 'number') input.type = 'number';
-                else if (def?.type === 'boolean') input.type = 'checkbox';
-                else input.type = 'text';
+                input.dataset.type = type;
+                const raw = this.selectedDetail?.config?.[key] ?? def?.default;
 
                 if (input.type === 'checkbox') {
                     input.checked = String(raw).toLowerCase() === 'true';
@@ -172,6 +197,192 @@
                 field.appendChild(input);
                 this.form.appendChild(field);
             });
+        }
+
+        isSelectedTts() {
+            const capabilities = this.selectedDetail?.capabilities || this.selectedDetail?.manifest?.capabilities || [];
+            return capabilities.includes('tts');
+        }
+
+        async renderTtsPanel() {
+            const defaultPanel = this.createTtsSection('Default');
+            const defaultText = this.createTtsTextArea('Text to speak with the built-in voice');
+            const defaultActions = this.createTtsActions({
+                onPlay: () => this.playDefaultTts(defaultText.value),
+                onStop: () => this.stopDefaultTts()
+            });
+            defaultPanel.appendChild(defaultText);
+            defaultPanel.appendChild(defaultActions);
+
+            const customPanel = this.createTtsSection('Custom');
+            customPanel.appendChild(this.createTtsInput('Address', 'serverUrl', 'http://127.0.0.1:8000'));
+            customPanel.appendChild(this.createTtsConfigField());
+            const customText = this.createTtsTextArea('Text to speak through the custom server');
+            const customActions = this.createTtsActions({
+                onPlay: async () => this.playCustomTts(customText.value),
+                onStop: async () => this.stopCustomTts()
+            });
+            customPanel.appendChild(customText);
+            customPanel.appendChild(customActions);
+
+            this.form.appendChild(defaultPanel);
+            this.form.appendChild(customPanel);
+        }
+
+        createTtsSection(titleText) {
+            const section = document.createElement('section');
+            section.className = 'plugin-studio-tts-panel';
+            const title = document.createElement('div');
+            title.className = 'plugin-studio-tts-title';
+            title.textContent = titleText;
+            section.appendChild(title);
+            return section;
+        }
+
+        createTtsTextArea(placeholder) {
+            const textarea = document.createElement('textarea');
+            textarea.className = 'plugin-studio-tts-text';
+            textarea.placeholder = placeholder;
+            textarea.value = 'Voice probe ready.';
+            return textarea;
+        }
+
+        createTtsInput(labelText, key, fallback = '') {
+            const field = document.createElement('label');
+            field.className = 'plugin-studio-field';
+            field.textContent = labelText;
+            const input = document.createElement('input');
+            input.dataset.key = key;
+            input.dataset.type = 'string';
+            input.value = this.selectedDetail?.config?.[key] || fallback;
+            field.appendChild(input);
+            return field;
+        }
+
+        createTtsConfigField() {
+            const field = document.createElement('label');
+            field.className = 'plugin-studio-field plugin-studio-config-link-field';
+            const link = document.createElement('a');
+            link.href = '#';
+            link.textContent = 'config.txt';
+            const input = document.createElement('input');
+            input.dataset.key = 'configFile';
+            input.dataset.type = 'string';
+            input.value = this.selectedDetail?.config?.configFile || 'config.txt';
+            link.addEventListener('click', (event) => {
+                event.preventDefault();
+                input.value = 'config.txt';
+            });
+            field.appendChild(link);
+            field.appendChild(input);
+            return field;
+        }
+
+        createTtsActions({ onPlay, onStop }) {
+            const actions = document.createElement('div');
+            actions.className = 'plugin-studio-tts-actions';
+            const play = document.createElement('button');
+            play.type = 'button';
+            play.className = 'compact-btn';
+            play.textContent = 'Play';
+            play.addEventListener('click', onPlay);
+            const stop = document.createElement('button');
+            stop.type = 'button';
+            stop.className = 'compact-btn';
+            stop.textContent = 'Stop';
+            stop.addEventListener('click', onStop);
+            actions.appendChild(play);
+            actions.appendChild(stop);
+            return actions;
+        }
+
+        playDefaultTts(text) {
+            this.stopAllTts();
+            if (!window.speechSynthesis) {
+                this.setResult({ success: false, error: 'Built-in speech is not available' });
+                return;
+            }
+            const utterance = new SpeechSynthesisUtterance(String(text || '').trim() || 'Voice probe ready.');
+            window.speechSynthesis.speak(utterance);
+            this.setResult({ success: true, mode: 'default' });
+        }
+
+        stopDefaultTts() {
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            this.setResult({ success: true, stopped: true, mode: 'default' });
+        }
+
+        stopAllTts() {
+            if (this.previewAudio) {
+                this.previewAudio.pause();
+                this.previewAudio.currentTime = 0;
+                this.previewAudio = null;
+            }
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+        }
+
+        async ensureTtsPluginEnabled(plugin) {
+            if (plugin?.status === 'enabled') return true;
+            const result = await window.electronAPI.plugins.enable(plugin.id);
+            if (!result?.success) {
+                this.setResult(result?.error || 'Enable failed');
+                return false;
+            }
+            await this.loadPlugins(plugin.id);
+            return true;
+        }
+
+        async playCustomTts(text) {
+            const plugin = this.getSelectedPlugin();
+            if (!plugin) return;
+
+            const saveResult = await this.saveCurrentConfig(plugin);
+            if (!saveResult?.success) {
+                this.setResult(saveResult?.error || 'Save failed');
+                return;
+            }
+            if (!await this.ensureTtsPluginEnabled(plugin)) return;
+
+            const result = await window.electronAPI.plugins.runAction(plugin.id, 'previewVoice', {
+                text: String(text || '').trim() || 'Voice probe ready.'
+            });
+            this.setResult(result);
+            if (result?.success && !this.playAudioPayload(result.result)) {
+                this.setResult({ success: false, error: 'TTS server did not return playable audio' });
+            }
+        }
+
+        async stopCustomTts() {
+            const plugin = this.getSelectedPlugin();
+            this.stopAllTts();
+            if (plugin?.status === 'enabled') {
+                await window.electronAPI.plugins.runAction(plugin.id, 'stop', {});
+            }
+            this.setResult({ success: true, stopped: true, mode: 'custom' });
+        }
+
+        createConfigInput(type, def = {}) {
+            if (type === 'select') {
+                const select = document.createElement('select');
+                const options = Array.isArray(def.options) ? def.options : [];
+                options.forEach((entry) => {
+                    const option = document.createElement('option');
+                    option.value = typeof entry === 'object' ? String(entry.value ?? entry.id ?? '') : String(entry);
+                    option.textContent = typeof entry === 'object' ? String(entry.label ?? entry.name ?? option.value) : String(entry);
+                    select.appendChild(option);
+                });
+                return select;
+            }
+            if (type === 'textarea') {
+                return document.createElement('textarea');
+            }
+            const input = document.createElement('input');
+            if (type === 'number') input.type = 'number';
+            else if (type === 'boolean') input.type = 'checkbox';
+            else if (type === 'password') input.type = 'password';
+            else if (type === 'url') input.type = 'url';
+            else input.type = 'text';
+            return input;
         }
 
         async toggleSelected() {
@@ -203,20 +414,14 @@
         async saveConfig() {
             const plugin = this.getSelectedPlugin();
             if (!plugin) return;
-            const inputs = Array.from(this.form.querySelectorAll('input[data-key]'));
             this.setActionBusy(this.saveBtn, true);
 
             try {
-                for (const input of inputs) {
-                    const key = input.dataset.key;
-                    const value = this.parseInputValue(input);
-                    const result = await window.electronAPI.plugins.setConfig(plugin.id, key, value);
-                    if (!result?.success) {
-                        this.setResult(result?.error || `Failed to save ${key}`);
-                        return;
-                    }
+                const result = await this.saveCurrentConfig(plugin);
+                if (!result?.success) {
+                    this.setResult(result?.error || 'Save failed');
+                    return;
                 }
-
                 await this.loadSelectedDetail();
                 this.setResult({ success: true, saved: true, pluginId: plugin.id });
             } finally {
@@ -224,17 +429,50 @@
             }
         }
 
+        async saveCurrentConfig(plugin) {
+            const inputs = Array.from(this.form.querySelectorAll('[data-key]'));
+            for (const input of inputs) {
+                const key = input.dataset.key;
+                const value = this.parseInputValue(input);
+                const result = await window.electronAPI.plugins.setConfig(plugin.id, key, value);
+                if (!result?.success) {
+                    return { success: false, error: result?.error || `Failed to save ${key}` };
+                }
+            }
+            return { success: true };
+        }
+
         async runDiscover() {
             const plugin = this.getSelectedPlugin();
             if (!plugin) return;
             this.setActionBusy(this.discoverBtn, true);
             try {
-                const result = await window.electronAPI.plugins.runAction(plugin.id, 'discover', {});
+                const saveResult = await this.saveCurrentConfig(plugin);
+                if (!saveResult?.success) {
+                    this.setResult(saveResult?.error || 'Save failed');
+                    return;
+                }
+                const capabilities = this.selectedDetail?.capabilities || this.selectedDetail?.manifest?.capabilities || [];
+                const isTts = capabilities.includes('tts');
+                const action = isTts ? 'previewVoice' : 'discover';
+                const params = isTts
+                    ? { text: 'Voice probe ready.', style: this.getFieldValue('style') || 'default' }
+                    : {};
+                const result = await window.electronAPI.plugins.runAction(plugin.id, action, params);
                 this.setResult(result);
+                if (isTts && result?.success) {
+                    this.playAudioPayload(result.result);
+                }
                 await this.loadSelectedDetail();
             } finally {
                 this.setActionBusy(this.discoverBtn, false);
             }
+        }
+
+        getFieldValue(key) {
+            const field = this.form.querySelector(`[data-key="${key}"]`);
+            if (!field) return '';
+            return field.type === 'checkbox' ? field.checked : field.value;
         }
     }
 

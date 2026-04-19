@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
+const { getManifestCapabilityContract } = require('./plugin-capability-contracts');
 
 /**
  * PluginManager — Discovers, loads, and manages plugins.
@@ -59,8 +60,9 @@ class PluginManager extends EventEmitter {
         console.log(`[PluginManager] Initialized ${this.plugins.size} plugin(s)`);
     }
 
-    async scanPlugins() {
+    async scanPlugins(options = {}) {
         if (!fs.existsSync(this.pluginsDir)) return;
+        const preserveExisting = options.preserveExisting === true;
 
         const dirs = fs.readdirSync(this.pluginsDir, { withFileTypes: true })
             .filter(d => d.isDirectory())
@@ -78,6 +80,7 @@ class PluginManager extends EventEmitter {
                     console.warn(`[PluginManager] Invalid manifest in ${dir.name}: missing id/name/main`);
                     continue;
                 }
+                const pluginDir = path.join(this.pluginsDir, dir.name);
 
                 // Ensure DB row exists
                 const existing = this.db.get('SELECT id, status FROM plugins WHERE id = ?', [manifest.id]);
@@ -88,9 +91,17 @@ class PluginManager extends EventEmitter {
                     );
                 }
 
+                const current = this.plugins.get(manifest.id);
+                if (preserveExisting && current) {
+                    current.manifest = manifest;
+                    current.dir = pluginDir;
+                    current.persistedStatus = existing?.status || current.persistedStatus || 'disabled';
+                    continue;
+                }
+
                 this.plugins.set(manifest.id, {
                     manifest,
-                    dir: path.join(this.pluginsDir, dir.name),
+                    dir: pluginDir,
                     status: 'disabled',
                     persistedStatus: existing?.status || 'disabled',
                     module: null,
@@ -102,6 +113,13 @@ class PluginManager extends EventEmitter {
                 console.error(`[PluginManager] Failed to read manifest in ${dir.name}:`, e.message);
             }
         }
+    }
+
+    async rescanPlugins() {
+        const before = new Set(this.plugins.keys());
+        await this.scanPlugins({ preserveExisting: true });
+        const added = [...this.plugins.keys()].filter(id => !before.has(id));
+        return { added, total: this.plugins.size };
     }
 
     // ==================== Lifecycle ====================
@@ -418,6 +436,8 @@ class PluginManager extends EventEmitter {
                 description: plugin.manifest.description || '',
                 agentSlug: plugin.manifest.agentSlug || null,
                 agentSlugs: plugin.manifest.agentSlugs || [],
+                capabilities: Array.isArray(plugin.manifest.capabilities) ? plugin.manifest.capabilities : [],
+                capabilityContracts: plugin.manifest.capabilityContracts || plugin.manifest.contracts || {},
                 status: plugin.status,
                 handlerCount: plugin.handlers.length,
                 handlers: plugin.handlers.map(h => h.toolName),
@@ -429,6 +449,29 @@ class PluginManager extends EventEmitter {
 
     getAgentPlugin(agentSlug) {
         return this.getAgentPlugins(agentSlug)[0] || null;
+    }
+
+    getPluginsByCapability(capability, options = {}) {
+        const requested = String(capability || '').trim();
+        if (!requested) return [];
+        const enabledOnly = options.enabledOnly === true;
+        const matches = [];
+        for (const [id, plugin] of this.plugins) {
+            const capabilities = Array.isArray(plugin.manifest?.capabilities)
+                ? plugin.manifest.capabilities.map(value => String(value).trim())
+                : [];
+            if (!capabilities.includes(requested)) continue;
+            if (enabledOnly && plugin.status !== 'enabled') continue;
+            matches.push({
+                id,
+                name: plugin.manifest.name,
+                description: plugin.manifest.description || '',
+                status: plugin.status,
+                capabilities,
+                contract: getManifestCapabilityContract(plugin.manifest, requested)
+            });
+        }
+        return matches;
     }
 
     getAgentPlugins(agentSlug) {
@@ -565,6 +608,8 @@ class PluginManager extends EventEmitter {
             id: pluginId,
             manifest: plugin.manifest,
             status: plugin.status,
+            capabilities: Array.isArray(plugin.manifest.capabilities) ? plugin.manifest.capabilities : [],
+            capabilityContracts: plugin.manifest.capabilityContracts || plugin.manifest.contracts || {},
             handlers: plugin.handlers.map(h => ({
                 name: h.name,
                 toolName: h.toolName,

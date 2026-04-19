@@ -1,0 +1,41 @@
+{
+  "id": "http-tts-bridge",
+  "name": "HTTP TTS Bridge",
+  "version": "1.0.0",
+  "main": "main.js",
+  "description": "Text-to-speech bridge for a configurable local or remote HTTP TTS server.",
+  "capabilities": ["tts"],
+  "capabilityContracts": {
+    "tts": {
+      "id": "tts.v1",
+      "version": 1,
+      "actions": ["speak", "stop", "listVoices", "previewVoice", "healthCheck"]
+    }
+  },
+  "configSchema": {
+    "serverUrl": {
+      "type": "string",
+      "label": "IP / Server URL",
+      "default": "http://127.0.0.1:8000",
+      "description": "Base URL for the TTS server"
+    },
+    "style": {
+      "type": "string",
+      "label": "Style",
+      "default": "default",
+      "description": "Speaking style or preset sent to the custom server"
+    },
+    "apiKey": {
+      "type": "password",
+      "label": "API key",
+      "default": "",
+      "description": "Optional key for custom server authorization"
+    },
+    "configFile": {
+      "type": "string",
+      "label": "Config file",
+      "default": "config.txt",
+      "description": "Optional JSON adapter config file for non-standard servers"
+    }
+  }
+}

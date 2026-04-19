@@ -47,6 +47,7 @@
 
         async load() {
             try {
+                await window.electronAPI.plugins.scan();
                 this.plugins = await ipcRenderer.invoke('plugins:list');
                 this.render();
             } catch (e) {

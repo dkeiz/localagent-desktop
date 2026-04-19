@@ -4,6 +4,7 @@ const { registerToolsCapabilityHandlers } = require('./register-tools-capability
 const { registerWorkflowHandlers } = require('./register-workflow-handlers');
 const { registerAgentSystemHandlers } = require('./register-agent-system-handlers');
 const { registerPluginKnowledgeHandlers } = require('./register-plugin-knowledge-handlers');
+const { registerTtsHandlers } = require('./register-tts-handlers');
 const { createStaticWindowManager } = require('../window-manager');
 
 function buildRuntime(container) {
@@ -95,6 +96,7 @@ function registerAllHandlers(ipcMain, container) {
   registerWorkflowHandlers(ipcMain, runtime);
   registerAgentSystemHandlers(ipcMain, runtime, { syncDaemonEnabledSetting });
   registerPluginKnowledgeHandlers(ipcMain, runtime);
+  registerTtsHandlers(ipcMain, runtime);
 }
 
 module.exports = { registerAllHandlers };

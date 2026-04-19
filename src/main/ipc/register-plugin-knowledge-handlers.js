@@ -17,6 +17,19 @@ function registerPluginKnowledgeHandlers(ipcMain, runtime) {
     return pm.listPlugins();
   });
 
+  ipcMain.handle('plugins:scan', async () => {
+    const pm = container.optional('pluginManager');
+    if (!pm) return { success: false, error: 'Plugin system not ready' };
+    try {
+      const result = pm.rescanPlugins
+        ? await pm.rescanPlugins()
+        : { total: pm.listPlugins().length, added: [] };
+      return { success: true, ...result };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('plugins:enable', async (event, pluginId) => {
     const pm = container.optional('pluginManager');
     if (!pm) return { success: false, error: 'Plugin system not ready' };
