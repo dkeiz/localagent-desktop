@@ -213,6 +213,7 @@ class PluginManager extends EventEmitter {
     _buildPluginContext(pluginId, plugin) {
         const self = this;
         const config = this._loadPluginConfig(pluginId);
+        const manifestAgentScopes = this._resolveManifestAgentScopes(plugin.manifest);
 
         return {
             config,
@@ -221,6 +222,8 @@ class PluginManager extends EventEmitter {
 
             registerHandler(name, definition, handler) {
                 const toolName = `plugin_${pluginId.replace(/-/g, '_')}_${name}`;
+                const definitionScope = self._normalizeScopeList(definition?.agentScope);
+                const effectiveScope = definitionScope || manifestAgentScopes;
                 
                 self.mcpServer.registerTool(toolName, {
                     name: toolName,
@@ -228,7 +231,8 @@ class PluginManager extends EventEmitter {
                     userDescription: definition.description || name,
                     inputSchema: definition.inputSchema || { type: 'object' },
                     isPlugin: true,
-                    pluginId
+                    pluginId,
+                    ...(effectiveScope ? { agentScope: effectiveScope } : {})
                 }, async (params) => {
                     try {
                         return await handler(params);
@@ -659,6 +663,26 @@ class PluginManager extends EventEmitter {
         }
         plugin.handlers = [];
         plugin.chatUIs = [];
+    }
+
+    _normalizeScopeList(rawScope) {
+        if (!rawScope) return null;
+        const values = Array.isArray(rawScope) ? rawScope : [rawScope];
+        const normalized = values
+            .map(value => String(value || '').trim())
+            .filter(Boolean);
+        if (normalized.length === 0 || normalized.includes('*')) {
+            return null;
+        }
+        return Array.from(new Set(normalized));
+    }
+
+    _resolveManifestAgentScopes(manifest = {}) {
+        const scopes = [
+            manifest.agentSlug,
+            ...(Array.isArray(manifest.agentSlugs) ? manifest.agentSlugs : [])
+        ];
+        return this._normalizeScopeList(scopes);
     }
 }
 

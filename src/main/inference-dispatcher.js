@@ -265,19 +265,26 @@ ${tokenLines}
 
         // Tool documentation
         if (includeTools && this.mcpServer) {
-            prompt += await this._buildToolContext(completionTools);
+            prompt += await this._buildToolContext({
+                completionToolNames: completionTools,
+                sessionId,
+                agentId
+            });
         }
 
         return prompt;
     }
 
-    async _buildToolContext(completionToolNames = []) {
-        const activeTools = this.mcpServer.getActiveTools
-            ? this.mcpServer.getActiveTools()
-            : [];
+    async _buildToolContext({ completionToolNames = [], sessionId = null, agentId = null } = {}) {
+        const scopeContext = { sessionId, agentId };
+        const activeTools = this.mcpServer.getActiveToolsForContext
+            ? await this.mcpServer.getActiveToolsForContext(scopeContext)
+            : (this.mcpServer.getActiveTools ? this.mcpServer.getActiveTools() : []);
         const visibleTools = activeTools.length > 0
             ? activeTools
-            : this.mcpServer.getTools();
+            : (this.mcpServer.getToolsForContext
+                ? await this.mcpServer.getToolsForContext(scopeContext)
+                : this.mcpServer.getTools());
         const completionTools = this.mcpServer.getToolsByNames
             ? this.mcpServer.getToolsByNames(completionToolNames, { includeInternal: true })
             : [];

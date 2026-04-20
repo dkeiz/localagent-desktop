@@ -115,7 +115,14 @@ class MCPServer extends EventEmitter {
     if (this.tools.has(name)) {
       throw new Error(`Tool already registered: ${name}`);
     }
-    this.tools.set(name, { definition, handler });
+    const normalizedDefinition = { ...definition };
+    const scopeSlugs = this._normalizeToolAgentScope(normalizedDefinition);
+    if (scopeSlugs) {
+      normalizedDefinition.agentScopeSlugs = scopeSlugs;
+    } else {
+      delete normalizedDefinition.agentScopeSlugs;
+    }
+    this.tools.set(name, { definition: normalizedDefinition, handler });
   }
 
   getToolsByNames(toolNames = [], { includeInternal = false } = {}) {
@@ -171,6 +178,16 @@ class MCPServer extends EventEmitter {
     if (!tool) {
       this.emit('tool-executed', { toolName, success: false, error: 'Tool not found' });
       throw new Error(`Tool not found: ${toolName}`);
+    }
+
+    const allowedForAgent = await this._isToolAllowedByAgentScope(
+      tool.definition,
+      activeContext
+    );
+    if (!allowedForAgent) {
+      const scopedError = `Tool "${toolName}" is not allowed for the active agent scope`;
+      this.emit('tool-executed', { toolName, success: false, error: scopedError });
+      throw new Error(scopedError);
     }
 
     const isInternalTool = tool.definition?.internal === true;
@@ -622,6 +639,28 @@ class MCPServer extends EventEmitter {
     return tools;
   }
 
+  async getToolsForContext(context = null, { includeInternal = false } = {}) {
+    const tools = [];
+    for (const [, tool] of this.tools) {
+      const def = tool?.definition;
+      if (!def) continue;
+      if (def.internal === true && !includeInternal) continue;
+      if (!await this._isToolAllowedByAgentScope(def, context)) continue;
+      tools.push(def);
+    }
+    return tools;
+  }
+
+  async getActiveToolsForContext(context = null) {
+    const activeTools = this.getActiveTools();
+    const filtered = [];
+    for (const tool of activeTools) {
+      if (!await this._isToolAllowedByAgentScope(tool, context)) continue;
+      filtered.push(tool);
+    }
+    return filtered;
+  }
+
   getToolsDocumentation() {
     const docs = [];
     for (const [, tool] of this.tools) {
@@ -860,6 +899,79 @@ class MCPServer extends EventEmitter {
     } catch (error) {
       console.error('[MCP] Failed to load custom tools:', error);
     }
+  }
+
+  _normalizeToolAgentScope(definition = {}) {
+    const directScope = Array.isArray(definition.agentScope)
+      ? definition.agentScope
+      : (typeof definition.agentScope === 'string' ? [definition.agentScope] : []);
+    const manifestScope = [
+      definition.agentSlug,
+      ...(Array.isArray(definition.agentSlugs) ? definition.agentSlugs : [])
+    ];
+    const merged = [...directScope, ...manifestScope]
+      .map(value => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+    if (merged.length === 0 || merged.includes('*')) {
+      return null;
+    }
+    return Array.from(new Set(merged));
+  }
+
+  _slugifyAgentName(name) {
+    return String(name || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  async _resolveAgentScopeContext(context = null) {
+    const executionContext = context && typeof context === 'object' ? context : {};
+    let agentId = executionContext.agentId ?? null;
+    const sessionId = executionContext.sessionId ?? this.getCurrentSessionId();
+
+    if (!agentId && sessionId !== null && sessionId !== undefined && this.db?.get) {
+      const row = this.db.get('SELECT agent_id FROM chat_sessions WHERE id = ?', [sessionId]);
+      if (row?.agent_id) {
+        agentId = row.agent_id;
+      }
+    }
+
+    if (!agentId) {
+      return { agentId: null, agentSlug: null };
+    }
+
+    let agent = null;
+    if (this._agentManager && typeof this._agentManager.getAgent === 'function') {
+      agent = await this._agentManager.getAgent(agentId);
+    } else if (this.db?.getAgent) {
+      agent = await this.db.getAgent(agentId);
+    }
+
+    if (!agent) {
+      return { agentId, agentSlug: null };
+    }
+
+    const agentSlug = this._agentManager && typeof this._agentManager._getSafeFolderName === 'function'
+      ? this._agentManager._getSafeFolderName(agent.name)
+      : this._slugifyAgentName(agent.name);
+
+    return { agentId, agentSlug };
+  }
+
+  async _isToolAllowedByAgentScope(definition = {}, context = null) {
+    const requiredScopes = Array.isArray(definition.agentScopeSlugs)
+      ? definition.agentScopeSlugs
+      : null;
+    if (!requiredScopes || requiredScopes.length === 0) {
+      return true;
+    }
+
+    const { agentSlug } = await this._resolveAgentScopeContext(context);
+    if (!agentSlug) {
+      return false;
+    }
+    return requiredScopes.includes(String(agentSlug).trim().toLowerCase());
   }
 }
 
