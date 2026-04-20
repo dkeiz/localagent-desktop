@@ -39,6 +39,22 @@ module.exports = {
       assert.equal(editResult.result.editsSkipped, 1, 'Expected one skipped edit');
       assert.includes(readResult.result.content, 'Status: in-progress');
       assert.includes(readResult.result.content, '- [x] collect data');
+
+      await server.executeTool('write_file', {
+        path: '{agent_tasks}/duplicate.md',
+        content: 'return true;\nif (x) return true;\n'
+      });
+      let duplicateError = null;
+      try {
+        await server.executeTool('edit_file', {
+          path: '{agent_tasks}/duplicate.md',
+          edits: [{ search: 'return true;', replace: 'return false;' }]
+        });
+      } catch (error) {
+        duplicateError = error;
+      }
+      assert.ok(duplicateError, 'Expected ambiguous edit to throw');
+      assert.includes(duplicateError.message, 'not unique', 'Expected duplicate-match guidance in error');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

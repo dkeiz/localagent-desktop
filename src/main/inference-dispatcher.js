@@ -26,6 +26,7 @@ class InferenceDispatcher {
         this._lock = null;
         this._lockMode = null;
         this._lockPreemptible = false;
+        this._runtimeContextCache = new Map();
     }
 
     setAgentManager(agentManager) {
@@ -163,9 +164,23 @@ class InferenceDispatcher {
         const contextCaps = modelSpec.capabilities?.contextWindow || {};
         const contextLength = runtimeConfig?.contextWindow?.value || response?.context_length;
         if (contextCaps.configurable && contextLength) {
+            const normalizedLength = Number(contextLength);
+            if (!Number.isFinite(normalizedLength) || normalizedLength <= 0) {
+                return;
+            }
+            const cacheKey = `${provider}:${model}`;
+            const cachedLength = this._runtimeContextCache.get(cacheKey);
+            if (cachedLength === normalizedLength) {
+                return;
+            }
+            if (cachedLength === undefined && runtimeConfig?.contextWindow?.value === normalizedLength) {
+                this._runtimeContextCache.set(cacheKey, normalizedLength);
+                return;
+            }
             await saveModelRuntimeConfig(this.db, provider, model, {
-                contextWindow: { value: contextLength }
+                contextWindow: { value: normalizedLength }
             });
+            this._runtimeContextCache.set(cacheKey, normalizedLength);
         }
     }
 
@@ -210,7 +225,7 @@ For commands with potentially large output (builds, installs, logs, directory tr
 - Use output_to_file=true in run_command to save output to a workspace file (auto-triggers at 1000+ chars)
 - Then use read_file or search_workspace to inspect specific parts
 - This keeps your context window lean and avoids token waste
-Your session workspace is personal and auto-cleaned on session close.
+Your session workspace is personal and cleaned by stale-workspace retention.
 </workspace_guidance>
 
 ${skipMemoryOnStart ? '' : `<memory_on_start>

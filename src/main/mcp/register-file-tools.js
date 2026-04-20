@@ -122,6 +122,12 @@ function registerFileTools(server) {
         skipped.push({ index, search, reason: 'not_found' });
         continue;
       }
+      if (matchCount > 1) {
+        throw new Error(
+          `edit_file search is not unique at edit index ${index} (found ${matchCount} matches). ` +
+          'Provide a longer unique search string with surrounding context.'
+        );
+      }
 
       content = content.replace(search, replace);
       applied.push({ index, search, replacements: 1, matchCount });

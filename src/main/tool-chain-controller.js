@@ -81,6 +81,11 @@ class ToolChainController {
                 }
                 i++;
             }
+            if (depth > 0) {
+                // Unclosed JSON payload: keep original text intact instead of
+                // deleting the remainder of the assistant response.
+                return match;
+            }
             // Return empty string to remove the entire TOOL:name{...} pattern
             return '\x00'.repeat(i - offset); // placeholder
         }).replace(/\x00+/g, '').trim();

@@ -142,8 +142,8 @@ class PluginManager extends EventEmitter {
                 throw new Error(`Plugin entry point not found: ${mainPath}`);
             }
 
-            // Clear require cache for hot-reload during development
-            delete require.cache[require.resolve(mainPath)];
+            // Clear plugin subtree from require cache for reliable hot-reload.
+            this._clearPluginRequireCache(plugin.dir);
 
             const pluginModule = require(mainPath);
             plugin.module = pluginModule;
@@ -663,6 +663,22 @@ class PluginManager extends EventEmitter {
         }
         plugin.handlers = [];
         plugin.chatUIs = [];
+    }
+
+    _clearPluginRequireCache(pluginDir) {
+        const resolvedRoot = path.resolve(pluginDir);
+        const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+        const isWin = process.platform === 'win32';
+        const normRoot = isWin ? rootPrefix.toLowerCase() : rootPrefix;
+        const normExactRoot = isWin ? resolvedRoot.toLowerCase() : resolvedRoot;
+
+        for (const cachedPath of Object.keys(require.cache)) {
+            const resolvedPath = path.resolve(cachedPath);
+            const probe = isWin ? resolvedPath.toLowerCase() : resolvedPath;
+            if (probe === normExactRoot || probe.startsWith(normRoot)) {
+                delete require.cache[cachedPath];
+            }
+        }
     }
 
     _normalizeScopeList(rawScope) {

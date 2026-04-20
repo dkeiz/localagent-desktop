@@ -35,6 +35,12 @@ function stripToolPatterns(text) {
         }
         j++;
       }
+      if (depth > 0) {
+        // Malformed TOOL payload without closing brace; preserve text.
+        result += text[i];
+        i++;
+        continue;
+      }
       i = j;
     } else {
       result += text[i];

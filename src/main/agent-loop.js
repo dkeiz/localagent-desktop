@@ -215,6 +215,24 @@ class AgentLoop extends EventEmitter {
 
     // ==================== Trigger 3: Chat Close ====================
 
+    async _enqueueCloseSummaryJob(sessionId) {
+        if (!this.db || typeof this.db.enqueueMemoryJob !== 'function') {
+            return;
+        }
+        try {
+            await this.db.enqueueMemoryJob({
+                jobType: 'summarize_session',
+                sessionId,
+                payload: {
+                    source: 'session_close',
+                    enqueued_at: new Date().toISOString()
+                }
+            });
+        } catch (error) {
+            console.error(`[AgentLoop] Failed to enqueue summary job for session ${sessionId}:`, error.message);
+        }
+    }
+
     /**
      * Summarize and save memory when a chat closes
      */
@@ -225,52 +243,24 @@ class AgentLoop extends EventEmitter {
             return;
         }
 
-        console.log(`[AgentLoop] Chat close trigger fired for session ${sessionId}`);
-
-        try {
-            const conversations = await this.db.getConversations(30, sessionId);
-            if (!conversations || conversations.length < 4) {
-                this.removeSession(sessionId);
-                return;
-            }
-
-            const conversationText = conversations
-                .map(c => `${c.role}: ${c.content}`)
-                .join('\n')
-                .substring(0, 3000);
-
-            const template = this._loadTemplate('close');
-            const prompt = `${template}\n\nConversation:\n${conversationText}`;
-
-            const response = await this.dispatcher.dispatch(prompt, [], { mode: 'internal' });
-
-            if (response && response.content) {
-                const cleanContent = this._stripToolCalls(response.content);
-                await this.agentMemory.append('daily', `[Session Close - ${sessionId}]\n${cleanContent}`);
-
-                console.log(`[AgentLoop] Close memory saved for session ${sessionId}`);
-                this.emit('memory-saved', { sessionId, type: 'close' });
-            }
-        } catch (error) {
-            console.error(`[AgentLoop] Close memory failed:`, error.message);
-        }
+        console.log(`[AgentLoop] Chat close trigger fired for session ${sessionId} (queueing summary job)`);
+        await this._enqueueCloseSummaryJob(sessionId);
 
         this.removeSession(sessionId);
-
-        // Clean up session workspace
-        if (this.sessionWorkspace) {
-            this.sessionWorkspace.cleanup(sessionId);
-        }
     }
 
     /**
      * Save all active sessions (called on app quit)
      */
     async onAppQuit() {
-        console.log(`[AgentLoop] App quit — saving all sessions`);
+        console.log('[AgentLoop] App quit — skipping close summaries for fast shutdown');
         const sessionIds = Array.from(this.sessions.keys());
         for (const sessionId of sessionIds) {
-            await this.onSessionClose(sessionId);
+            const session = this.sessions.get(sessionId);
+            if (session && !session.memorySaved && session.messageCount >= 4) {
+                await this._enqueueCloseSummaryJob(sessionId);
+            }
+            this.removeSession(sessionId);
         }
     }
 

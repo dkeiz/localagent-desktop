@@ -99,5 +99,39 @@ module.exports = {
     } finally {
       fs.rmSync(tempPluginDir, { recursive: true, force: true });
     }
+
+    const hotReloadPluginId = `tmp-hot-reload-plugin-${Date.now()}`;
+    const hotReloadPluginDir = path.join(rootDir, 'agentin', 'plugins', hotReloadPluginId);
+    fs.mkdirSync(hotReloadPluginDir, { recursive: true });
+    fs.writeFileSync(path.join(hotReloadPluginDir, 'helper.js'), "module.exports = () => 'v1';");
+    fs.writeFileSync(path.join(hotReloadPluginDir, 'plugin.json'), JSON.stringify({
+      id: hotReloadPluginId,
+      name: 'Tmp Hot Reload Plugin',
+      version: '1.0.0',
+      main: 'main.js'
+    }, null, 2));
+    fs.writeFileSync(
+      path.join(hotReloadPluginDir, 'main.js'),
+      "const helper = require('./helper'); module.exports = { async onEnable(ctx) { ctx.registerHandler('version', { description: 'version', inputSchema: { type: 'object' } }, async () => ({ version: helper() })); } };"
+    );
+
+    try {
+      const hotReloadManager = new PluginManager(container);
+      await hotReloadManager.initialize();
+      await hotReloadManager.enablePlugin(hotReloadPluginId);
+      const toolName = `plugin_${hotReloadPluginId.replace(/-/g, '_')}_version`;
+
+      let first = await mcpServer.executeTool(toolName, {});
+      assert.equal(first.result.version, 'v1', 'Expected first plugin load to use helper v1');
+
+      await hotReloadManager.disablePlugin(hotReloadPluginId);
+      fs.writeFileSync(path.join(hotReloadPluginDir, 'helper.js'), "module.exports = () => 'v2';");
+      await hotReloadManager.enablePlugin(hotReloadPluginId);
+      const second = await mcpServer.executeTool(toolName, {});
+      assert.equal(second.result.version, 'v2', 'Expected hot reload to pick updated helper module');
+      await hotReloadManager.disablePlugin(hotReloadPluginId);
+    } finally {
+      fs.rmSync(hotReloadPluginDir, { recursive: true, force: true });
+    }
   }
 };

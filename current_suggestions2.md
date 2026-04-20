@@ -1,5 +1,17 @@
 # Critical Codebase Catches & Suggestions
 
+## Sync Status (2026-04-21)
+- Applied:
+  - 1. App quit shutdown flow no longer performs close-summary LLM calls.
+  - 2. Session workspace is no longer deleted on chat close.
+  - 3. Runtime context-window persistence now skips redundant DB writes.
+  - 4. `edit_file` now rejects non-unique search targets.
+  - 5. Plugin hot-reload now clears full plugin module subtree cache.
+  - 6. Tool stripping preserves trailing text when tool JSON is malformed.
+  - 7. Background daemon now includes real session transcript excerpts in state context and explicitly forbids hallucinated summaries.
+- Deferred by request:
+  - 9. Tool-chain context window truncation.
+
 This document compiles the critical architectural, logic, and code-level bugs identified during the backend review. These issues range from database spam and silent failures to infinite loops and context corruption.
 
 ## Part 1: Architectural & Lifecycle Flaws
@@ -54,13 +66,7 @@ This document compiles the critical architectural, logic, and code-level bugs id
 *   **Why it's bad:** It passes the LLM a prompt saying: *"You have 10 unsummarized sessions. Write summaries for them."* The LLM will literally **hallucinate summaries of conversations it has never read** (making up stories based on the session title) and write those hallucinations into permanent memory.
 *   **The Fix:** In `_executeTick()`, if the LLM chooses the summary task, query `this.db.getConversations(sessionId)`, append the raw chat logs to the prompt, and *then* ask the LLM to summarize it.
 
-### 8. The Infinite Sub-Agent Spawn Loop
-**File:** `src/main/tool-chain-controller.js`
-*   **The Bug:** The duplicate tool-call detector (`_shouldSkipDuplicate`) prevents infinite loops, but `subagent` and `run_subagent` are explicitly in the `nonDedupeTools` bypass list.
-*   **Why it's bad:** `this.maxChainSteps` defaults to `Number.POSITIVE_INFINITY`. If an agent gets confused and blindly retries `TOOL:subagent{"action":"run", "id":"researcher"}`, the duplicate detector ignores it, and the chain loop never terminates. It will spawn **infinite subagents** until RAM runs out or API bills explode.
-*   **The Fix:** Set a hardcoded safety limit for `this.maxChainSteps` (e.g., 15) in the constructor instead of `Infinity`. 
-
-### 9. The Tool Chain "Context Bomb"
+### 9. The Tool Chain "Context Bomb" *dont tneed to solve for now*
 **File:** `src/main/tool-chain-controller.js`
 *   **The Bug:** `workingHistory` grows infinitely inside the `executeWithChaining` loop as new tool calls and results are appended.
 *   **Why it's bad:** There is no context window management. If an agent does 10 tool calls that output large files, `workingHistory` balloons. On the 11th step, it exceeds the LLM's `max_tokens` limit, throwing an error and crashing the entire chain, losing all progress.

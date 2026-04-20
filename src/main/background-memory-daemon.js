@@ -68,6 +68,9 @@ class BackgroundMemoryDaemon {
 
         this._userActive = false;
         this._lastUserActivity = Date.now();
+        this.MAX_QUEUED_JOBS_PER_TICK = 5;
+        this.MAX_JOB_ATTEMPTS = 5;
+        this.JOB_RETRY_DELAY_SECONDS = 5 * 60;
     }
 
     // ==================== Lifecycle ====================
@@ -83,6 +86,12 @@ class BackgroundMemoryDaemon {
 
         this._ensureFolderStructure();
         this._loadState();
+        if (this.db?.resetStaleRunningMemoryJobs) {
+            await this.db.resetStaleRunningMemoryJobs({
+                maxAgeMinutes: 30,
+                jobType: 'summarize_session'
+            });
+        }
 
         this.running = true;
         this._tickIndex = 0;
@@ -207,6 +216,24 @@ class BackgroundMemoryDaemon {
      * Execute a tick — ask LLM what needs doing, then do it.
      */
     async _executeTick() {
+        const queueProcessed = await this._drainQueuedSummaryJobs(this.MAX_QUEUED_JOBS_PER_TICK);
+        if (queueProcessed > 0) {
+            const state = this._loadState();
+            state.lastTickTime = new Date().toISOString();
+            state.lastTaskName = 'queued-session-summaries';
+            state.tasksCompleted = (state.tasksCompleted || 0) + queueProcessed;
+            this._saveStateData(state);
+            console.log(`[MemoryDaemon] Processed ${queueProcessed} queued summary job(s)`);
+            if (this.eventBus) {
+                this.eventBus.publish('daemon:task-completed', {
+                    daemon: 'memory',
+                    task: 'queued-session-summaries',
+                    summary: `Processed ${queueProcessed} queued summary job(s)`
+                });
+            }
+            return;
+        }
+
         // Gather current state for the LLM
         const stateContext = await this._gatherStateContext();
         const systemPrompt = this._loadSystemPrompt();
@@ -226,6 +253,8 @@ If work is needed, perform it now using the available information. You can:
 - Update the user persona based on recent conversations
 - Consolidate verbose daily memories into concise entries
 - Note any issues found during review
+
+Critical: do not invent conversation details. Only summarize sessions when transcript excerpts are present in Current State.
 
 After completing the task, end with a brief summary of what you did in the format:
 [task: <task_name>] <summary>`;
@@ -277,6 +306,98 @@ After completing the task, end with a brief summary of what you did in the forma
                 summary: content.substring(0, 200),
             });
         }
+    }
+
+    async _drainQueuedSummaryJobs(maxJobs = 5) {
+        if (!this.db?.claimNextMemoryJob || !this.db?.completeMemoryJob || !this.db?.failMemoryJob) {
+            return 0;
+        }
+
+        const limit = Math.max(1, Number(maxJobs) || 5);
+        let processed = 0;
+        for (let i = 0; i < limit; i++) {
+            if (!this.running) break;
+            const resources = await this._checkResources();
+            if (!resources.available || this._userActive) {
+                break;
+            }
+
+            const job = await this.db.claimNextMemoryJob('summarize_session', 'memory-daemon');
+            if (!job) {
+                break;
+            }
+
+            try {
+                const summary = await this._runSummaryJob(job);
+                await this.db.completeMemoryJob(job.id, {
+                    summary: summary.substring(0, 500),
+                    payload: {
+                        session_id: job.session_id,
+                        summarized_at: new Date().toISOString()
+                    }
+                });
+                processed++;
+            } catch (error) {
+                await this.db.failMemoryJob(job.id, error.message, {
+                    maxAttempts: this.MAX_JOB_ATTEMPTS,
+                    retryDelaySeconds: this.JOB_RETRY_DELAY_SECONDS
+                });
+                console.error(`[MemoryDaemon] Summary job ${job.id} failed:`, error.message);
+            }
+        }
+
+        return processed;
+    }
+
+    _buildQueuedSummaryPrompt(job, transcript) {
+        return `You are processing a queued summarize_session job.
+
+Job:
+- job_id: ${job.id}
+- session_id: ${job.session_id}
+
+Task:
+Summarize the transcript below into 3-5 concise bullet points capturing decisions, outcomes, blockers, and next steps.
+Use only transcript facts. Do not invent details.
+
+Transcript:
+${transcript}`;
+    }
+
+    async _runSummaryJob(job) {
+        const sessionId = job.session_id;
+        const conversations = await this.db.getConversations(60, sessionId);
+        if (!Array.isArray(conversations) || conversations.length < 4) {
+            throw new Error(`Not enough conversation data for session ${sessionId}`);
+        }
+
+        const transcript = conversations
+            .slice(-30)
+            .map(c => `${c.role}: ${String(c.content || '').replace(/\s+/g, ' ').trim()}`)
+            .join('\n')
+            .substring(0, 4000);
+        if (!transcript) {
+            throw new Error(`Transcript is empty for session ${sessionId}`);
+        }
+
+        const prompt = this._buildQueuedSummaryPrompt(job, transcript);
+        const response = await this.dispatcher.dispatch(prompt, [], {
+            mode: 'internal',
+            includeTools: false,
+            includeRules: false,
+            preemptible: true
+        });
+
+        if (response?.stopped) {
+            throw new Error('Summary job preempted by foreground activity');
+        }
+        if (!response?.content) {
+            throw new Error('Summary job returned empty content');
+        }
+
+        const cleanContent = response.content.trim();
+        await this.agentMemory.append('daily', `[Queued Session Summary - ${sessionId}]\n${cleanContent}`);
+        return cleanContent;
     }
 
     /**
@@ -353,6 +474,30 @@ After completing the task, end with a brief summary of what you did in the forma
                 LIMIT 10
             `);
             lines.push(`**Recent Sessions:** ${recentSessions.length} with 4+ messages`);
+
+            const transcriptBlocks = [];
+            for (const session of recentSessions.slice(0, 3)) {
+                const messages = await this.db.getConversations(20, session.id);
+                if (!Array.isArray(messages) || messages.length === 0) {
+                    continue;
+                }
+                const transcript = messages
+                    .slice(-12)
+                    .map(msg => `${msg.role}: ${String(msg.content || '').replace(/\s+/g, ' ').trim()}`)
+                    .join('\n')
+                    .substring(0, 1200);
+                if (!transcript) {
+                    continue;
+                }
+                transcriptBlocks.push(
+                    `Session ${session.id} (${session.title || 'Untitled'}) transcript excerpt:\n${transcript}`
+                );
+            }
+            if (transcriptBlocks.length > 0) {
+                lines.push(`**Session Transcript Excerpts:**\n${transcriptBlocks.join('\n\n')}`);
+            } else {
+                lines.push('**Session Transcript Excerpts:** none available');
+            }
 
             // Daemon's own state
             const state = this._loadState();

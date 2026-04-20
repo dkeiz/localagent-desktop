@@ -218,12 +218,33 @@ class DatabaseWrapper {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 confirmed_at DATETIME
+            )`,
+
+            `CREATE TABLE IF NOT EXISTS memory_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_type TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                next_run_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                locked_at DATETIME,
+                locked_by TEXT,
+                payload_json TEXT,
+                result_summary TEXT,
+                last_error TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`
         ];
 
         for (const query of queries) {
             this.db.exec(query);
         }
+
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_jobs_schedule
+            ON memory_jobs (job_type, status, next_run_at, created_at)`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_jobs_session
+            ON memory_jobs (job_type, session_id, status)`);
     }
 
     run(sql, params = []) {
@@ -816,6 +837,171 @@ class DatabaseWrapper {
         );
 
         return rows.map(row => this._mapSubagentRun(row));
+    }
+
+    _mapMemoryJob(row) {
+        if (!row) return null;
+        let payload = null;
+        try {
+            payload = row.payload_json ? JSON.parse(row.payload_json) : null;
+        } catch (error) {
+            payload = null;
+        }
+        return {
+            ...row,
+            payload
+        };
+    }
+
+    async enqueueMemoryJob({ jobType, sessionId, payload = null, nextRunAt = null }) {
+        const type = String(jobType || '').trim();
+        const sid = String(sessionId || '').trim();
+        if (!type || !sid) {
+            throw new Error('enqueueMemoryJob requires jobType and sessionId');
+        }
+
+        const existing = this.get(
+            `SELECT * FROM memory_jobs
+             WHERE job_type = ? AND session_id = ? AND status IN ('pending', 'running')
+             ORDER BY id DESC LIMIT 1`,
+            [type, sid]
+        );
+        if (existing) {
+            return this._mapMemoryJob(existing);
+        }
+
+        const dueAt = nextRunAt || new Date().toISOString();
+        const result = this.run(
+            `INSERT INTO memory_jobs
+             (job_type, session_id, status, attempts, next_run_at, payload_json)
+             VALUES (?, ?, 'pending', 0, ?, ?)`,
+            [type, sid, dueAt, payload ? JSON.stringify(payload) : null]
+        );
+        return this.getMemoryJob(result.id);
+    }
+
+    async getMemoryJob(jobId) {
+        const row = this.get('SELECT * FROM memory_jobs WHERE id = ?', [jobId]);
+        return this._mapMemoryJob(row);
+    }
+
+    async claimNextMemoryJob(jobType, workerId = 'memory-daemon') {
+        const type = String(jobType || '').trim();
+        if (!type) {
+            throw new Error('claimNextMemoryJob requires jobType');
+        }
+
+        const claim = this.db.transaction(() => {
+            const row = this.get(
+                `SELECT * FROM memory_jobs
+                 WHERE job_type = ? AND status = 'pending' AND datetime(next_run_at) <= datetime('now')
+                 ORDER BY datetime(next_run_at) ASC, id ASC
+                 LIMIT 1`,
+                [type]
+            );
+            if (!row) {
+                return null;
+            }
+
+            this.run(
+                `UPDATE memory_jobs
+                 SET status = 'running',
+                     locked_at = CURRENT_TIMESTAMP,
+                     locked_by = ?,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                [String(workerId || 'memory-daemon'), row.id]
+            );
+            return row.id;
+        });
+
+        const jobId = claim();
+        if (!jobId) return null;
+        return this.getMemoryJob(jobId);
+    }
+
+    async completeMemoryJob(jobId, { summary = '', payload = null } = {}) {
+        this.run(
+            `UPDATE memory_jobs
+             SET status = 'done',
+                 result_summary = ?,
+                 payload_json = ?,
+                 last_error = NULL,
+                 locked_at = NULL,
+                 locked_by = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [String(summary || ''), payload ? JSON.stringify(payload) : null, jobId]
+        );
+        return this.getMemoryJob(jobId);
+    }
+
+    async failMemoryJob(jobId, error, options = {}) {
+        const maxAttempts = Math.max(1, Number(options.maxAttempts) || 5);
+        const retryDelaySeconds = Math.max(1, Number(options.retryDelaySeconds) || 300);
+        const row = this.get('SELECT attempts FROM memory_jobs WHERE id = ?', [jobId]);
+        if (!row) {
+            return null;
+        }
+        const attempts = Number(row.attempts || 0) + 1;
+        const shouldRetry = attempts < maxAttempts;
+        if (shouldRetry) {
+            const retryIso = new Date(Date.now() + retryDelaySeconds * 1000).toISOString();
+            this.run(
+                `UPDATE memory_jobs
+                 SET status = 'pending',
+                     attempts = ?,
+                     next_run_at = ?,
+                     last_error = ?,
+                     locked_at = NULL,
+                     locked_by = NULL,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                [attempts, retryIso, String(error || 'Unknown error'), jobId]
+            );
+        } else {
+            this.run(
+                `UPDATE memory_jobs
+                 SET status = 'failed',
+                     attempts = ?,
+                     last_error = ?,
+                     locked_at = NULL,
+                     locked_by = NULL,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                [attempts, String(error || 'Unknown error'), jobId]
+            );
+        }
+        return this.getMemoryJob(jobId);
+    }
+
+    async resetStaleRunningMemoryJobs({ maxAgeMinutes = 30, jobType = null } = {}) {
+        const age = Math.max(1, Number(maxAgeMinutes) || 30);
+        if (jobType) {
+            this.run(
+                `UPDATE memory_jobs
+                 SET status = 'pending',
+                     locked_at = NULL,
+                     locked_by = NULL,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE status = 'running'
+                   AND job_type = ?
+                   AND datetime(locked_at) < datetime('now', ?)`,
+                [String(jobType), `-${age} minutes`]
+            );
+            return;
+        }
+
+        this.run(
+            `UPDATE memory_jobs
+             SET status = 'pending',
+                 locked_at = NULL,
+                 locked_by = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE status = 'running'
+               AND datetime(locked_at) < datetime('now', ?)`,
+            [`-${age} minutes`]
+        );
     }
 }
 

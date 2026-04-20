@@ -83,6 +83,24 @@ module.exports = {
 
     {
       const mcp = createServer();
+      const dispatcher = {
+        async dispatch() {
+          return {
+            content: 'TOOL:demo_echo{"text":"unterminated"\nThe rest of this answer should remain visible.',
+            reasoning: 'r1b',
+            model: 'demo-model',
+            renderContext: { provider: 'ollama', model: 'demo-model', runtimeConfig: { reasoning: { visibility: 'show' } } }
+          };
+        }
+      };
+
+      const chain = new ToolChainController(dispatcher, mcp, db);
+      const result = await chain.executeWithChaining('hello', [], {});
+      assert.includes(result.content, 'The rest of this answer should remain visible.', 'Expected malformed TOOL payload to preserve trailing text');
+    }
+
+    {
+      const mcp = createServer();
       let turn = 0;
       const syntheticMessages = [];
       const dispatcher = {
