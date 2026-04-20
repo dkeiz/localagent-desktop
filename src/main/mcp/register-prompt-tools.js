@@ -1,3 +1,20 @@
+const { tokenizePath } = require('../path-tokens');
+
+function getPathTokenOptions(server) {
+  const context = server.getCurrentAgentContext?.()
+    || server.getCurrentExecutionContext?.()
+    || {};
+  return {
+    agentManager: server._agentManager || null,
+    sessionWorkspace: server._sessionWorkspace || null,
+    context
+  };
+}
+
+async function toPortablePath(server, absolutePath) {
+  return tokenizePath(absolutePath, getPathTokenOptions(server));
+}
+
 function registerPromptTools(server) {
   function getPromptFileManager() {
     return server._promptFileManager || null;
@@ -77,7 +94,7 @@ function registerPromptTools(server) {
     await server.aiService.setSystemPrompt(newContent);
     await server.db.setSetting('system_prompt', newContent);
 
-    return { success: true, message: 'System prompt updated', path: promptPath };
+    return { success: true, message: 'System prompt updated', path: await toPortablePath(server, promptPath) };
   });
 
   server.registerTool('manage_rule', {
@@ -124,7 +141,7 @@ ${params.content || ''}`;
         } else {
           await server.db.addPromptRule({ name: params.name, content: params.content, type: 'rule' });
         }
-        return { success: true, action: params.action, path: filePath };
+        return { success: true, action: params.action, path: await toPortablePath(server, filePath) };
       }
 
       case 'delete': {

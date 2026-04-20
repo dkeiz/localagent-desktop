@@ -1,4 +1,3 @@
-const path = require('path');
 const { getModelRuntimeConfig, saveModelRuntimeConfig, sanitizeRuntimeConfig } = require('./llm-config');
 const { getEffectiveLlmSelection } = require('./llm-state');
 const { buildPathTokenMap } = require('./path-tokens');
@@ -198,13 +197,11 @@ ${prompt}`;
 
         // Environment paths (useful for chat + internal modes)
         if (includeEnv) {
-            const appDir = path.resolve(__dirname, '..', '..');
-            const sid = sessionId || 'default';
             prompt += `\n\n<environment>
-Working Directory: ${appDir}
-Memory Directory: ${path.join(appDir, 'agentin', 'memory')}
-Session Workspace: ${path.join(appDir, 'agentin', 'workspaces', String(sid))}
-Agent Config: ${path.join(appDir, 'agentin')}
+Working Directory: {agentin}
+Memory Directory: {memory}
+Session Workspace: {workspace}
+Agent Config: {agentin}
 When using file tools (list_directory, read_file, etc.), use these paths. Your memory files are in the agentin/memory/ directory.
 </environment>
 
@@ -220,17 +217,17 @@ ${skipMemoryOnStart ? '' : `<memory_on_start>
 IMPORTANT: At the start of every new conversation, you MUST read your core memory files using the read_file tool BEFORE answering the user. This is how you remember who you are and who the user is.
 
 Read these files (use read_file tool):
-1. ${path.join(appDir, 'agentin', 'agent.md')} — your identity and technical reference
-2. ${path.join(appDir, 'agentin', 'userabout', 'memoryaboutuser.md')} — what you know about the user
-3. ${path.join(appDir, 'agentin', 'memory', 'global', 'preferences.md')} — permanent preferences
-4. ${path.join(appDir, 'agentin', 'memory', 'daily')} — use list_directory then read today's log
-5. ${path.join(appDir, 'agentin', 'workflows', 'workflow.md')} — workflow system reference
+1. {agentin}/agent.md — your identity and technical reference
+2. {agentin}/userabout/memoryaboutuser.md — what you know about the user
+3. {memory}/global/preferences.md — permanent preferences
+4. {memory}/daily — use list_directory then read today's log
+5. {agentin}/workflows/workflow.md — workflow system reference
 
 Do this silently as part of your first response. You must still answer the user's question in the same turn — chain the file reads then respond naturally.
 </memory_on_start>`}
 
 <knowledge_guidance>
-You have a personal knowledge store at ${path.join(appDir, 'agentin', 'knowledge')}.
+You have a personal knowledge store at {knowledge}.
 Use explore_knowledge to see what's available, then read_file to access specific items.
 Knowledge includes: user preferences, usage patterns, plugin guides, contacts, and more.
 Explore on-demand when the user's request suggests prior context would help.
@@ -238,19 +235,20 @@ Each knowledge file is max 200 lines. Use existing file tools to read and search
 </knowledge_guidance>`;
         }
 
-        if (agentId && this.agentManager) {
+        if (includeEnv) {
             const tokens = await buildPathTokenMap({
                 agentManager: this.agentManager,
-                sessionWorkspace: this.agentManager.sessionWorkspace,
+                sessionWorkspace: this.agentManager?.sessionWorkspace || null,
                 sessionId,
                 agentId
             });
-            const tokenLines = Object.entries(tokens)
-                .map(([token, value]) => `${token}: ${value}`)
+            const tokenLines = Object.keys(tokens)
+                .map(token => `- ${token}`)
                 .join('\n');
             prompt += `\n\n<path_tokens>
 Use these portable path tokens in file tool calls instead of hard-coded absolute paths:
 ${tokenLines}
+Tokens are resolved by the backend. Keep paths tokenized and forward-slashed in tool calls and outputs.
 </path_tokens>`;
         }
 

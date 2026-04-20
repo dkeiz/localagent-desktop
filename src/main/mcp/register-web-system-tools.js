@@ -1,3 +1,24 @@
+const { resolvePathTokens, tokenizePath } = require('../path-tokens');
+
+function getPathTokenOptions(server) {
+  const context = server.getCurrentAgentContext?.()
+    || server.getCurrentExecutionContext?.()
+    || {};
+  return {
+    agentManager: server._agentManager || null,
+    sessionWorkspace: server._sessionWorkspace || null,
+    context
+  };
+}
+
+async function resolveToolPath(server, rawPath) {
+  return resolvePathTokens(rawPath, getPathTokenOptions(server));
+}
+
+async function toPortablePath(server, absolutePath) {
+  return tokenizePath(absolutePath, getPathTokenOptions(server));
+}
+
 function registerWebSystemTools(server) {
   server.registerTool('fetch_url', {
     name: 'fetch_url',
@@ -61,10 +82,13 @@ function registerWebSystemTools(server) {
   }, async (params) => {
     const fetch = require('node-fetch');
     const fs = require('fs');
+    const path = require('path');
     const response = await fetch(params.url);
     const buffer = await response.buffer();
-    fs.writeFileSync(params.savePath, buffer);
-    return { url: params.url, savedTo: params.savePath, size: buffer.length };
+    const savePath = await resolveToolPath(server, params.savePath);
+    fs.mkdirSync(path.dirname(savePath), { recursive: true });
+    fs.writeFileSync(savePath, buffer);
+    return { url: params.url, savedTo: await toPortablePath(server, savePath), size: buffer.length };
   });
 
   server.registerTool('extract_text', {

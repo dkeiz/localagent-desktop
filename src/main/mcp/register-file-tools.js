@@ -1,20 +1,28 @@
 const fs = require('fs').promises;
 const path = require('path');
-const { resolvePathTokens } = require('../path-tokens');
+const { resolvePathTokens, tokenizePath } = require('../path-tokens');
 
-async function resolveToolPath(server, rawPath) {
+function getPathTokenOptions(server) {
   const context = server.getCurrentAgentContext?.()
     || server.getCurrentExecutionContext?.()
     || {};
-  const filePath = await resolvePathTokens(rawPath, {
+  return {
     agentManager: server._agentManager || null,
     sessionWorkspace: server._sessionWorkspace || null,
     context
-  });
+  };
+}
+
+async function resolveToolPath(server, rawPath) {
+  const filePath = await resolvePathTokens(rawPath, getPathTokenOptions(server));
   if (/\{[a-z_]+\}/i.test(filePath)) {
     throw new Error(`Unresolved path token in path: ${rawPath}`);
   }
   return filePath;
+}
+
+async function toPortablePath(server, absolutePath) {
+  return tokenizePath(absolutePath, getPathTokenOptions(server));
 }
 
 function countOccurrences(content, search) {
@@ -46,7 +54,7 @@ function registerFileTools(server) {
   }, async (params) => {
     const filePath = await resolveToolPath(server, params.path);
     const content = await fs.readFile(filePath, 'utf-8');
-    return { path: filePath, requestedPath: params.path, content, size: content.length };
+    return { path: await toPortablePath(server, filePath), requestedPath: params.path, content, size: content.length };
   });
 
   server.registerTool('write_file', {
@@ -71,7 +79,7 @@ function registerFileTools(server) {
     } else {
       await fs.writeFile(filePath, params.content, 'utf-8');
     }
-    return { path: filePath, requestedPath: params.path, written: params.content.length, append: params.append || false };
+    return { path: await toPortablePath(server, filePath), requestedPath: params.path, written: params.content.length, append: params.append || false };
   });
 
   server.registerTool('edit_file', {
@@ -121,7 +129,7 @@ function registerFileTools(server) {
 
     await fs.writeFile(filePath, content, 'utf-8');
     return {
-      path: filePath,
+      path: await toPortablePath(server, filePath),
       requestedPath: params.path,
       editsApplied: applied.length,
       editsSkipped: skipped.length,
@@ -146,11 +154,11 @@ function registerFileTools(server) {
   }, async (params) => {
     const dirPath = await resolveToolPath(server, params.path);
     const items = await fs.readdir(dirPath, { withFileTypes: true });
-    return items.map(item => ({
+    return Promise.all(items.map(async (item) => ({
       name: item.name,
       type: item.isDirectory() ? 'directory' : 'file',
-      path: path.join(dirPath, item.name)
-    }));
+      path: await toPortablePath(server, path.join(dirPath, item.name))
+    })));
   });
 
   server.registerTool('file_exists', {
@@ -169,9 +177,16 @@ function registerFileTools(server) {
     const filePath = await resolveToolPath(server, params.path);
     try {
       const stat = await fs.stat(filePath);
-      return { path: filePath, requestedPath: params.path, exists: true, isFile: stat.isFile(), isDirectory: stat.isDirectory(), size: stat.size };
+      return {
+        path: await toPortablePath(server, filePath),
+        requestedPath: params.path,
+        exists: true,
+        isFile: stat.isFile(),
+        isDirectory: stat.isDirectory(),
+        size: stat.size
+      };
     } catch {
-      return { path: filePath, requestedPath: params.path, exists: false };
+      return { path: await toPortablePath(server, filePath), requestedPath: params.path, exists: false };
     }
   });
 
@@ -190,7 +205,7 @@ function registerFileTools(server) {
   }, async (params) => {
     const filePath = await resolveToolPath(server, params.path);
     await fs.unlink(filePath);
-    return { deleted: true, path: filePath, requestedPath: params.path };
+    return { deleted: true, path: await toPortablePath(server, filePath), requestedPath: params.path };
   });
 }
 

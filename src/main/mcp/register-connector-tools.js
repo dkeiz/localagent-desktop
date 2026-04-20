@@ -1,3 +1,20 @@
+const { tokenizePath } = require('../path-tokens');
+
+function getPathTokenOptions(server) {
+  const context = server.getCurrentAgentContext?.()
+    || server.getCurrentExecutionContext?.()
+    || {};
+  return {
+    agentManager: server._agentManager || null,
+    sessionWorkspace: server._sessionWorkspace || null,
+    context
+  };
+}
+
+async function toPortablePath(server, absolutePath) {
+  return tokenizePath(absolutePath, getPathTokenOptions(server));
+}
+
 function registerConnectorTools(server) {
   function getConnectorFilePath(name) {
     const fs = require('fs');
@@ -47,7 +64,7 @@ function registerConnectorTools(server) {
       const fs = require('fs');
       const filePath = getConnectorFilePath(params.name);
       fs.writeFileSync(filePath, params.code, 'utf-8');
-      return { success: true, path: filePath, name: params.name };
+      return { success: true, path: await toPortablePath(server, filePath), name: params.name };
     }
 
     if (action === 'start') {

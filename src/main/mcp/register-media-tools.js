@@ -1,3 +1,24 @@
+const { resolvePathTokens, tokenizePath } = require('../path-tokens');
+
+function getPathTokenOptions(server) {
+  const context = server.getCurrentAgentContext?.()
+    || server.getCurrentExecutionContext?.()
+    || {};
+  return {
+    agentManager: server._agentManager || null,
+    sessionWorkspace: server._sessionWorkspace || null,
+    context
+  };
+}
+
+async function resolveToolPath(server, rawPath) {
+  return resolvePathTokens(rawPath, getPathTokenOptions(server));
+}
+
+async function toPortablePath(server, absolutePath) {
+  return tokenizePath(absolutePath, getPathTokenOptions(server));
+}
+
 function registerMediaTools(server) {
   server.registerTool('get_image_info', {
     name: 'get_image_info',
@@ -13,8 +34,9 @@ function registerMediaTools(server) {
     }
   }, async (params) => {
     const fs = require('fs').promises;
-    const stat = await fs.stat(params.path);
-    return { path: params.path, size: stat.size, modified: stat.mtime };
+    const filePath = await resolveToolPath(server, params.path);
+    const stat = await fs.stat(filePath);
+    return { path: await toPortablePath(server, filePath), size: stat.size, modified: stat.mtime };
   });
 
   server.registerTool('open_media', {
@@ -33,17 +55,18 @@ function registerMediaTools(server) {
     const { shell } = require('electron');
     const fs = require('fs');
     const path = require('path');
+    const filePath = await resolveToolPath(server, params.path);
 
-    if (!fs.existsSync(params.path)) {
+    if (!fs.existsSync(filePath)) {
       return { success: false, error: `File not found: ${params.path}` };
     }
 
-    const result = await shell.openPath(params.path);
+    const result = await shell.openPath(filePath);
     if (result) {
       return { success: false, error: result };
     }
 
-    const ext = path.extname(params.path).toLowerCase();
+    const ext = path.extname(filePath).toLowerCase();
     const mediaType = {
       '.mp3': 'audio', '.wav': 'audio', '.ogg': 'audio', '.flac': 'audio', '.m4a': 'audio',
       '.mp4': 'video', '.avi': 'video', '.mkv': 'video', '.mov': 'video', '.webm': 'video',
@@ -51,7 +74,7 @@ function registerMediaTools(server) {
       '.pdf': 'document', '.doc': 'document', '.docx': 'document', '.txt': 'document'
     }[ext] || 'file';
 
-    return { success: true, opened: params.path, type: mediaType };
+    return { success: true, opened: await toPortablePath(server, filePath), type: mediaType };
   });
 
   server.registerTool('play_audio', {
@@ -69,13 +92,16 @@ function registerMediaTools(server) {
   }, async (params) => {
     const { shell } = require('electron');
     const fs = require('fs');
+    const filePath = await resolveToolPath(server, params.path);
 
-    if (!fs.existsSync(params.path)) {
+    if (!fs.existsSync(filePath)) {
       return { success: false, error: `Audio file not found: ${params.path}` };
     }
 
-    const result = await shell.openPath(params.path);
-    return result ? { success: false, error: result } : { success: true, playing: params.path };
+    const result = await shell.openPath(filePath);
+    return result
+      ? { success: false, error: result }
+      : { success: true, playing: await toPortablePath(server, filePath) };
   });
 
   server.registerTool('view_image', {
@@ -93,13 +119,16 @@ function registerMediaTools(server) {
   }, async (params) => {
     const { shell } = require('electron');
     const fs = require('fs');
+    const filePath = await resolveToolPath(server, params.path);
 
-    if (!fs.existsSync(params.path)) {
+    if (!fs.existsSync(filePath)) {
       return { success: false, error: `Image file not found: ${params.path}` };
     }
 
-    const result = await shell.openPath(params.path);
-    return result ? { success: false, error: result } : { success: true, viewing: params.path };
+    const result = await shell.openPath(filePath);
+    return result
+      ? { success: false, error: result }
+      : { success: true, viewing: await toPortablePath(server, filePath) };
   });
 
   server.registerTool('screenshot', {
@@ -117,11 +146,12 @@ function registerMediaTools(server) {
   }, async (params) => {
     const { desktopCapturer } = require('electron');
     const fs = require('fs');
+    const savePath = await resolveToolPath(server, params.savePath);
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
     if (sources.length > 0) {
       const image = sources[0].thumbnail.toPNG();
-      fs.writeFileSync(params.savePath, image);
-      return { success: true, savedTo: params.savePath };
+      fs.writeFileSync(savePath, image);
+      return { success: true, savedTo: await toPortablePath(server, savePath) };
     }
     return { success: false, error: 'No screen found' };
   });

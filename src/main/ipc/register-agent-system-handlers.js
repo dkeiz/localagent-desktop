@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { tokenizePath } = require('../path-tokens');
 
 function assertInside(baseDir, targetPath) {
   const base = path.resolve(baseDir);
@@ -41,6 +42,14 @@ async function getAgentUiInfo(agentManager, agentId) {
   const folderPath = await agentManager.resolveAgentFolder(agentId);
   const slug = agentManager._getSafeFolderName(agent.name);
   return { ...agent, slug, folderPath };
+}
+
+async function toPortableAgentPath(agentManager, agentId, absolutePath) {
+  return tokenizePath(absolutePath, {
+    agentManager,
+    sessionWorkspace: agentManager?.sessionWorkspace || null,
+    context: { agentId }
+  });
 }
 
 function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
@@ -239,7 +248,11 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     if (!agentManager) throw new Error('AgentManager not initialized');
     const folderPath = await agentManager.resolveAgentFolder(agentId);
     if (!folderPath) return { success: false, error: 'Agent folder not found', files: [] };
-    return { success: true, root: folderPath, files: listFilesRecursive(folderPath) };
+    return {
+      success: true,
+      root: await toPortableAgentPath(agentManager, agentId, folderPath),
+      files: listFilesRecursive(folderPath)
+    };
   });
 
   ipcMain.handle('read-agent-file', async (event, agentId, relativePath) => {
@@ -251,7 +264,13 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
       const stat = fs.statSync(filePath);
       if (!stat.isFile()) return { success: false, error: 'Requested path is not a file' };
       const content = fs.readFileSync(filePath, 'utf-8');
-      return { success: true, relativePath: String(relativePath || ''), path: filePath, content, size: content.length };
+      return {
+        success: true,
+        relativePath: String(relativePath || ''),
+        path: await toPortableAgentPath(agentManager, agentId, filePath),
+        content,
+        size: content.length
+      };
     } catch (error) {
       return { success: false, error: error.message };
     }

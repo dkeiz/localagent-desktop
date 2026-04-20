@@ -524,12 +524,88 @@ class MCPServer extends EventEmitter {
     if (!input.includes('\\')) {
       return null;
     }
-    // Recover common malformed Windows paths in tool JSON by escaping backslashes that are not valid JSON escapes.
-    const repaired = input.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
-    if (repaired === input) {
-      return null;
+    const looksLikeWindowsPath = (value) => /^[A-Za-z]:\\/.test(value) || value.startsWith('\\\\');
+
+    const normalizePathLiteral = (raw) => {
+      let out = '';
+      let localChanged = false;
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch !== '\\') {
+          out += ch;
+          continue;
+        }
+        const next = raw[i + 1];
+        if (next === '\\') {
+          out += '\\\\';
+          i++;
+          continue;
+        }
+        out += '\\\\';
+        localChanged = true;
+      }
+      return { out, changed: localChanged };
+    };
+
+    const normalizeGenericLiteral = (raw) => {
+      let out = '';
+      let localChanged = false;
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch !== '\\') {
+          out += ch;
+          continue;
+        }
+        const next = raw[i + 1] || '';
+        if (/["\\/bfnrtu]/.test(next)) {
+          out += `\\${next}`;
+          i++;
+          continue;
+        }
+        out += '\\\\';
+        localChanged = true;
+      }
+      return { out, changed: localChanged };
+    };
+
+    let output = '';
+    let changed = false;
+
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i];
+      if (ch !== '"') {
+        output += ch;
+        continue;
+      }
+
+      output += ch;
+      i++;
+      let raw = '';
+      let escaped = false;
+      for (; i < input.length; i++) {
+        const cur = input[i];
+        if (!escaped && cur === '"') {
+          break;
+        }
+        raw += cur;
+        if (cur === '\\' && !escaped) {
+          escaped = true;
+        } else {
+          escaped = false;
+        }
+      }
+
+      const normalizer = looksLikeWindowsPath(raw) ? normalizePathLiteral : normalizeGenericLiteral;
+      const normalized = normalizer(raw);
+      changed = changed || normalized.changed;
+      output += normalized.out;
+
+      if (i < input.length && input[i] === '"') {
+        output += '"';
+      }
     }
-    return repaired;
+
+    return changed ? output : null;
   }
 
   _extractLooseKeyValueObject(text) {

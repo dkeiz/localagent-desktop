@@ -1,3 +1,41 @@
+const { resolvePathTokens, tokenizePath } = require('../path-tokens');
+
+function getPathTokenOptions(server) {
+  const context = server.getCurrentAgentContext?.()
+    || server.getCurrentExecutionContext?.()
+    || {};
+  return {
+    agentManager: server._agentManager || null,
+    sessionWorkspace: server._sessionWorkspace || null,
+    context
+  };
+}
+
+async function resolveToolPath(server, rawPath, fallback) {
+  if (!rawPath) {
+    return fallback;
+  }
+  return resolvePathTokens(rawPath, getPathTokenOptions(server));
+}
+
+async function toPortablePath(server, absolutePath) {
+  return tokenizePath(absolutePath, getPathTokenOptions(server));
+}
+
+async function tokenizeWorkspaceFileList(server, files = []) {
+  return Promise.all(files.map(async file => ({
+    ...file,
+    path: await toPortablePath(server, file.path)
+  })));
+}
+
+async function tokenizeWorkspaceSearchResults(server, results = []) {
+  return Promise.all(results.map(async result => ({
+    ...result,
+    path: await toPortablePath(server, result.path)
+  })));
+}
+
 function registerTerminalTools(server) {
   server.registerTool('run_command', {
     name: 'run_command',
@@ -23,8 +61,9 @@ function registerTerminalTools(server) {
     const { promisify } = require('util');
     const execAsync = promisify(exec);
 
+    const resolvedCwd = await resolveToolPath(server, params.cwd, process.cwd());
     const options = {
-      cwd: params.cwd || process.cwd(),
+      cwd: resolvedCwd,
       timeout: params.timeout || 30000,
       maxBuffer: 1024 * 1024 * 5,
       shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash'
@@ -45,9 +84,9 @@ function registerTerminalTools(server) {
         return {
           success: true,
           command: params.command,
-          cwd: options.cwd,
+          cwd: await toPortablePath(server, options.cwd),
           output_mode: 'file',
-          file_path: result.filePath,
+          file_path: await toPortablePath(server, result.filePath),
           file_name: result.fileName,
           file_size: result.size,
           line_count: lineCount,
@@ -59,7 +98,7 @@ function registerTerminalTools(server) {
       return {
         success: true,
         command: params.command,
-        cwd: options.cwd,
+        cwd: await toPortablePath(server, options.cwd),
         output_mode: 'inline',
         stdout: stdout.trim(),
         stderr: stderr.trim(),
@@ -75,9 +114,9 @@ function registerTerminalTools(server) {
         return {
           success: false,
           command: params.command,
-          cwd: options.cwd,
+          cwd: await toPortablePath(server, options.cwd),
           output_mode: 'file',
-          file_path: result.filePath,
+          file_path: await toPortablePath(server, result.filePath),
           file_name: result.fileName,
           summary: fullOutput.substring(0, 500),
           exitCode: error.code || 1
@@ -87,7 +126,7 @@ function registerTerminalTools(server) {
       return {
         success: false,
         command: params.command,
-        cwd: options.cwd,
+        cwd: await toPortablePath(server, options.cwd),
         output_mode: 'inline',
         stdout: error.stdout?.trim() || '',
         stderr: error.stderr?.trim() || error.message,
@@ -114,6 +153,10 @@ function registerTerminalTools(server) {
     const { spawn } = require('child_process');
     const fs = require('fs');
     const path = require('path');
+    const resolvedScriptPath = params.scriptPath
+      ? await resolveToolPath(server, params.scriptPath, params.scriptPath)
+      : null;
+    const pythonCwd = await resolveToolPath(server, params.cwd, process.cwd());
 
     return new Promise((resolve) => {
       let pythonArgs = [];
@@ -124,8 +167,8 @@ function registerTerminalTools(server) {
         tempFile = path.join(tempDir, `agent_script_${Date.now()}.py`);
         fs.writeFileSync(tempFile, params.code);
         pythonArgs = [tempFile];
-      } else if (params.scriptPath) {
-        pythonArgs = [params.scriptPath];
+      } else if (resolvedScriptPath) {
+        pythonArgs = [resolvedScriptPath];
       } else {
         resolve({ success: false, error: 'Either code or scriptPath is required' });
         return;
@@ -136,7 +179,7 @@ function registerTerminalTools(server) {
       }
 
       const python = spawn('python', pythonArgs, {
-        cwd: params.cwd || process.cwd(),
+        cwd: pythonCwd,
         timeout: 60000
       });
 
@@ -178,7 +221,8 @@ function registerTerminalTools(server) {
     if (!server._sessionWorkspace) return { error: 'Session workspace not initialized' };
     const sessionId = server.getCurrentSessionId() || 'default';
     const files = server._sessionWorkspace.listFiles(sessionId);
-    return { sessionId, fileCount: files.length, files };
+    const tokenizedFiles = await tokenizeWorkspaceFileList(server, files);
+    return { sessionId, fileCount: tokenizedFiles.length, files: tokenizedFiles };
   });
 
   server.registerTool('search_workspace', {
@@ -197,7 +241,8 @@ function registerTerminalTools(server) {
     if (!server._sessionWorkspace) return { error: 'Session workspace not initialized' };
     const sessionId = server.getCurrentSessionId() || 'default';
     const results = server._sessionWorkspace.searchFiles(sessionId, params.query);
-    return { sessionId, query: params.query, resultCount: results.length, results };
+    const tokenizedResults = await tokenizeWorkspaceSearchResults(server, results);
+    return { sessionId, query: params.query, resultCount: tokenizedResults.length, results: tokenizedResults };
   });
 }
 

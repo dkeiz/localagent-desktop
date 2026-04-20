@@ -64,7 +64,48 @@ async function resolvePathTokens(rawPath, options = {}) {
     return path.normalize(resolved);
 }
 
+function normalizeForTokenMatch(rawValue) {
+    if (rawValue === null || rawValue === undefined) {
+        return '';
+    }
+    const normalized = path.normalize(String(rawValue));
+    return normalized.replace(/\\/g, '/');
+}
+
+function isTokenMatch(pathValue, tokenRoot) {
+    if (!tokenRoot) return false;
+    const left = process.platform === 'win32' ? pathValue.toLowerCase() : pathValue;
+    const right = process.platform === 'win32' ? tokenRoot.toLowerCase() : tokenRoot;
+    if (left === right) return true;
+    return left.startsWith(`${right}/`);
+}
+
+async function tokenizePath(rawPath, options = {}) {
+    const normalizedPath = normalizeForTokenMatch(rawPath);
+    if (!normalizedPath) {
+        return normalizedPath;
+    }
+
+    const tokens = await buildPathTokenMap(options);
+    const tokenEntries = Object.entries(tokens)
+        .map(([token, absolutePath]) => ({ token, absolutePath: normalizeForTokenMatch(absolutePath) }))
+        .filter(entry => entry.absolutePath)
+        .sort((a, b) => b.absolutePath.length - a.absolutePath.length);
+
+    for (const entry of tokenEntries) {
+        if (!isTokenMatch(normalizedPath, entry.absolutePath)) {
+            continue;
+        }
+
+        const suffix = normalizedPath.slice(entry.absolutePath.length).replace(/^\/+/, '');
+        return suffix ? `${entry.token}/${suffix}` : entry.token;
+    }
+
+    return normalizedPath;
+}
+
 module.exports = {
     buildPathTokenMap,
-    resolvePathTokens
+    resolvePathTokens,
+    tokenizePath
 };
