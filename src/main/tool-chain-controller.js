@@ -11,7 +11,7 @@ class ToolChainController {
         this.dispatcher = dispatcher;
         this.mcpServer = mcpServer;
         this.db = db;
-        this.maxChainSteps = 10; // Prevent infinite loops
+        this.maxChainSteps = Number.POSITIVE_INFINITY;
         this.currentChain = []; // Track current tool chain for workflow learning
         this.stopped = false; // For aborting chains
         this.workflowManager = null; // Set via setWorkflowManager()
@@ -124,7 +124,7 @@ class ToolChainController {
         let finalResponse = null;
         let lastLLMResponse = null; // Track last response for fallback
 
-        const maxSteps = Math.max(1, Number(options.maxChainSteps) || this.maxChainSteps);
+        const maxSteps = await this._resolveMaxChainSteps(options);
 
         while (stepCount < maxSteps) {
             // Check if chain was stopped by user
@@ -402,6 +402,27 @@ Error: ${r.error}`;
         }
 
         return finalResponse;
+    }
+
+    async _resolveMaxChainSteps(options = {}) {
+        const fromOptions = Number(options.maxChainSteps);
+        if (Number.isFinite(fromOptions) && fromOptions > 0) {
+            return Math.max(1, Math.floor(fromOptions));
+        }
+
+        if (this.db && typeof this.db.getSetting === 'function') {
+            try {
+                const setting = await this.db.getSetting('tool_chain_max_steps');
+                const parsed = Number(setting);
+                if (Number.isFinite(parsed) && parsed > 0) {
+                    return Math.max(1, Math.floor(parsed));
+                }
+            } catch (error) {
+                // Fall through to default.
+            }
+        }
+
+        return this.maxChainSteps;
     }
 
     /**

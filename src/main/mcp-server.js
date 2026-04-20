@@ -501,7 +501,15 @@ class MCPServer extends EventEmitter {
     try {
       params = JSON.parse(candidate.slice(0, end));
     } catch (error) {
-      return { ok: false, reason: 'invalid_json' };
+      const repaired = this._repairJsonForWindowsPaths(candidate.slice(0, end));
+      if (!repaired) {
+        return { ok: false, reason: 'invalid_json' };
+      }
+      try {
+        params = JSON.parse(repaired);
+      } catch (_) {
+        return { ok: false, reason: 'invalid_json' };
+      }
     }
 
     if (!params || typeof params !== 'object' || Array.isArray(params)) {
@@ -509,6 +517,19 @@ class MCPServer extends EventEmitter {
     }
 
     return { ok: true, params };
+  }
+
+  _repairJsonForWindowsPaths(jsonText) {
+    const input = String(jsonText || '');
+    if (!input.includes('\\')) {
+      return null;
+    }
+    // Recover common malformed Windows paths in tool JSON by escaping backslashes that are not valid JSON escapes.
+    const repaired = input.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
+    if (repaired === input) {
+      return null;
+    }
+    return repaired;
   }
 
   _extractLooseKeyValueObject(text) {

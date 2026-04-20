@@ -58,5 +58,20 @@ module.exports = {
     assert.equal(recovered.length, 1, 'Expected malformed no-TOOL fragment to be recovered into one executable call');
     assert.equal(recovered[0].toolName, 'demo_echo', 'Expected recovered tool name');
     assert.equal(recovered[0].params.text, 'purple sun', 'Expected recovered parameter value');
+
+    const windowsPathRecovered = server.parseToolCall(
+      'TOOL:demo_echo{"text":"C:\\Users\\Иван\\Документы\\notes.txt"}'
+        .replace(/\\\\/g, '\\')
+    );
+    assert.equal(
+      windowsPathRecovered.length,
+      1,
+      'Expected single-backslash Windows path JSON to be repaired and parsed'
+    );
+    assert.includes(
+      windowsPathRecovered[0].params.text,
+      'Иван',
+      'Expected repaired path text to preserve non-English characters'
+    );
   }
 };
