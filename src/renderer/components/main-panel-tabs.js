@@ -1,7 +1,85 @@
 (function () {
     const SUBAGENT_MANAGER_TAB_ID = 'subagent-manager';
+    const SHARED_CHAT_MOUNT_KEY = '__agentSharedChatMountState';
     function getMessagesContainer() {
         return document.getElementById('messages-container');
+    }
+
+    function ensureSharedChatMountState() {
+        if (window[SHARED_CHAT_MOUNT_KEY]) {
+            return window[SHARED_CHAT_MOUNT_KEY];
+        }
+
+        const nodes = [
+            document.getElementById('messages-container')
+        ].filter(Boolean);
+
+        const placements = nodes.map(node => ({
+            node,
+            parent: node.parentElement,
+            nextSibling: node.nextSibling,
+            placeholder: null
+        }));
+
+        const state = { placements, mountedHost: null };
+        window[SHARED_CHAT_MOUNT_KEY] = state;
+        return state;
+    }
+
+    function restoreSharedChatToDefault() {
+        const state = window[SHARED_CHAT_MOUNT_KEY];
+        if (!state) return;
+
+        state.placements.forEach(item => {
+            if (!item?.node || !item?.parent) return;
+            if (item.nextSibling && item.nextSibling.parentElement === item.parent) {
+                item.parent.insertBefore(item.node, item.nextSibling);
+            } else {
+                item.parent.appendChild(item.node);
+            }
+            if (item.placeholder?.parentElement) {
+                item.placeholder.remove();
+            }
+            item.placeholder = null;
+        });
+        state.mountedHost = null;
+    }
+
+    function syncSharedChatMount(root) {
+        const host = root?.querySelector?.('[data-agent-ui-chat-host]') || null;
+        if (!host) {
+            restoreSharedChatToDefault();
+            return;
+        }
+
+        const state = ensureSharedChatMountState();
+        if (state.mountedHost === host) return;
+
+        state.placements.forEach(item => {
+            if (!item?.node) return;
+
+            if (!item.placeholder && item.parent) {
+                const ph = document.createElement('div');
+                ph.className = 'agent-shared-chat-placeholder';
+                if (item.node.id === 'messages-container') {
+                    ph.classList.add('agent-shared-chat-placeholder-messages');
+                    ph.style.flex = '1 1 auto';
+                    ph.style.minHeight = '0';
+                }
+                item.placeholder = ph;
+            }
+
+            if (item.parent && item.placeholder && !item.placeholder.parentElement) {
+                if (item.nextSibling && item.nextSibling.parentElement === item.parent) {
+                    item.parent.insertBefore(item.placeholder, item.nextSibling);
+                } else {
+                    item.parent.appendChild(item.placeholder);
+                }
+            }
+
+            host.appendChild(item.node);
+        });
+        state.mountedHost = host;
     }
 
     function emitActiveTabChanged(panel) {
@@ -126,6 +204,7 @@
             if (wrapper) wrapper.innerHTML = result.html;
             else root.innerHTML = result.html;
         }
+        syncSharedChatMount(root);
         hydrateAgentCharts(root);
     }
 
@@ -175,6 +254,7 @@
 
         const tab = panel.chatTabs.get(sessionId);
         if (!tab?.agentId) {
+            restoreSharedChatToDefault();
             root.hidden = true;
             root.innerHTML = '';
             updateAgentPanelStyle('');
@@ -184,6 +264,7 @@
         try {
             const ui = await window.electronAPI.agents.getChatUI(tab.agentId);
             if (!ui?.html) {
+                restoreSharedChatToDefault();
                 root.hidden = true;
                 root.innerHTML = '';
                 updateAgentPanelStyle('');
@@ -192,11 +273,13 @@
             root.innerHTML = ui.html;
             root.hidden = false;
             updateAgentPanelStyle(ui.css || '');
+            syncSharedChatMount(root);
             hydrateAgentCharts(root);
             bindAgentPanelActions(panel, root, tab.agentId);
             await sendAgentUiEvent(panel, sessionId, 'activated');
         } catch (error) {
             console.warn('Failed to render agent chat UI:', error);
+            restoreSharedChatToDefault();
             root.hidden = true;
             root.innerHTML = '';
             updateAgentPanelStyle('');

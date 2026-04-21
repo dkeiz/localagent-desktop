@@ -48,7 +48,10 @@ function stripToolPatterns(text) {
     }
   }
 
-  return result.trim();
+  return result
+    .replace(/<minimax:tool_call>[\s\S]*?<\/minimax:tool_call>/gi, '')
+    .replace(/<invoke\s+name\s*=\s*["'][^"']+["'][^>]*>[\s\S]*?<\/invoke>/gi, '')
+    .trim();
 }
 
 function stripReasoningBlocks(text) {

@@ -142,6 +142,36 @@ module.exports = {
     {
       const mcp = createServer();
       let turn = 0;
+      const dispatcher = {
+        async dispatch() {
+          turn++;
+          if (turn === 1) {
+            return {
+              content: '<minimax:tool_call><invoke name="demo_echo"><parameter name="text">ok-from-invoke</parameter></invoke></minimax:tool_call>',
+              reasoning: 'invoke-r1',
+              model: 'demo-model',
+              renderContext: { provider: 'ollama', model: 'demo-model', runtimeConfig: { reasoning: { visibility: 'show' } } }
+            };
+          }
+          return {
+            content: 'invoke done',
+            reasoning: 'invoke-r2',
+            model: 'demo-model',
+            renderContext: { provider: 'ollama', model: 'demo-model', runtimeConfig: { reasoning: { visibility: 'show' } } }
+          };
+        }
+      };
+
+      const chain = new ToolChainController(dispatcher, mcp, db);
+      const result = await chain.executeWithChaining('hello', [], {});
+      assert.equal(result.content, 'invoke done', 'Expected invoke-style tool call to execute and continue chain');
+      assert.equal(result.chain.steps, 2, 'Expected invoke-style call to trigger second step');
+      assert.ok(result.chain.tools.includes('demo_echo'), 'Expected invoke-style call to record demo_echo tool');
+    }
+
+    {
+      const mcp = createServer();
+      let turn = 0;
       const syntheticMessages = [];
       const dispatcher = {
         async dispatch() {

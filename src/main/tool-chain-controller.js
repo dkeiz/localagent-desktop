@@ -62,7 +62,7 @@ class ToolChainController {
      */
     stripToolPatterns(text) {
         if (!text) return text;
-        return text.replace(/TOOL\s*:\s*[A-Za-z0-9_]+\s*\{/gi, (match, offset) => {
+        const withoutToolCalls = text.replace(/TOOL\s*:\s*[A-Za-z0-9_]+\s*\{/gi, (match, offset) => {
             // Find matching closing brace with nesting
             const startIdx = offset + match.length - 1; // position of opening {
             let depth = 1;
@@ -88,7 +88,82 @@ class ToolChainController {
             }
             // Return empty string to remove the entire TOOL:name{...} pattern
             return '\x00'.repeat(i - offset); // placeholder
-        }).replace(/\x00+/g, '').trim();
+        }).replace(/\x00+/g, '');
+
+        // Also remove Minimax-style invoke wrappers if present in plain output.
+        return withoutToolCalls
+            .replace(/<minimax:tool_call>[\s\S]*?<\/minimax:tool_call>/gi, '')
+            .replace(/<invoke\s+name\s*=\s*["'][^"']+["'][^>]*>[\s\S]*?<\/invoke>/gi, '')
+            .trim();
+    }
+
+    _decodeXmlEntities(text) {
+        return String(text || '')
+            .replace(/&quot;/gi, '"')
+            .replace(/&apos;/gi, "'")
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&amp;/gi, '&');
+    }
+
+    _coerceInvokeParamValue(rawValue) {
+        const value = this._decodeXmlEntities(rawValue).trim();
+        if (!value) return '';
+
+        if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('[') && value.endsWith(']'))) {
+            try {
+                return JSON.parse(value);
+            } catch (_) {
+                return value;
+            }
+        }
+
+        if (/^-?\d+(\.\d+)?$/.test(value)) {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) {
+                return parsed;
+            }
+        }
+
+        if (/^(true|false)$/i.test(value)) {
+            return value.toLowerCase() === 'true';
+        }
+
+        if (/^null$/i.test(value)) {
+            return null;
+        }
+
+        return value;
+    }
+
+    _normalizeInvokeToolCalls(text) {
+        const source = String(text || '');
+        const invokePattern = /<invoke\s+name\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/invoke>/gi;
+        const toolLines = [];
+        let match;
+
+        while ((match = invokePattern.exec(source)) !== null) {
+            const toolName = String(match[1] || '').trim();
+            if (!toolName) continue;
+
+            const params = {};
+            const body = String(match[2] || '');
+            const paramPattern = /<parameter\s+name\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/parameter>/gi;
+            let paramMatch;
+            while ((paramMatch = paramPattern.exec(body)) !== null) {
+                const key = String(paramMatch[1] || '').trim();
+                if (!key) continue;
+                params[key] = this._coerceInvokeParamValue(paramMatch[2] || '');
+            }
+
+            toolLines.push(`TOOL:${toolName}${JSON.stringify(params)}`);
+        }
+
+        if (toolLines.length === 0) {
+            return source;
+        }
+
+        return `${source}\n${toolLines.join('\n')}`;
     }
 
     _shouldSkipDuplicate(call) {
@@ -175,7 +250,8 @@ class ToolChainController {
             lastLLMResponse = response;
 
             // Parse tool calls from response
-            const toolCalls = this.mcpServer.parseToolCall(response.content);
+            const normalizedContent = this._normalizeInvokeToolCalls(response.content);
+            const toolCalls = this.mcpServer.parseToolCall(normalizedContent);
             await this._emitTrace(trace, 'onAssistantMessage', {
                 step: stepCount,
                 content: response.content,

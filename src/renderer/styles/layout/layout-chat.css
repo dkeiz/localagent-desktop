@@ -129,6 +129,11 @@
     flex-shrink: 0;
 }
 
+.agent-shared-chat-placeholder-messages {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
 .agent-files-shell {
     border: 1px solid var(--border-color);
     border-radius: 6px;

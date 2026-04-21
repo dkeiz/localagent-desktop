@@ -47,6 +47,7 @@ function getAgentState(agentInfo) {
             expanded: new Set(DEFAULT_EXPANDED),
             openFiles: [],
             activeFile: '',
+            workspaceTab: 'chat',
             pendingRootPath: '',
             allowedOutsideRoots: new Set()
         };
@@ -202,6 +203,7 @@ function ensureOpenFile(state, relativePath) {
         state.openFiles = state.openFiles.slice(0, MAX_OPEN_TABS);
     }
     state.activeFile = normalized;
+    state.workspaceTab = normalized;
 }
 
 function closeOpenFile(state, relativePath) {
@@ -213,19 +215,25 @@ function closeOpenFile(state, relativePath) {
     if (state.activeFile === normalized) {
         state.activeFile = next[0] || '';
     }
+
+    if (state.workspaceTab === normalized) {
+        state.workspaceTab = next[0] || 'chat';
+    }
 }
 
 function renderOpenTabs(state) {
-    if (!state.openFiles.length) {
-        return '<div class="agent-vs-subtabs-empty">Open files will appear here.</div>';
-    }
-
-    return state.openFiles.map(relativePath => {
+    const chatActive = state.workspaceTab === 'chat';
+    const chatTab = `<button type="button" class="agent-vs-chat-tab${chatActive ? ' active' : ''}"
+        data-agent-ui-action="set-workspace-tab"
+        data-tab-key="chat"
+        title="Chat with this agent while browsing files">Chat here</button>`;
+    const fileTabs = state.openFiles.map(relativePath => {
         const fileName = path.basename(relativePath);
-        const isActive = relativePath === state.activeFile;
+        const isActive = relativePath === state.workspaceTab;
         return `<div class="agent-vs-subtab${isActive ? ' active' : ''}">
             <button type="button" class="agent-vs-subtab-main"
-                data-agent-ui-action="open-file"
+                data-agent-ui-action="set-workspace-tab"
+                data-tab-key="${escapeHtml(relativePath)}"
                 data-relative-path="${escapeHtml(relativePath)}"
                 title="${escapeHtml(relativePath)}">${escapeHtml(fileName)}</button>
             <button type="button" class="agent-vs-subtab-close"
@@ -234,6 +242,8 @@ function renderOpenTabs(state) {
                 title="Close">×</button>
         </div>`;
     }).join('');
+
+    return `${chatTab}${fileTabs}`;
 }
 
 function canAccessRoot(agentinRoot, state, targetRoot) {
@@ -301,23 +311,31 @@ function renderPanel(agentInfo) {
     if (state.activeFile && !state.openFiles.includes(state.activeFile)) {
         state.activeFile = '';
     }
+    if (state.workspaceTab !== 'chat' && !state.openFiles.includes(state.workspaceTab)) {
+        state.workspaceTab = state.activeFile || 'chat';
+    }
 
-    const preview = state.activeFile
-        ? readFileSafe(activeRoot, state.activeFile)
+    const selectedFile = state.workspaceTab !== 'chat'
+        ? state.workspaceTab
+        : state.activeFile;
+
+    const preview = selectedFile
+        ? readFileSafe(activeRoot, selectedFile)
         : { success: false, error: 'Select a file from the explorer.' };
 
-    const previewText = preview.success ? preview.content : preview.error;
-    const previewMeta = state.activeFile ? escapeHtml(state.activeFile) : 'No file selected';
+    const previewText = preview.success ? preview.content : '';
+    const previewMeta = selectedFile ? escapeHtml(selectedFile) : '';
+    const showChatWorkspace = state.workspaceTab === 'chat';
 
     return `<section class="agent-vs-shell" aria-label="File Manager Explorer">
         <div class="agent-vs-toolbar">
             <div class="agent-vs-toolbar-left">
                 <strong>Explorer</strong>
-                <button type="button" class="agent-vs-btn" data-agent-ui-action="refresh">Refresh</button>
-                <button type="button" class="agent-vs-btn" data-agent-ui-action="use-default-root">Use agentin</button>
-                <button type="button" class="agent-vs-btn" data-agent-ui-action="use-agent-home">Use agent home</button>
+                <button type="button" class="agent-vs-btn agent-vs-open-folder" data-agent-ui-action="open-folder">Open Folder</button>
             </div>
-            <div class="agent-vs-root" title="${escapeHtml(activeRoot)}">${escapeHtml(activeRoot)}</div>
+            <div class="agent-vs-workspace-strip">
+                <div class="agent-vs-subtabs">${renderOpenTabs(state)}</div>
+            </div>
         </div>
 
         ${renderPermissionPrompt(state, agentinRoot)}
@@ -327,9 +345,13 @@ function renderPanel(agentInfo) {
                 ${renderExplorerRows(rows, state.activeFile)}
             </div>
             <div class="agent-vs-editor">
-                <div class="agent-vs-subtabs">${renderOpenTabs(state)}</div>
-                <div class="agent-vs-preview-head">${previewMeta}</div>
-                <pre class="agent-vs-preview">${escapeHtml(previewText)}</pre>
+                <div class="agent-vs-chat-workspace"${showChatWorkspace ? '' : ' hidden'}>
+                    <div class="agent-vs-chat-host" data-agent-ui-chat-host></div>
+                </div>
+                <div class="agent-vs-file-workspace"${showChatWorkspace ? ' hidden' : ''}>
+                    <div class="agent-vs-preview-head">${previewMeta}</div>
+                    <pre class="agent-vs-preview">${escapeHtml(previewText)}</pre>
+                </div>
             </div>
         </div>
     </section>`;
@@ -345,20 +367,21 @@ const PANEL_CSS = `
 }
 
 .agent-vs-toolbar {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.75rem;
+    display: grid;
+    grid-template-columns: minmax(180px, 36%) 1fr;
     align-items: center;
-    padding: 0.5rem 0.6rem;
+    padding: 0.5rem 0;
     border-bottom: 1px solid var(--border-color);
     background: rgba(127, 127, 127, 0.06);
 }
 
 .agent-vs-toolbar-left {
     display: inline-flex;
-    gap: 0.35rem;
+    gap: 0.5rem;
     align-items: center;
-    flex-wrap: wrap;
+    padding: 0 0.6rem;
+    border-right: 1px solid var(--border-color);
+    min-height: 100%;
 }
 
 .agent-vs-btn {
@@ -371,13 +394,14 @@ const PANEL_CSS = `
     cursor: pointer;
 }
 
-.agent-vs-root {
-    font-size: 0.72rem;
-    color: var(--text-secondary);
-    max-width: 42%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.agent-vs-workspace-strip {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+    flex: 1;
+    justify-content: flex-start;
+    margin-left: 0;
+    padding: 0 0.3rem;
 }
 
 .agent-vs-permission {
@@ -403,7 +427,8 @@ const PANEL_CSS = `
 .agent-vs-body {
     display: grid;
     grid-template-columns: minmax(180px, 36%) 1fr;
-    min-height: 340px;
+    min-height: 56vh;
+    height: 56vh;
 }
 
 .agent-vs-tree {
@@ -457,15 +482,27 @@ const PANEL_CSS = `
     display: flex;
     flex-direction: column;
     min-width: 0;
+    overflow: hidden;
+}
+
+.agent-vs-open-folder {
+    white-space: nowrap;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.55rem;
+    align-self: center;
+    border-radius: 4px;
 }
 
 .agent-vs-subtabs {
     display: flex;
     align-items: stretch;
     gap: 0.2rem;
-    padding: 0.3rem 0.3rem 0;
-    border-bottom: 1px solid var(--border-color);
+    padding-top: 0.2rem;
     overflow-x: auto;
+    min-width: 0;
+    flex: 1;
+    border-bottom: none;
+    margin-left: 0;
 }
 
 .agent-vs-subtabs-empty {
@@ -483,6 +520,25 @@ const PANEL_CSS = `
     border-top-right-radius: 6px;
     background: rgba(127, 127, 127, 0.06);
     overflow: hidden;
+}
+
+.agent-vs-chat-tab {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border-color);
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    background: rgba(127, 127, 127, 0.03);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.agent-vs-chat-tab.active {
+    background: rgba(56, 139, 253, 0.2);
 }
 
 .agent-vs-subtab.active {
@@ -525,10 +581,50 @@ const PANEL_CSS = `
     margin: 0;
     padding: 0.6rem;
     overflow: auto;
-    max-height: 56vh;
+    max-height: none;
+    height: 100%;
     font-size: 0.77rem;
     line-height: 1.42;
     white-space: pre-wrap;
+}
+
+.agent-vs-chat-workspace {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    border-top: 1px solid var(--border-color);
+}
+
+.agent-vs-chat-host {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+}
+
+.agent-vs-file-workspace {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+.agent-vs-chat-workspace[hidden],
+.agent-vs-file-workspace[hidden] {
+    display: none !important;
+}
+
+.agent-vs-chat-host .messages-container {
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    margin: 0;
+    border-radius: 0;
 }
 
 .agent-vs-empty {
@@ -540,6 +636,8 @@ const PANEL_CSS = `
 @media (max-width: 900px) {
     .agent-vs-body {
         grid-template-columns: 1fr;
+        min-height: 44vh;
+        height: 44vh;
     }
 
     .agent-vs-tree {
@@ -548,8 +646,8 @@ const PANEL_CSS = `
         border-bottom: 1px solid var(--border-color);
     }
 
-    .agent-vs-root {
-        max-width: 58%;
+    .agent-vs-workspace-strip {
+        margin-left: 0.35rem;
     }
 }
 `;
@@ -579,6 +677,27 @@ module.exports = {
                         return { success: true, html: renderPanel(agentInfo) };
                     }
                     return attemptRootChange(agentInfo, { directoryPath: home });
+                },
+                'open-folder'({ agentInfo }) {
+                    const home = normalizeDir(agentInfo?.folderPath || '');
+                    if (home && fs.existsSync(home) && fs.statSync(home).isDirectory()) {
+                        return attemptRootChange(agentInfo, { directoryPath: home });
+                    }
+                    const { defaultRoot } = getAgentState(agentInfo);
+                    return attemptRootChange(agentInfo, { directoryPath: defaultRoot });
+                },
+                'set-workspace-tab'({ agentInfo, payload }) {
+                    const { state } = getAgentState(agentInfo);
+                    const tabKey = String(payload.tabKey || '').replace(/\\/g, '/');
+                    if (tabKey === 'chat') {
+                        state.workspaceTab = 'chat';
+                        return { success: true, html: renderPanel(agentInfo) };
+                    }
+                    if (tabKey && state.openFiles.includes(tabKey)) {
+                        state.workspaceTab = tabKey;
+                        state.activeFile = tabKey;
+                    }
+                    return { success: true, html: renderPanel(agentInfo) };
                 },
                 'set-root-directory'({ agentInfo, payload }) {
                     return attemptRootChange(agentInfo, payload);
