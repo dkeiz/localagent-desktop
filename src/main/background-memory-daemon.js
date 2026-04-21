@@ -33,6 +33,7 @@ class BackgroundMemoryDaemon {
         this._tickTimer = null;
         this._tickIndex = 0;
         this._retryTimer = null;
+        this._tickInProgress = false;
 
         // Escalating intervals in milliseconds
         this.TICK_INTERVALS = [
@@ -167,16 +168,8 @@ class BackgroundMemoryDaemon {
 
     async _onTick() {
         if (!this.running) return;
-
-        console.log(`[MemoryDaemon] Tick ${this._tickIndex}`);
-        if (this.eventBus) {
-            this.eventBus.publish('daemon:tick', { tickIndex: this._tickIndex });
-        }
-
-        // Check resource gate
-        const resources = await this._checkResources();
-        if (!resources.available) {
-            console.log(`[MemoryDaemon] Resources busy (CPU: ${resources.cpu}%, GPU: ${resources.gpu}%), retrying in 5 min`);
+        if (this._tickInProgress) {
+            console.log('[MemoryDaemon] Tick already in progress, skipping scheduled overlap');
             this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
             if (typeof this._retryTimer.unref === 'function') {
                 this._retryTimer.unref();
@@ -184,23 +177,43 @@ class BackgroundMemoryDaemon {
             return;
         }
 
-        // Check if user is actively chatting
-        if (this._userActive) {
-            console.log('[MemoryDaemon] User is active, deferring tick');
-            this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
-            if (typeof this._retryTimer.unref === 'function') {
-                this._retryTimer.unref();
-            }
-            return;
-        }
+        this._tickInProgress = true;
 
         try {
+            console.log(`[MemoryDaemon] Tick ${this._tickIndex}`);
+            if (this.eventBus) {
+                this.eventBus.publish('daemon:tick', { tickIndex: this._tickIndex });
+            }
+
+            // Check resource gate
+            const resources = await this._checkResources();
+            if (!resources.available) {
+                console.log(`[MemoryDaemon] Resources busy (CPU: ${resources.cpu}%, GPU: ${resources.gpu}%), retrying in 5 min`);
+                this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
+                if (typeof this._retryTimer.unref === 'function') {
+                    this._retryTimer.unref();
+                }
+                return;
+            }
+
+            // Check if user is actively chatting
+            if (this._userActive) {
+                console.log('[MemoryDaemon] User is active, deferring tick');
+                this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
+                if (typeof this._retryTimer.unref === 'function') {
+                    this._retryTimer.unref();
+                }
+                return;
+            }
+
             await this._executeTick();
         } catch (err) {
             console.error('[MemoryDaemon] Tick failed:', err.message);
             if (this.eventBus) {
                 this.eventBus.publish('daemon:error', { daemon: 'memory', error: err.message });
             }
+        } finally {
+            this._tickInProgress = false;
         }
 
         // Schedule next tick
@@ -208,6 +221,46 @@ class BackgroundMemoryDaemon {
         const nextDelay = this._getNextTickDelay();
         console.log(`[MemoryDaemon] Next tick in ${Math.round(nextDelay / 60000)} minutes`);
         this._scheduleTick(nextDelay);
+    }
+
+    async runNow() {
+        if (!this.running) {
+            return { success: false, error: 'Memory daemon is not running' };
+        }
+        if (this._tickInProgress) {
+            return { success: false, error: 'Memory daemon tick already in progress' };
+        }
+
+        this._tickInProgress = true;
+        try {
+            console.log(`[MemoryDaemon] Manual tick requested at tick index ${this._tickIndex}`);
+            if (this.eventBus) {
+                this.eventBus.publish('daemon:tick', { tickIndex: this._tickIndex, manual: true });
+            }
+
+            const resources = await this._checkResources();
+            if (!resources.available) {
+                return {
+                    success: false,
+                    error: `Resources busy (CPU: ${resources.cpu}%, GPU: ${resources.gpu}%)`
+                };
+            }
+
+            if (this._userActive) {
+                return { success: false, error: 'User is active, manual tick deferred' };
+            }
+
+            await this._executeTick();
+            return { success: true, executed: true, tickIndex: this._tickIndex };
+        } catch (err) {
+            console.error('[MemoryDaemon] Manual tick failed:', err.message);
+            if (this.eventBus) {
+                this.eventBus.publish('daemon:error', { daemon: 'memory', error: err.message });
+            }
+            return { success: false, error: err.message };
+        } finally {
+            this._tickInProgress = false;
+        }
     }
 
     // ==================== Task Execution ====================

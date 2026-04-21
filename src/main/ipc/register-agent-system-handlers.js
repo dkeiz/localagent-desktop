@@ -328,6 +328,12 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     return memoryDaemon.getStatus();
   });
 
+  ipcMain.handle('daemon:memory-run-now', async () => {
+    if (testClientMode) return { error: 'Disabled in --testclient mode' };
+    if (!memoryDaemon) return { error: 'Memory daemon not initialized' };
+    return memoryDaemon.runNow();
+  });
+
   ipcMain.handle('daemon:workflow-start', async () => {
     if (testClientMode) return { error: 'Disabled in --testclient mode' };
     if (!workflowScheduler) return { error: 'Workflow scheduler not initialized' };

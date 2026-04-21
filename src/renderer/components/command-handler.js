@@ -444,6 +444,38 @@ class CommandHandler {
             }
         });
 
+        // /daemonrun — trigger memory daemon tick immediately
+        this.commands.set('/daemonrun', {
+            description: 'Run one memory daemon tick immediately',
+            execute: async () => {
+                try {
+                    const result = await window.electronAPI.daemon.memoryRunNow();
+                    if (result?.success) {
+                        return { output: '✅ Memory daemon manual tick completed.', style: 'system' };
+                    }
+                    return { output: `⚠️ Memory daemon manual tick not run: ${result?.error || 'unknown reason'}`, style: 'system' };
+                } catch (e) {
+                    return { output: `Daemon run error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
+        // /daemonpush — alias for /daemonrun
+        this.commands.set('/daemonpush', {
+            description: 'Alias for /daemonrun',
+            execute: async () => {
+                try {
+                    const result = await window.electronAPI.daemon.memoryRunNow();
+                    if (result?.success) {
+                        return { output: '✅ Memory daemon manual tick completed.', style: 'system' };
+                    }
+                    return { output: `⚠️ Memory daemon manual tick not run: ${result?.error || 'unknown reason'}`, style: 'system' };
+                } catch (e) {
+                    return { output: `Daemon run error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+
         // /loopstop — stop the agent loop (existing, separate from daemon)
         this.commands.set('/loopstop', {
             description: 'Stop the agent loop (automemory triggers)',

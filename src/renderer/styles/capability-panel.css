@@ -196,17 +196,30 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-1);
+    width: 100%;
     padding: var(--space-2);
     background: color-mix(in srgb, var(--success), transparent 88%);
     border-radius: var(--radius-sm);
+    border: none;
     margin-top: var(--space-2);
     font-size: 10px;
     color: #059669;
+    cursor: pointer;
+    text-align: center;
 }
 
 .safe-tools-info.inactive {
     background: rgba(107, 114, 128, 0.1);
     color: #6b7280;
+}
+
+.safe-tools-info:hover {
+    filter: brightness(0.98);
+}
+
+.safe-tools-info:focus-visible {
+    outline: 2px solid color-mix(in srgb, #059669, white 45%);
+    outline-offset: 1px;
 }
 
 /* Group Colors */

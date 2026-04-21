@@ -17,6 +17,7 @@ class Sidebar {
         this.setupCollapsibleSections();  // Added collapsible functionality
         this.setupCapabilityListener();   // Keep MCP tab in sync with capability changes
         this.setupSettingsDock();
+        this.updateToolIndicators();
     }
 
     resetUnseenToolCount() {
@@ -57,6 +58,13 @@ class Sidebar {
                 this.switchTab(tab);
             });
         });
+
+        const toolActivityButton = document.getElementById('safe-tools-info');
+        if (toolActivityButton) {
+            toolActivityButton.addEventListener('click', () => {
+                this.switchTab('tools');
+            });
+        }
     }
 
     switchTab(tabName) {
@@ -69,8 +77,8 @@ class Sidebar {
             }
         });
 
-        // Reset unseen tool count when switching to tools tab
-        if (tabName === 'tools') {
+        // Reset unseen tool count when switching to activity-heavy tabs
+        if (tabName === 'tools' || tabName === 'mcp') {
             this.resetUnseenToolCount();
         }
 
@@ -725,6 +733,12 @@ class Sidebar {
         if (badge) {
             badge.textContent = this.unseenToolCount > 0 ? this.unseenToolCount : '';
             badge.style.display = this.unseenToolCount > 0 ? 'inline-block' : 'none';
+        }
+
+        // Repurpose capability footer as live tool-activity indicator
+        const safeInfo = document.getElementById('safe-tools-info');
+        if (safeInfo) {
+            safeInfo.textContent = `🔧 Tool activity: ${this.unseenToolCount} recent`;
         }
 
         // Update MCP tab activity

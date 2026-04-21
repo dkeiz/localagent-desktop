@@ -139,6 +139,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
     memoryStart: () => ipcRenderer.invoke('daemon:memory-start'),
     memoryStop: () => ipcRenderer.invoke('daemon:memory-stop'),
     memoryStatus: () => ipcRenderer.invoke('daemon:memory-status'),
+    memoryRunNow: () => ipcRenderer.invoke('daemon:memory-run-now'),
     workflowStart: () => ipcRenderer.invoke('daemon:workflow-start'),
     workflowStop: () => ipcRenderer.invoke('daemon:workflow-stop'),
     workflowStatus: () => ipcRenderer.invoke('daemon:workflow-status'),
