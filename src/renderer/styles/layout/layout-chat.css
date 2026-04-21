@@ -601,3 +601,110 @@ button.agent-file-row:hover {
     opacity: 1;
 }
 
+.subagent-manager-tab {
+    padding: 0.75rem;
+    display: grid;
+    gap: 0.6rem;
+}
+
+.subagent-manager-title {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.subagent-manager-empty {
+    padding: 0.8rem;
+    border: 1px dashed var(--border-color);
+    border-radius: var(--border-radius);
+    color: var(--text-secondary);
+}
+
+.subagent-manager-list {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.subagent-manager-item {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--card-bg);
+    padding: 0.55rem;
+    display: grid;
+    gap: 0.25rem;
+    transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.subagent-manager-item:hover {
+    border-color: var(--primary-color);
+    background: var(--hover-bg);
+}
+
+.subagent-manager-item-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.6rem;
+    align-items: center;
+}
+
+.subagent-manager-item-meta {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.subagent-manager-item-task {
+    font-size: 0.82rem;
+}
+
+.subagent-manager-item-actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.subagent-manager-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 86px;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+}
+
+.subagent-manager-status.status-running {
+    color: #1f7a3d;
+    border-color: #6ac48f;
+    background: color-mix(in srgb, #6ac48f, transparent 85%);
+}
+
+.subagent-manager-status.status-queued {
+    color: #875a06;
+    border-color: #f1c46a;
+    background: color-mix(in srgb, #f1c46a, transparent 84%);
+}
+
+.subagent-manager-status.status-stopped {
+    color: #3e4c5f;
+    border-color: #a9b8c8;
+    background: color-mix(in srgb, #a9b8c8, transparent 82%);
+}
+
+.subagent-manager-status.status-failed,
+.subagent-manager-status.status-task_failed {
+    color: #8b1c1c;
+    border-color: #e18b8b;
+    background: color-mix(in srgb, #e18b8b, transparent 82%);
+}
+
+.subagent-manager-status.status-task_complete,
+.subagent-manager-status.status-completed {
+    color: #175f44;
+    border-color: #63cba0;
+    background: color-mix(in srgb, #63cba0, transparent 82%);
+}
+

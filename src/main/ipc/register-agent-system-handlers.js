@@ -64,6 +64,7 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     agentManager,
     pluginManager,
     eventBus,
+    chainController,
     memoryDaemon,
     workflowScheduler,
     sessionInitManager,
@@ -306,6 +307,54 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
       return await pluginManager.handleAgentChatUIEvent(agentInfo, eventName, payload);
     } catch (error) {
       return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('subagents:list-runs', async (event, filters = {}) => {
+    if (!agentManager || typeof agentManager.listSubagentRuns !== 'function') {
+      return [];
+    }
+
+    try {
+      return await agentManager.listSubagentRuns({
+        limit: Math.max(1, Number(filters?.limit) || 50),
+        status: filters?.status || null,
+        parentSessionId: filters?.parentSessionId ?? null,
+        subagentId: filters?.subagentId ?? null
+      });
+    } catch (error) {
+      console.error('[IPC] Failed to list subagent runs:', error.message);
+      return [];
+    }
+  });
+
+  ipcMain.handle('subagents:stop-run', async (event, runId) => {
+    if (!agentManager || typeof agentManager.cancelSubagentRun !== 'function') {
+      return { success: false, error: 'Subagent cancellation is unavailable' };
+    }
+
+    try {
+      const cancelled = await agentManager.cancelSubagentRun(runId, 'Stopped from UI');
+      // Reuse existing in-chat stop behavior as a best-effort abort for any in-flight stream.
+      const stopped = aiService?.stopGeneration ? aiService.stopGeneration() : false;
+      if (chainController?.stopChain) {
+        chainController.stopChain();
+      }
+      return { ...cancelled, stopped };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('subagents:get-run', async (event, runId) => {
+    if (!agentManager || typeof agentManager.getSubagentRun !== 'function') {
+      return null;
+    }
+    try {
+      return await agentManager.getSubagentRun(runId);
+    } catch (error) {
+      console.error('[IPC] Failed to fetch subagent run:', error.message);
+      return null;
     }
   });
   ipcMain.handle('daemon:memory-start', async () => {

@@ -284,6 +284,33 @@ class SubtaskRuntime {
         return this.getRun(runId);
     }
 
+    cancelRun(runId, reason = 'Stopped by user') {
+        const run = this.getRun(runId);
+        if (!run) {
+            throw new Error(`Subtask run not found: ${runId}`);
+        }
+
+        const message = String(reason || 'Stopped by user');
+        const completedAt = new Date().toISOString();
+        const payload = {
+            run_id: run.run_id,
+            completed_at: completedAt,
+            stopped: true,
+            reason: message
+        };
+
+        writeJson(run.result_path, payload);
+        this.updateStatus(runId, {
+            status: 'stopped',
+            summary: message,
+            error: null,
+            completed_at: completedAt
+        });
+
+        appendTraceSection(run.trace_path, `stopped @ ${completedAt}`, message);
+        return this.getRun(runId);
+    }
+
     async deliverToParent(runId, delivery) {
         const run = this.getRun(runId);
         if (!run || run.parent_session_id === null || run.parent_session_id === undefined) {

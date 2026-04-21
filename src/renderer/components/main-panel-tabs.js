@@ -1,4 +1,5 @@
 (function () {
+    const SUBAGENT_MANAGER_TAB_ID = 'subagent-manager';
     function getMessagesContainer() {
         return document.getElementById('messages-container');
     }
@@ -257,6 +258,9 @@
         if (!sessionId || !panel.chatTabs.has(sessionId)) {
             return;
         }
+        if (String(sessionId) === SUBAGENT_MANAGER_TAB_ID) {
+            return;
+        }
 
         try {
             const oldTab = panel.chatTabs.get(sessionId);
@@ -389,6 +393,130 @@
         } catch (error) {
             console.error('Error opening agent chat:', error);
         }
+    }
+
+    async function renderSubagentManagerTab(panel) {
+        const container = getMessagesContainer();
+        if (!container) return;
+
+        const runs = window.electronAPI?.subagents?.listRuns
+            ? await window.electronAPI.subagents.listRuns({ limit: 100 })
+            : [];
+
+        container.innerHTML = '';
+        const root = document.createElement('div');
+        root.className = 'subagent-manager-tab';
+
+        const title = document.createElement('h3');
+        title.className = 'subagent-manager-title';
+        title.textContent = 'Subagent Manager';
+        root.appendChild(title);
+
+        if (!runs.length) {
+            const empty = document.createElement('div');
+            empty.className = 'subagent-manager-empty';
+            empty.textContent = 'No subagent runs yet.';
+            root.appendChild(empty);
+            container.appendChild(root);
+            return;
+        }
+
+        const list = document.createElement('div');
+        list.className = 'subagent-manager-list';
+        runs.forEach((run) => {
+            const item = document.createElement('div');
+            item.className = 'subagent-manager-item';
+
+            const agentName = String(run.agent_name || `Subagent ${run.subagent_id || ''}`.trim());
+            const status = String(run.status || 'unknown');
+            const normalizedStatus = status.toLowerCase();
+            const taskText = String(run.task || '').trim() || 'No task';
+            const statusClass = normalizedStatus.replace(/[^a-z0-9_-]/g, '-');
+
+            item.innerHTML = `
+                <div class="subagent-manager-item-head">
+                    <strong>${agentName}</strong>
+                    <span class="subagent-manager-status status-${statusClass}">${status}</span>
+                </div>
+                <div class="subagent-manager-item-meta">id: ${run.run_id} | parent: ${run.parent_session_id ?? 'none'} | sub: ${run.subagent_id ?? 'n/a'}</div>
+                <div class="subagent-manager-item-task">${taskText}</div>
+            `;
+
+            const actions = document.createElement('div');
+            actions.className = 'subagent-manager-item-actions';
+
+            const openBtn = document.createElement('button');
+            openBtn.type = 'button';
+            openBtn.className = 'compact-btn';
+            openBtn.textContent = 'Open Chat';
+            openBtn.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                await ensureSubagentChat(panel, {
+                    runId: run.run_id,
+                    childSessionId: run.child_session_id,
+                    child_session_id: run.child_session_id,
+                    subagentId: run.subagent_id,
+                    subagent_id: run.subagent_id,
+                    agentName,
+                    agent_name: agentName,
+                    parentSessionId: run.parent_session_id,
+                    parent_session_id: run.parent_session_id,
+                    subagentMode: run.subagent_mode || 'no_ui',
+                    subagent_mode: run.subagent_mode || 'no_ui',
+                    __eventType: status === 'queued' || status === 'running' ? 'subagent:started' : 'subagent:completed'
+                }, { activate: true });
+            });
+
+            const stopBtn = document.createElement('button');
+            stopBtn.type = 'button';
+            stopBtn.className = 'compact-btn';
+            stopBtn.textContent = 'Stop';
+            const runStatus = normalizedStatus;
+            const canStop = runStatus === 'queued' || runStatus === 'running' || runStatus === 'cancelling';
+            stopBtn.disabled = !canStop;
+            stopBtn.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                if (!canStop || !window.electronAPI?.subagents?.stopRun) return;
+                const result = await window.electronAPI.subagents.stopRun(run.run_id);
+                if (!result?.success && panel.showNotification) {
+                    panel.showNotification(result?.error || 'Failed to stop subagent run', 'error');
+                }
+                await refreshSubagentManagerTab(panel);
+            });
+
+            actions.appendChild(openBtn);
+            actions.appendChild(stopBtn);
+            item.appendChild(actions);
+            list.appendChild(item);
+        });
+
+        root.appendChild(list);
+        container.appendChild(root);
+    }
+
+    async function openSubagentManagerTab(panel) {
+        if (!panel.chatTabs.has(SUBAGENT_MANAGER_TAB_ID)) {
+            saveCurrentTabMessages(panel);
+            panel.chatTabs.set(SUBAGENT_MANAGER_TAB_ID, {
+                title: 'Subagent Manager',
+                agentIcon: '🛰️',
+                isSubagentManager: true,
+                messagesHTML: '',
+                isSending: false,
+                loadingId: null,
+                scrollTop: 0,
+                followOutput: true
+            });
+        }
+        await switchTab(panel, SUBAGENT_MANAGER_TAB_ID);
+    }
+
+    async function refreshSubagentManagerTab(panel) {
+        if (panel.activeTabId !== SUBAGENT_MANAGER_TAB_ID) {
+            return;
+        }
+        await renderSubagentManagerTab(panel);
+        panel._storeActiveTabScrollState();
     }
 
     async function ensureSubagentChat(panel, eventPayload, { activate = false } = {}) {
@@ -579,6 +707,15 @@
             return;
         }
 
+        if (String(sessionId) === SUBAGENT_MANAGER_TAB_ID || tab.isSubagentManager) {
+            await renderSubagentManagerTab(panel);
+            await renderAgentPanel(panel, sessionId);
+            renderTabs(panel);
+            await window.electronAPI.saveSetting('active_chat_tab', sessionId.toString());
+            panel.updateContextUsage(null);
+            return;
+        }
+
         if (tab.messagesHTML) {
             container.innerHTML = tab.messagesHTML;
         } else {
@@ -678,7 +815,9 @@
             const agentPrefix = tab.agentIcon ? `${tab.agentIcon} ` : '';
             label.textContent = agentPrefix + (tab.title || `Chat ${sessionId}`);
 
-            tabEl.appendChild(clearBtn);
+            if (!tab.isSubagentManager) {
+                tabEl.appendChild(clearBtn);
+            }
             tabEl.appendChild(statusDot);
             tabEl.appendChild(label);
 
@@ -701,7 +840,7 @@
     }
 
     async function saveOpenTabIds(panel) {
-        const ids = [...panel.chatTabs.keys()];
+        const ids = [...panel.chatTabs.keys()].filter(id => String(id) !== SUBAGENT_MANAGER_TAB_ID);
         try {
             await window.electronAPI.saveSetting('open_chat_tabs', JSON.stringify(ids));
             if (panel.activeTabId) {
@@ -721,7 +860,9 @@
         loadTabConversations,
         newChat,
         openAgentChat,
+        openSubagentManagerTab,
         openNewWindow,
+        refreshSubagentManagerTab,
         renderTabs,
         restoreOpenTabs,
         saveCurrentTabMessages,

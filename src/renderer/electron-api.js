@@ -132,6 +132,11 @@ window.electronAPI = Object.assign(ipcRenderer, {
     runChatUIAction: (id, action, payload = {}) => ipcRenderer.invoke('run-agent-chat-ui-action', id, action, payload),
     chatUIEvent: (id, eventName, payload = {}) => ipcRenderer.invoke('agent-chat-ui-event', id, eventName, payload),
   },
+  subagents: {
+    listRuns: (filters = {}) => ipcRenderer.invoke('subagents:list-runs', filters),
+    getRun: (runId) => ipcRenderer.invoke('subagents:get-run', runId),
+    stopRun: (runId) => ipcRenderer.invoke('subagents:stop-run', runId)
+  },
   onAgentUpdate: (callback) => ipcRenderer.on('agent-update', callback),
 
   // Background Daemon API

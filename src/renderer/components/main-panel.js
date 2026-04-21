@@ -276,6 +276,10 @@ class MainPanel {
         const sendBtn = document.getElementById('send-btn');
         const stopBtn = document.getElementById('stop-btn');
         const message = messageInput.value.trim();
+        if (this.activeTabId === 'subagent-manager') {
+            this.showNotification('Subagent Manager tab is view-only. Open a chat tab to send messages.', 'info');
+            return;
+        }
         if (!message && this.attachedFiles.length === 0) return;
         // Intercept /commands
         if (this.commandHandler.isCommand(message)) {
@@ -673,6 +677,12 @@ class MainPanel {
     async updateSubagentChatState(eventPayload) {
         return window.mainPanelTabs.updateSubagentChatState(this, eventPayload);
     }
+    async openSubagentManagerTab() {
+        return window.mainPanelTabs.openSubagentManagerTab(this);
+    }
+    async refreshSubagentManagerTab() {
+        return window.mainPanelTabs.refreshSubagentManagerTab(this);
+    }
     openNewWindow() {
         return window.mainPanelTabs.openNewWindow();
     }
@@ -904,15 +914,24 @@ class MainPanel {
             const type = bgEvent.type;
             const payload = bgEvent.payload || {};
             const mode = String(payload.subagentMode || payload.subagent_mode || 'no_ui').toLowerCase();
-            if (!type.startsWith('subagent:') || mode !== 'ui') return;
+            if (!type.startsWith('subagent:')) return;
+            const childSessionId = payload.childSessionId || payload.child_session_id;
+            const hasExistingTab = childSessionId ? this.chatTabs.has(childSessionId) : false;
             try {
                 if (type === 'subagent:queued' || type === 'subagent:started') {
-                    await this.ensureSubagentChat({ ...payload, __eventType: type }, { activate: false });
+                    if (mode === 'ui' || hasExistingTab) {
+                        await this.ensureSubagentChat({ ...payload, __eventType: type }, { activate: false });
+                    }
                 } else if (type === 'subagent:completed' || type === 'subagent:failed') {
                     await this.updateSubagentChatState({ ...payload, __eventType: type });
                 }
             } catch (error) {
                 console.error('Failed to process subagent background event:', error);
+            }
+            try {
+                await this.refreshSubagentManagerTab();
+            } catch (error) {
+                console.error('Failed to refresh Subagent Manager tab:', error);
             }
         });
         // Listen for tool permission requests

@@ -27,6 +27,7 @@ class AgentManager {
         this.pendingSubtasks = new Map();
         this.activeSubtaskCounts = new Map();
         this.providerSubtaskQueues = new Map();
+        this.cancelledSubtaskRuns = new Set();
         this.pluginManager = options.pluginManager || null;
         this.basePath = options.basePath || path.join(__dirname, '../../agentin/agents');
         this.maxDelegatedCompletionRetries = Math.max(0, Number(options.maxDelegatedCompletionRetries) || 2);
@@ -646,7 +647,26 @@ ${task}`;
         throw new Error(`Timed out waiting for subagent run ${runId}`);
     }
 
+    _isSubagentRunCancelled(runId) {
+        return this.cancelledSubtaskRuns.has(String(runId));
+    }
+
+    _consumeCancelledSubagentRun(runId) {
+        this.cancelledSubtaskRuns.delete(String(runId));
+    }
+
+    _assertSubagentRunNotCancelled(runId) {
+        if (this._isSubagentRunCancelled(runId)) {
+            throw new Error('Cancelled by user');
+        }
+    }
+
+    _isCancellationError(error) {
+        return String(error?.message || '').toLowerCase().includes('cancelled by user');
+    }
+
     async _executeDelegatedRun(run, agent, task, contractType, expectedOutput) {
+        this._assertSubagentRunNotCancelled(run.run_id);
         const traceHooks = this._createTraceHooks(run.run_id);
         const taskPrompt = this._buildSubAgentTask(task, contractType, expectedOutput, run);
         await this._persistDelegatedPrompt(run.run_id, run.child_session_id, taskPrompt, {
@@ -676,6 +696,7 @@ ${task}`;
             let remindersSent = 0;
 
             while (true) {
+                this._assertSubagentRunNotCancelled(run.run_id);
                 result = this.chainController
                     ? await this.chainController.executeWithChaining(
                         prompt,
@@ -706,6 +727,7 @@ ${task}`;
                             skipLock: true
                         }
                     );
+                this._assertSubagentRunNotCancelled(run.run_id);
 
                 if (!this.chainController && result?.content) {
                     this.subtaskRuntime.appendMessage(run.run_id, {
@@ -772,6 +794,23 @@ ${task}`;
 
             return completedRun;
         } catch (error) {
+            if (this._isCancellationError(error) && this.subtaskRuntime?.cancelRun) {
+                const stoppedRun = this.subtaskRuntime.cancelRun(run.run_id, 'Stopped by user');
+                this.eventBus?.publish('subagent:failed', {
+                    runId: run.run_id,
+                    parentSessionId: run.parent_session_id,
+                    childSessionId: run.child_session_id,
+                    subagentId: run.subagent_id,
+                    agentName: run.agent_name,
+                    subagentMode: run.subagent_mode || 'no_ui',
+                    error: 'Stopped by user',
+                    status: 'stopped',
+                    cancelled: true,
+                    identifiers
+                });
+                return stoppedRun;
+            }
+
             const failedRun = this.subtaskRuntime.failRun(run.run_id, error.message);
             await this.subtaskRuntime.deliverToParent(run.run_id, {
                 status: 'failed',
@@ -796,8 +835,46 @@ ${task}`;
             });
             return failedRun;
         } finally {
+            this._consumeCancelledSubagentRun(run.run_id);
             await this._setSubagentActive(agent.id, false);
         }
+    }
+
+    async cancelSubagentRun(runId, reason = 'Cancelled by user') {
+        const normalizedRunId = String(runId || '').trim();
+        if (!normalizedRunId) {
+            return { success: false, error: 'runId is required' };
+        }
+
+        const run = await this.getSubagentRun(normalizedRunId);
+        if (!run) {
+            return { success: false, error: `Subagent run "${normalizedRunId}" not found` };
+        }
+
+        const status = String(run.status || '');
+        if (['failed', 'completed', 'task_complete', 'task_failed', 'cancelled', 'stopped'].includes(status)) {
+            return { success: true, run };
+        }
+
+        this.cancelledSubtaskRuns.add(normalizedRunId);
+        if (this.subtaskRuntime && typeof this.subtaskRuntime.cancelRun === 'function') {
+            this.subtaskRuntime.cancelRun(normalizedRunId, String(reason || 'Stopped by user'));
+        }
+
+        this.eventBus?.publish('subagent:failed', {
+            runId: run.run_id,
+            parentSessionId: run.parent_session_id,
+            childSessionId: run.child_session_id,
+            subagentId: run.subagent_id,
+            agentName: run.agent_name,
+            subagentMode: run.subagent_mode || 'no_ui',
+            error: String(reason || 'Stopped by user'),
+            status: 'stopped',
+            cancelled: true,
+            identifiers: buildSubagentIdentifiers(run)
+        });
+
+        return { success: true, run: await this.getSubagentRun(normalizedRunId) };
     }
 
     _startDelegatedRun(run, agent, task, contractType, expectedOutput, queueProvider = null) {

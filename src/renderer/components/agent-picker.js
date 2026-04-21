@@ -1,7 +1,9 @@
 /**
  * AgentPickerWidget — Splits agent display by type:
  * - Pro agents in the left sidebar.
- * - Sub-agents in the right widget panel.
+ * - Sub-agents in the right widget panel (same visual style as before).
+ *
+ * Subagent area click opens Subagent Manager tab.
  */
 class AgentPickerWidget {
     constructor() {
@@ -11,16 +13,41 @@ class AgentPickerWidget {
 
     initializeEvents() {
         this.loadAgents();
+        this.bindSubagentWidgetOpen();
 
         const addBtn = document.getElementById('add-agent-btn');
         if (addBtn) {
             addBtn.addEventListener('click', () => this.showAgentConfigModal());
         }
 
-        // Listen for agent updates from backend
         window.electronAPI.onAgentUpdate(() => {
             this.loadAgents();
         });
+    }
+
+    bindSubagentWidgetOpen() {
+        const widget = document.querySelector('.subagent-picker-widget');
+        if (!widget) return;
+        const header = document.getElementById('toggle-subagents-widget');
+        const content = document.getElementById('subagents-widget-content');
+
+        const openManager = async () => {
+            if (!window.app?.mainPanel?.openSubagentManagerTab) return;
+            await window.app.mainPanel.openSubagentManagerTab();
+        };
+
+        if (header) {
+            header.addEventListener('click', () => {
+                openManager();
+            });
+        }
+
+        if (content) {
+            content.addEventListener('click', (event) => {
+                if (event.target.closest('.agent-item')) return;
+                openManager();
+            });
+        }
     }
 
     async loadAgents() {
@@ -45,7 +72,7 @@ class AgentPickerWidget {
             const proGrid = document.createElement('div');
             proGrid.className = 'agent-grid';
             proAgents.forEach(agent => {
-                proGrid.appendChild(this._createAgentItem(agent));
+                proGrid.appendChild(this._createAgentItem(agent, { isSubagent: false }));
             });
             proContainer.appendChild(proGrid);
         } else if (proContainer) {
@@ -56,7 +83,7 @@ class AgentPickerWidget {
             const subGrid = document.createElement('div');
             subGrid.className = 'agent-grid';
             subAgents.forEach(agent => {
-                subGrid.appendChild(this._createAgentItem(agent));
+                subGrid.appendChild(this._createAgentItem(agent, { isSubagent: true }));
             });
             subContainer.appendChild(subGrid);
         } else if (subContainer) {
@@ -64,7 +91,7 @@ class AgentPickerWidget {
         }
     }
 
-    _createAgentItem(agent) {
+    _createAgentItem(agent, { isSubagent = false } = {}) {
         const item = document.createElement('div');
         item.className = `agent-item ${agent.status === 'active' ? 'active' : ''}`;
         item.dataset.agentId = agent.id;
@@ -76,13 +103,16 @@ class AgentPickerWidget {
             <span class="agent-status-dot ${agent.status}"></span>
         `;
 
-        // Click to activate and open agent chat
-        item.addEventListener('click', (e) => {
+        item.addEventListener('click', async (e) => {
             if (e.target.closest('.agent-config-btn')) return;
+            e.stopPropagation();
+            if (isSubagent && window.app?.mainPanel?.openSubagentManagerTab) {
+                await window.app.mainPanel.openSubagentManagerTab();
+                return;
+            }
             this.activateAgent(agent.id);
         });
 
-        // Right-click for config
         item.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             this.showAgentConfigModal(agent.id);
