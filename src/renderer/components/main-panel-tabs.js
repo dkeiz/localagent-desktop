@@ -4,6 +4,19 @@
         return document.getElementById('messages-container');
     }
 
+    function emitActiveTabChanged(panel) {
+        const sessionId = panel?.activeTabId ?? null;
+        const tab = (sessionId !== null && sessionId !== undefined)
+            ? panel.chatTabs.get(sessionId)
+            : null;
+        document.dispatchEvent(new CustomEvent('chat-tab-switched', {
+            detail: {
+                sessionId,
+                agentId: tab?.agentId ?? null
+            }
+        }));
+    }
+
     function getAgentChatPanel() {
         let panel = document.getElementById('agent-chat-ui-panel');
         if (panel) return panel;
@@ -304,6 +317,7 @@
             // Switch to new tab if the cleared tab was active
             if (sessionId === panel.activeTabId) {
                 panel.activeTabId = newSessionId;
+                emitActiveTabChanged(panel);
                 const container = getMessagesContainer();
                 if (container) container.innerHTML = '';
                 await renderAgentPanel(panel, newSessionId);
@@ -343,6 +357,7 @@
             });
 
             panel.activeTabId = sessionId;
+            emitActiveTabChanged(panel);
             const container = getMessagesContainer();
             if (container) {
                 container.innerHTML = '';
@@ -382,6 +397,7 @@
             });
 
             panel.activeTabId = sessionId;
+            emitActiveTabChanged(panel);
 
             await loadTabConversations(panel, sessionId);
             await renderAgentPanel(panel, sessionId);
@@ -642,6 +658,7 @@
 
             const activeId = activeRaw ? parseInt(activeRaw) : null;
             panel.activeTabId = (activeId && panel.chatTabs.has(activeId)) ? activeId : regularTabIds[0];
+            emitActiveTabChanged(panel);
 
             await loadTabConversations(panel, panel.activeTabId);
             await renderAgentPanel(panel, panel.activeTabId);
@@ -700,6 +717,7 @@
         await sendAgentUiEvent(panel, previousTabId, 'deactivated');
         saveCurrentTabMessages(panel);
         panel.activeTabId = sessionId;
+        emitActiveTabChanged(panel);
 
         const tab = panel.chatTabs.get(sessionId);
         const container = getMessagesContainer();

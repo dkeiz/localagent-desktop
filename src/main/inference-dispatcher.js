@@ -290,6 +290,9 @@ Tokens are resolved by the backend. Keep paths tokenized and forward-slashed in 
 
     async _buildToolContext({ completionToolNames = [], sessionId = null, agentId = null } = {}) {
         const scopeContext = { sessionId, agentId };
+        const resolvedPermissions = this.mcpServer.toolPermissionService
+            ? await this.mcpServer.toolPermissionService.resolveContext(scopeContext)
+            : null;
         const activeTools = this.mcpServer.getActiveToolsForContext
             ? await this.mcpServer.getActiveToolsForContext(scopeContext)
             : (this.mcpServer.getActiveTools ? this.mcpServer.getActiveTools() : []);
@@ -312,7 +315,9 @@ Tokens are resolved by the backend. Keep paths tokenized and forward-slashed in 
         let ctx = `\n\n<mcp_tools>\nAvailable Tools (from active groups):\n\n`;
 
         for (const tool of tools) {
-            const isActive = this.mcpServer.toolStates.get(tool.name) !== false;
+            const isActive = resolvedPermissions
+                ? resolvedPermissions.toolStates?.[tool.name] === true
+                : this.mcpServer.toolStates.get(tool.name) !== false;
             const status = isActive ? '✅ Available' : '⚠️ Disabled (permission required)';
 
             ctx += `## ${tool.name} [${status}]\n`;

@@ -69,7 +69,8 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     workflowScheduler,
     sessionInitManager,
     db,
-    testClientMode
+    testClientMode,
+    toolPermissionService
   } = runtime;
   const { syncDaemonEnabledSetting } = helpers;
 
@@ -221,6 +222,9 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
   ipcMain.handle('delete-agent', async (event, id) => {
     if (!agentManager) throw new Error('AgentManager not initialized');
     const result = await agentManager.deleteAgent(id);
+    if (toolPermissionService?.deleteAgentProfile) {
+      await toolPermissionService.deleteAgentProfile(id);
+    }
     windowManager.send('agent-update');
     return result;
   });

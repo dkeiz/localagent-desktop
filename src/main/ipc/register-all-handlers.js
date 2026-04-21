@@ -22,6 +22,7 @@ function buildRuntime(container) {
     workflowManager: container.get('workflowManager'),
     vectorStore: container.get('vectorStore'),
     capabilityManager: container.get('capabilityManager'),
+    toolPermissionService: container.optional('toolPermissionService'),
     portListenerManager: container.get('portListenerManager'),
     agentMemory: container.get('agentMemory'),
     promptFileManager: container.get('promptFileManager'),

@@ -312,10 +312,11 @@
     async function enableTool(panel, toolName) {
         const reqToolName = panel.currentPermissionRequest?.toolName;
         const reqParams = panel.currentPermissionRequest?.params;
+        const reqAgentId = panel.currentPermissionRequest?.agentId || null;
         closePermissionDialog(panel);
 
         try {
-            await window.electronAPI.setToolActive(reqToolName, true);
+            await window.electronAPI.setToolActive(reqToolName, true, reqAgentId ? { agentId: reqAgentId } : {});
 
             if (window.sidebar && window.sidebar.loadMCPTools) {
                 await window.sidebar.loadMCPTools();

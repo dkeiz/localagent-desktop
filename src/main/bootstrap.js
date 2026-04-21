@@ -7,6 +7,8 @@ const WorkflowRuntime = require('./workflow-runtime');
 const EmbeddingService = require('./embedding-service');
 const VectorStore = require('./vector-store');
 const CapabilityManager = require('./capability-manager');
+const ToolPermissionStore = require('./tool-permission-store');
+const ToolPermissionService = require('./tool-permission-service');
 const PortListenerManager = require('./port-listener-manager');
 const AgentMemory = require('./agent-memory');
 const PromptFileManager = require('./prompt-file-manager');
@@ -181,6 +183,20 @@ async function bootstrapApplication(options = {}) {
   dispatcher.setAgentManager(agentManager);
   mcpServer.setAgentManager(agentManager);
   container.register('agentManager', agentManager);
+
+  const toolPermissionStore = new ToolPermissionStore(db);
+  const toolPermissionService = new ToolPermissionService({
+    db,
+    capabilityManager,
+    mcpServer,
+    agentManager,
+    store: toolPermissionStore
+  });
+  await toolPermissionService.initialize();
+  mcpServer.setToolPermissionService(toolPermissionService);
+  agentManager.setToolPermissionService(toolPermissionService);
+  container.register('toolPermissionStore', toolPermissionStore);
+  container.register('toolPermissionService', toolPermissionService);
 
   const sessionInitManager = new SessionInitManager(db, agentMemory, eventBus, {
     agentinPath: paths.agentinRoot,

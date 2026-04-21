@@ -171,6 +171,11 @@ class AgentPickerWidget {
                         System Prompt:
                         <textarea name="system_prompt" rows="8" placeholder="Define this agent's behavior...">${existingAgent?.system_prompt || ''}</textarea>
                     </label>
+                    ${isEdit ? `
+                    <fieldset id="agent-permissions-section" style="margin-top:0.9rem;">
+                        <legend>Agent Permissions</legend>
+                        <div id="agent-permissions-content">Loading permissions...</div>
+                    </fieldset>` : ''}
                     <div class="modal-actions">
                         ${isEdit ? '<button type="button" class="danger-btn delete-agent-btn">Delete</button>' : ''}
                         <button type="button" class="secondary-btn cancel-btn">Cancel</button>
@@ -219,6 +224,7 @@ class AgentPickerWidget {
             try {
                 if (isEdit) {
                     await window.electronAPI.agents.update(agentId, data);
+                    await this.saveAgentPermissionEditor(modal, agentId);
                 } else {
                     await window.electronAPI.agents.create(data);
                 }
@@ -249,6 +255,10 @@ class AgentPickerWidget {
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
 
         document.body.appendChild(modal);
+
+        if (isEdit) {
+            this.renderAgentPermissionEditor(modal, agentId);
+        }
     }
 
     _renderIconPicker(selectedIcon) {
@@ -256,6 +266,100 @@ class AgentPickerWidget {
         return icons.map(icon =>
             `<span class="icon-option ${icon === selectedIcon ? 'selected' : ''}" data-icon="${icon}">${icon}</span>`
         ).join('');
+    }
+
+    async renderAgentPermissionEditor(modal, agentId) {
+        const host = modal.querySelector('#agent-permissions-content');
+        if (!host) return;
+
+        try {
+            const [profileResult, tools] = await Promise.all([
+                window.electronAPI.permissions.getAgentProfile(agentId),
+                window.electronAPI.getMCPTools()
+            ]);
+            const profile = profileResult?.profile || {};
+            const toolStates = profileResult?.toolStates || {};
+            const groupFields = [
+                ['main', 'main_enabled', 'Main Switch'],
+                ['unsafe', 'unsafe_enabled', 'Unsafe'],
+                ['web', 'web_enabled', 'Web'],
+                ['terminal', 'terminal_enabled', 'Terminal'],
+                ['ports', 'ports_enabled', 'Ports'],
+                ['visual', 'visual_enabled', 'Visual']
+            ];
+
+            const groupsHtml = groupFields.map(([groupId, field, label]) => `
+                <label style="display:inline-flex;gap:0.35rem;align-items:center;margin-right:0.8rem;margin-bottom:0.3rem;">
+                    <input type="checkbox" data-agent-group="${groupId}" ${profile[field] === 1 ? 'checked' : ''}>
+                    <span>${label}</span>
+                </label>
+            `).join('');
+
+            const toolsHtml = tools
+                .filter(tool => tool?.name)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(tool => {
+                    const checked = toolStates[tool.name] === true;
+                    return `<label style="display:block;font-size:0.85rem;">
+                        <input type="checkbox" data-agent-tool="${tool.name}" ${checked ? 'checked' : ''}>
+                        <span>${tool.name}</span>
+                    </label>`;
+                })
+                .join('');
+
+            host.innerHTML = `
+                <div style="margin-bottom:0.6rem;">
+                    ${groupsHtml}
+                </div>
+                <label style="display:block;margin-bottom:0.6rem;">
+                    Files Mode:
+                    <select data-agent-group="files" style="margin-left:0.4rem;">
+                        <option value="off" ${profile.files_mode === 'off' ? 'selected' : ''}>off</option>
+                        <option value="read" ${profile.files_mode === 'read' ? 'selected' : ''}>read</option>
+                        <option value="full" ${profile.files_mode === 'full' ? 'selected' : ''}>full</option>
+                    </select>
+                    <button type="button" class="secondary-btn" id="reset-agent-permissions-btn" style="margin-left:0.5rem;">Reset To Global</button>
+                </label>
+                <details>
+                    <summary>Per-tool overrides</summary>
+                    <div style="max-height:180px;overflow:auto;border:1px solid var(--border-color);padding:0.4rem;margin-top:0.4rem;">
+                        ${toolsHtml}
+                    </div>
+                </details>
+            `;
+
+            const resetBtn = modal.querySelector('#reset-agent-permissions-btn');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', async () => {
+                    await window.electronAPI.permissions.resetAgentProfile(agentId);
+                    await this.renderAgentPermissionEditor(modal, agentId);
+                });
+            }
+        } catch (error) {
+            host.textContent = `Failed to load permissions: ${error.message}`;
+        }
+    }
+
+    async saveAgentPermissionEditor(modal, agentId) {
+        const host = modal.querySelector('#agent-permissions-content');
+        if (!host) return;
+
+        const groupToggles = host.querySelectorAll('input[data-agent-group]');
+        for (const toggle of groupToggles) {
+            const groupId = toggle.dataset.agentGroup;
+            const value = toggle.checked;
+            await window.electronAPI.permissions.setAgentGroup(agentId, groupId, value);
+        }
+
+        const filesSelect = host.querySelector('select[data-agent-group="files"]');
+        if (filesSelect) {
+            await window.electronAPI.permissions.setAgentGroup(agentId, 'files', filesSelect.value);
+        }
+
+        const toolToggles = host.querySelectorAll('input[data-agent-tool]');
+        for (const toggle of toolToggles) {
+            await window.electronAPI.permissions.setAgentTool(agentId, toggle.dataset.agentTool, toggle.checked);
+        }
     }
 }
 

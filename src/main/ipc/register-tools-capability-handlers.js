@@ -3,7 +3,8 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
     db,
     mcpServer,
     windowManager,
-    capabilityManager
+    capabilityManager,
+    toolPermissionService
   } = runtime;
 
   ipcMain.handle('execute-tool', async (event, toolName, params) => {
@@ -73,26 +74,34 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
     }
   });
 
-  ipcMain.handle('set-tool-active', async (event, toolName, active) => {
+  ipcMain.handle('set-tool-active', async (event, toolName, active, context = {}) => {
     try {
-      await db.setToolActive(toolName, active);
-      if (mcpServer.setToolActiveState) {
-        await mcpServer.setToolActiveState(toolName, active);
-      }
-
-      if (active && capabilityManager) {
-        const groupId = capabilityManager.getGroupForTool(toolName);
-        if (groupId && !capabilityManager.isGroupEnabled(groupId)) {
-          capabilityManager.setGroupEnabled(groupId, true);
-          console.log(`[IPC] Auto-enabled capability group '${groupId}' because tool '${toolName}' was enabled`);
+      const agentId = context?.agentId ? Number(context.agentId) : null;
+      if (agentId && toolPermissionService) {
+        await toolPermissionService.setAgentTool(agentId, toolName, active);
+      } else {
+        await db.setToolActive(toolName, active);
+        if (mcpServer.setToolActiveState) {
+          await mcpServer.setToolActiveState(toolName, active);
         }
-        windowManager.send('capability-update', capabilityManager.getState());
-      } else if (!active && capabilityManager) {
-        windowManager.send('capability-update', capabilityManager.getState());
+        if (toolPermissionService) {
+          await toolPermissionService.syncUnsafeFromGlobal();
+        }
+
+        if (active && capabilityManager) {
+          const groupId = capabilityManager.getGroupForTool(toolName);
+          if (groupId && !capabilityManager.isGroupEnabled(groupId)) {
+            capabilityManager.setGroupEnabled(groupId, true);
+            console.log(`[IPC] Auto-enabled capability group '${groupId}' because tool '${toolName}' was enabled`);
+          }
+          windowManager.send('capability-update', capabilityManager.getState());
+        } else if (!active && capabilityManager) {
+          windowManager.send('capability-update', capabilityManager.getState());
+        }
       }
 
       console.log(`[IPC] Tool ${toolName} ${active ? 'enabled' : 'disabled'} (DB + memory)`);
-      return { success: true, toolName, active };
+      return { success: true, toolName, active, scope: agentId ? 'agent' : 'global' };
     } catch (error) {
       console.error('Failed to set tool active state:', error);
       throw error;
@@ -152,6 +161,9 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
   ipcMain.handle('capability:set-group', async (event, groupId, enabled) => {
     if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
     const result = capabilityManager.setGroupEnabled(groupId, enabled);
+    if (groupId === 'unsafe' && toolPermissionService) {
+      await toolPermissionService.syncUnsafeFromGlobal();
+    }
     windowManager.send('capability-update', capabilityManager.getState());
     return { success: result };
   });
@@ -167,12 +179,44 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
     }
   });
 
-  ipcMain.handle('capability:get-active-tools', async () => {
-    if (!capabilityManager) return mcpServer.getActiveTools().map(t => t.name);
-    return capabilityManager.getActiveTools().filter((toolName) => {
+  ipcMain.handle('capability:get-active-tools', async (event, context = {}) => {
+    if (!toolPermissionService) {
+      if (!capabilityManager) return mcpServer.getActiveTools().map(t => t.name);
+      return capabilityManager.getActiveTools().filter((toolName) => {
+        const def = mcpServer.tools.get(toolName)?.definition;
+        return def && def.internal !== true;
+      });
+    }
+    const names = await toolPermissionService.getContextActiveToolNames(context || {});
+    return names.filter((toolName) => {
       const def = mcpServer.tools.get(toolName)?.definition;
       return def && def.internal !== true;
     });
+  });
+
+  ipcMain.handle('permissions:get-context', async (event, context = {}) => {
+    if (!toolPermissionService) return { error: 'ToolPermissionService not initialized' };
+    return toolPermissionService.resolveContext(context);
+  });
+
+  ipcMain.handle('permissions:get-agent-profile', async (event, agentId) => {
+    if (!toolPermissionService) return { error: 'ToolPermissionService not initialized' };
+    return toolPermissionService.getAgentProfile(agentId);
+  });
+
+  ipcMain.handle('permissions:set-agent-group', async (event, agentId, groupId, value) => {
+    if (!toolPermissionService) return { error: 'ToolPermissionService not initialized' };
+    return toolPermissionService.setAgentGroup(agentId, groupId, value);
+  });
+
+  ipcMain.handle('permissions:set-agent-tool', async (event, agentId, toolName, active) => {
+    if (!toolPermissionService) return { error: 'ToolPermissionService not initialized' };
+    return toolPermissionService.setAgentTool(agentId, toolName, active);
+  });
+
+  ipcMain.handle('permissions:reset-agent-profile', async (event, agentId) => {
+    if (!toolPermissionService) return { error: 'ToolPermissionService not initialized' };
+    return toolPermissionService.resetAgentProfile(agentId);
   });
 
   ipcMain.handle('capability:add-port-listener', async (event, listener) => {

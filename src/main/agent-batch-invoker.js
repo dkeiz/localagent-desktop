@@ -56,6 +56,7 @@ function normalizeInvokeOptions(task, provider) {
         contractType: task.contractType || task.contract_type || opts.contractType || opts.contract_type,
         expectedOutput: task.expectedOutput || task.expected_output || opts.expectedOutput || opts.expected_output,
         subagentMode: task.subagentMode || task.subagent_mode || opts.subagentMode || opts.subagent_mode,
+        permissionsContract: task.permissionsContract || task.permissions_contract || opts.permissionsContract || opts.permissions_contract || null,
         queueProvider: `provider:${provider}`
     };
 }

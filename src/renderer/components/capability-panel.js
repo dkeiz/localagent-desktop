@@ -13,6 +13,8 @@ class CapabilityPanel {
         this.groupsContainer = document.getElementById('capability-groups');
         this.toolCountEl = document.getElementById('active-tool-count');
         this.safeInfoEl = document.getElementById('safe-tools-info');
+        this.contextBadgeEl = null;
+        this.activeContext = { sessionId: null, agentId: null };
 
         this.state = {
             mainEnabled: true,
@@ -23,8 +25,10 @@ class CapabilityPanel {
     }
 
     async init() {
+        this.ensureContextBadge();
         // Load initial state from backend
         await this.loadState();
+        await this.refreshContextView();
 
         // Setup event listeners
         this.setupMainPadToggle();
@@ -36,6 +40,47 @@ class CapabilityPanel {
                 this.updateUI(newState);
             });
         }
+
+        document.addEventListener('chat-tab-switched', async (event) => {
+            this.activeContext = {
+                sessionId: event?.detail?.sessionId ?? null,
+                agentId: event?.detail?.agentId ?? null
+            };
+            await this.refreshContextView();
+        });
+    }
+
+    ensureContextBadge() {
+        if (this.contextBadgeEl) return;
+        if (!this.mainPad || !this.mainPad.parentElement) return;
+        const badge = document.createElement('div');
+        badge.id = 'capability-context-badge';
+        badge.style.cssText = 'margin:0.25rem 0 0.15rem 0.2rem;font-size:0.72rem;opacity:0.85;';
+        this.mainPad.parentElement.insertBefore(badge, this.mainPad.nextSibling);
+        this.contextBadgeEl = badge;
+    }
+
+    resolveUiContext() {
+        const panel = window.mainPanel || window.app?.mainPanel || null;
+        const sessionId = panel?.activeTabId ?? this.activeContext.sessionId ?? null;
+        const tab = panel?.chatTabs?.get?.(sessionId);
+        const agentId = tab?.agentId ?? this.activeContext.agentId ?? null;
+        return { sessionId, agentId };
+    }
+
+    async refreshContextView() {
+        const context = this.resolveUiContext();
+        this.activeContext = context;
+        if (this.contextBadgeEl && window.electronAPI?.permissions?.getContext) {
+            try {
+                const resolved = await window.electronAPI.permissions.getContext(context);
+                const scope = resolved?.scope === 'agent' ? `Agent #${resolved.agentId}` : 'Global';
+                this.contextBadgeEl.textContent = `Resolved Context: ${scope}`;
+            } catch (error) {
+                this.contextBadgeEl.textContent = 'Resolved Context: Global';
+            }
+        }
+        await this.updateToolCount();
     }
 
     async loadState() {
@@ -162,7 +207,7 @@ class CapabilityPanel {
 
     async updateToolCount() {
         try {
-            const activeTools = await window.electronAPI?.capability?.getActiveTools?.();
+            const activeTools = await window.electronAPI?.capability?.getActiveTools?.(this.resolveUiContext());
             if (this.toolCountEl && Array.isArray(activeTools)) {
                 this.toolCountEl.textContent = `${activeTools.length} active`;
             }

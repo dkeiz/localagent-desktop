@@ -213,7 +213,8 @@ class ToolChainController {
                             context: {
                                 sessionId: options.sessionId,
                                 source: options.mode === 'chat' ? 'chat-llm' : (options.mode || 'unknown'),
-                                agentId: options.agentId || null
+                                agentId: options.agentId || null,
+                                subagentRunId: options.subagentRunId || null
                             }
                         }
                     );

@@ -34,6 +34,7 @@ class MCPServer extends EventEmitter {
     this.proxyServers = new Map();
     this._executionContextStack = [];
     this._currentAgentContext = null;
+    this.toolPermissionService = null;
     this.initializeBuiltInTools();
   }
 
@@ -98,6 +99,10 @@ class MCPServer extends EventEmitter {
 
   setKnowledgeManager(knowledgeManager) {
     this._knowledgeManager = knowledgeManager;
+  }
+
+  setToolPermissionService(toolPermissionService) {
+    this.toolPermissionService = toolPermissionService || null;
   }
 
   setResearchRuntime(researchRuntime) {
@@ -192,29 +197,53 @@ class MCPServer extends EventEmitter {
 
     const isInternalTool = tool.definition?.internal === true;
 
-    if (!bypassPermissions && !isInternalTool && this.capabilityManager && !this.capabilityManager.isToolActive(toolName)) {
-      const permissionRequest = {
-        needsPermission: true,
-        toolName,
-        params,
-        toolDefinition: tool.definition,
-        reason: 'capability_group_disabled'
-      };
-      console.log(`[MCP] Tool ${toolName} blocked by CapabilityManager`);
-      return permissionRequest;
-    }
+    if (!bypassPermissions && !isInternalTool) {
+      if (this.toolPermissionService) {
+        const allowedByProfile = await this.toolPermissionService.isToolAllowed({
+          toolName,
+          context: activeContext || {}
+        });
+        if (!allowedByProfile) {
+          return {
+            needsPermission: true,
+            toolName,
+            params,
+            toolDefinition: tool.definition,
+            reason: 'profile_disabled',
+            sessionId: activeContext?.sessionId ?? this.getCurrentSessionId(),
+            agentId: activeContext?.agentId ?? null
+          };
+        }
+      } else {
+        if (this.capabilityManager && !this.capabilityManager.isToolActive(toolName)) {
+          const permissionRequest = {
+            needsPermission: true,
+            toolName,
+            params,
+            toolDefinition: tool.definition,
+            reason: 'capability_group_disabled',
+            sessionId: activeContext?.sessionId ?? this.getCurrentSessionId(),
+            agentId: activeContext?.agentId ?? null
+          };
+          console.log(`[MCP] Tool ${toolName} blocked by CapabilityManager`);
+          return permissionRequest;
+        }
 
-    const isActive = (bypassPermissions || isInternalTool) ? true : await this.getToolActiveState(toolName);
-    if (!isActive) {
-      const permissionRequest = {
-        needsPermission: true,
-        toolName,
-        params,
-        toolDefinition: tool.definition,
-        reason: 'tool_disabled'
-      };
-      console.log(`[MCP] Tool ${toolName} disabled (DB state), requesting permission`);
-      return permissionRequest;
+        const isActive = await this.getToolActiveState(toolName);
+        if (!isActive) {
+          const permissionRequest = {
+            needsPermission: true,
+            toolName,
+            params,
+            toolDefinition: tool.definition,
+            reason: 'tool_disabled',
+            sessionId: activeContext?.sessionId ?? this.getCurrentSessionId(),
+            agentId: activeContext?.agentId ?? null
+          };
+          console.log(`[MCP] Tool ${toolName} disabled (DB state), requesting permission`);
+          return permissionRequest;
+        }
+      }
     }
 
     try {
@@ -743,12 +772,31 @@ class MCPServer extends EventEmitter {
       if (!def) continue;
       if (def.internal === true && !includeInternal) continue;
       if (!await this._isToolAllowedByAgentScope(def, context)) continue;
+      if (this.toolPermissionService && !includeInternal) {
+        const allowed = await this.toolPermissionService.isToolAllowed({
+          toolName: def.name,
+          context: context || {}
+        });
+        if (!allowed) continue;
+      }
       tools.push(def);
     }
     return tools;
   }
 
   async getActiveToolsForContext(context = null) {
+    if (this.toolPermissionService) {
+      const activeNames = await this.toolPermissionService.getContextActiveToolNames(context || {});
+      const output = [];
+      for (const toolName of activeNames) {
+        const def = this.tools.get(toolName)?.definition;
+        if (!def || def.internal === true) continue;
+        if (!await this._isToolAllowedByAgentScope(def, context)) continue;
+        output.push(def);
+      }
+      return output;
+    }
+
     const activeTools = this.getActiveTools();
     const filtered = [];
     for (const tool of activeTools) {

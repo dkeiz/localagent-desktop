@@ -29,12 +29,17 @@ class AgentManager {
         this.providerSubtaskQueues = new Map();
         this.cancelledSubtaskRuns = new Set();
         this.pluginManager = options.pluginManager || null;
+        this.toolPermissionService = options.toolPermissionService || null;
         this.basePath = options.basePath || path.join(__dirname, '../../agentin/agents');
         this.maxDelegatedCompletionRetries = Math.max(0, Number(options.maxDelegatedCompletionRetries) || 2);
     }
 
     setPluginManager(pluginManager) {
         this.pluginManager = pluginManager;
+    }
+
+    setToolPermissionService(toolPermissionService) {
+        this.toolPermissionService = toolPermissionService || null;
     }
 
     async initialize() {
@@ -705,6 +710,7 @@ ${task}`;
                             mode: 'chat',
                             sessionId: run.child_session_id,
                             agentId: agent.id,
+                            subagentRunId: run.run_id,
                             includeTools: true,
                             includeRules: false,
                             skipMemoryOnStart: true,
@@ -835,6 +841,9 @@ ${task}`;
             });
             return failedRun;
         } finally {
+            if (this.toolPermissionService) {
+                this.toolPermissionService.clearRunScopedGrant(run.run_id);
+            }
             this._consumeCancelledSubagentRun(run.run_id);
             await this._setSubagentActive(agent.id, false);
         }
@@ -927,6 +936,10 @@ ${task}`;
             expectedOutput,
             subagentMode
         });
+
+        if (this.toolPermissionService && options.permissionsContract) {
+            this.toolPermissionService.setRunScopedGrant(run.run_id, subAgentId, options.permissionsContract);
+        }
 
         await this._setSubagentActive(subAgentId, true);
         const identifiers = buildSubagentIdentifiers({

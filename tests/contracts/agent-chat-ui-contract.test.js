@@ -39,7 +39,13 @@ module.exports = {
 
       const plugins = pluginManager.getAgentPlugins(agentInfo.slug);
       const chatUI = await pluginManager.getAgentChatUI(agentInfo);
-      const preview = await pluginManager.runAgentChatUIAction(agentInfo, 'preview-file', {
+      await pluginManager.runAgentChatUIAction(agentInfo, 'use-agent-home', {
+        pluginId: 'agent-file-browser'
+      });
+      await pluginManager.runAgentChatUIAction(agentInfo, 'approve-root-change', {
+        pluginId: 'agent-file-browser'
+      });
+      const preview = await pluginManager.runAgentChatUIAction(agentInfo, 'open-file', {
         pluginId: 'agent-file-browser',
         relativePath: 'tasks/plan.md'
       });
@@ -60,7 +66,7 @@ module.exports = {
       assert.includes(chatUI.html, 'data-agent-ui-plugin-id="agent-research-orchestrator-ui"', 'Expected research UI wrapper');
       assert.includes(chatUI.css, '.research-orchestrator-panel', 'Expected plugin CSS to be returned');
       assert.includes(chatUI.html, 'data-agent-chart=', 'Expected research UI to expose chart specs to the chat renderer');
-      assert.includes(preview.text.text, 'Status: draft', 'Expected plugin action to read agent file');
+      assert.includes(preview.html, 'Status: draft', 'Expected plugin action to read agent file');
       assert.includes(refresh.html, 'Research Orchestrator', 'Expected refresh action to return updated panel HTML');
       assert.includes(chartPreview.replaceHtml.html, 'data-agent-chart=', 'Expected chart action to return declarative chart markup');
       assert.equal(lifecycle.success, true, 'Expected lifecycle event to succeed');

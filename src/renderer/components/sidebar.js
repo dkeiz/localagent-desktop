@@ -16,6 +16,7 @@ class Sidebar {
         this.loadChatSessions();
         this.setupCollapsibleSections();  // Added collapsible functionality
         this.setupCapabilityListener();   // Keep MCP tab in sync with capability changes
+        this.setupTabContextListener();   // Keep MCP tab in sync with active chat/agent context
         this.setupSettingsDock();
         this.updateToolIndicators();
     }
@@ -134,6 +135,8 @@ class Sidebar {
         try {
             const tools = await window.electronAPI.getMCPTools();
             const customTools = await window.electronAPI.getCustomTools?.() || [];
+            const permissionContext = this.getPermissionContext();
+            const resolvedContext = await window.electronAPI.permissions?.getContext?.(permissionContext) || null;
             // Use capability groups as the single source of truth for group info
             const capabilityGroups = await window.electronAPI.capability?.getGroups?.() || [];
             const container = document.getElementById('mcp-tools-container');
@@ -155,7 +158,7 @@ class Sidebar {
             // Also get the active tools list from CapabilityManager
             let activeToolNames = new Set();
             try {
-                const activeTools = await window.electronAPI.capability?.getActiveTools?.() || [];
+                const activeTools = await window.electronAPI.capability?.getActiveTools?.(permissionContext) || [];
                 activeToolNames = new Set(activeTools);
             } catch (e) { /* graceful fallback */ }
 
@@ -209,7 +212,9 @@ class Sidebar {
                 if (!groupTools || groupTools.length === 0) return;
 
                 const groupInfo = groupTools[0].groupInfo;
-                const groupEnabled = groupId === 'custom' ? true : (groupInfo?.enabled ?? true);
+                const groupEnabled = groupId === 'custom'
+                    ? true
+                    : this.isGroupEnabledForContext(groupId, groupInfo, resolvedContext);
 
                 // Group header
                 const groupHeader = document.createElement('div');
@@ -235,7 +240,10 @@ class Sidebar {
                     const isCustom = customToolNames.has(tool.name);
                     const isCapabilityActive = activeToolNames.size > 0 ? activeToolNames.has(tool.name) : true;
                     const isDbActive = toolStates[tool.name]?.active !== false;
-                    const isActive = isCapabilityActive && isDbActive;
+                    const resolvedActive = resolvedContext?.toolStates
+                        ? resolvedContext.toolStates[tool.name] === true
+                        : null;
+                    const isActive = resolvedActive === null ? (isCapabilityActive && isDbActive) : resolvedActive;
                     const groupColor = gi?.color || '#6b7280';
 
                     toolElement.className = `mcp-tool-card ${!groupEnabled ? 'tool-group-disabled' : ''}`;
@@ -272,18 +280,32 @@ class Sidebar {
                         const active = e.target.checked;
                         const gId = e.target.dataset.group;
                         const gEnabled = e.target.dataset.groupEnabled === 'true';
+                        const activeScope = resolvedContext?.scope || 'global';
+                        const activeAgentId = resolvedContext?.agentId || null;
 
                         if (active && !gEnabled && gId) {
-                            const confirmed = confirm(`The "${gi?.name || gId}" group is currently disabled.\nEnable the group to allow this tool?`);
-                            if (!confirmed) {
-                                e.target.checked = false;
-                                return;
+                            if (activeScope === 'agent' && activeAgentId) {
+                                if (gId === 'files') {
+                                    await window.electronAPI.permissions?.setAgentGroup?.(activeAgentId, 'files', 'read');
+                                } else {
+                                    await window.electronAPI.permissions?.setAgentGroup?.(activeAgentId, gId, true);
+                                }
+                            } else {
+                                const confirmed = confirm(`The "${gi?.name || gId}" group is currently disabled.\nEnable the group to allow this tool?`);
+                                if (!confirmed) {
+                                    e.target.checked = false;
+                                    return;
+                                }
+                                // Enable the capability group
+                                await window.electronAPI.capability?.setGroup?.(gId, true);
                             }
-                            // Enable the capability group
-                            await window.electronAPI.capability?.setGroup?.(gId, true);
                         }
                         try {
-                            await window.electronAPI.setToolActive?.(tName, active);
+                            if (activeScope === 'agent' && activeAgentId) {
+                                await window.electronAPI.setToolActive?.(tName, active, { agentId: activeAgentId });
+                            } else {
+                                await window.electronAPI.setToolActive?.(tName, active, {});
+                            }
                             // Ensure UI reflects final persisted state after possible
                             // capability-update mid-flight reloads.
                             await this.loadMCPTools();
@@ -366,6 +388,20 @@ class Sidebar {
         }
     }
 
+    getPermissionContext() {
+        const panel = window.app?.mainPanel || window.mainPanel;
+        const sessionId = panel?.activeTabId ?? null;
+        const tab = panel?.chatTabs?.get?.(sessionId);
+        return { sessionId, agentId: tab?.agentId ?? null };
+    }
+
+    isGroupEnabledForContext(groupId, groupInfo, resolvedContext) {
+        if (!resolvedContext?.groups) return groupInfo?.enabled ?? true;
+        if (groupId === 'files') return String(resolvedContext.groups.files || 'off') !== 'off';
+        if (Object.prototype.hasOwnProperty.call(resolvedContext.groups, groupId)) return resolvedContext.groups[groupId] === true;
+        return groupInfo?.enabled ?? true;
+    }
+
     // Called on capability-update events to refresh MCP tab if it's visible
     setupCapabilityListener() {
         if (window.electronAPI?.onCapabilityUpdate) {
@@ -375,6 +411,14 @@ class Sidebar {
                 }
             });
         }
+    }
+
+    setupTabContextListener() {
+        document.addEventListener('chat-tab-switched', () => {
+            if (this.currentTab === 'mcp') {
+                this.loadMCPTools();
+            }
+        });
     }
 
     async loadWorkflows() {

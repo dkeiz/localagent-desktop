@@ -60,6 +60,10 @@ function normalizeSubagentParams(params = {}) {
     system_prompt: params.system_prompt ? String(params.system_prompt) : '',
     icon: params.icon ? String(params.icon) : '🤖',
     run_id: params.run_id ? String(params.run_id) : ''
+    ,
+    permissions_contract: params.permissions_contract && typeof params.permissions_contract === 'object'
+      ? params.permissions_contract
+      : null
   };
 }
 
@@ -190,7 +194,8 @@ async function runSubagent(server, params) {
     {
       contractType: params.contract_type || 'task_complete',
       expectedOutput: params.expected_output || '',
-      subagentMode
+      subagentMode,
+      permissionsContract: params.permissions_contract || null
     }
   );
   const queuedRun = formatSubagentRun({
@@ -345,7 +350,7 @@ function registerAgentTools(server) {
         task: { type: 'string', description: 'Focused task for action="run"' },
         tasks: {
           type: 'array',
-          description: 'Batch entries for action="run_batch". Each entry supports id/name, task, provider, contract_type, expected_output, and subagent_mode.'
+          description: 'Batch entries for action="run_batch". Each entry supports id/name, task, provider, contract_type, expected_output, subagent_mode, and permissions_contract.'
         },
         contract_type: {
           type: 'string',
@@ -375,6 +380,11 @@ function registerAgentTools(server) {
         system_prompt: { type: 'string', description: 'System prompt for action="new"' },
         icon: { type: 'string', description: 'Optional icon for action="new"', default: '🤖' },
         run_id: { type: 'string', description: 'Existing run id for action="status" (and future stop/status flows)' }
+        ,
+        permissions_contract: {
+          type: 'object',
+          description: 'Optional delegation permission contract: { safe_tools: string[], unsafe_tools: string[] }. Safe tools may be run-scoped granted; unsafe tools still require explicit user approval.'
+        }
       },
       required: []
     }
@@ -416,6 +426,10 @@ function registerAgentTools(server) {
           type: 'number',
           description: 'Optional wait timeout in milliseconds when wait=true.',
           default: 30000
+        },
+        permissions_contract: {
+          type: 'object',
+          description: 'Optional delegation permission contract for this run.'
         }
       },
       required: ['task']
@@ -429,7 +443,8 @@ function registerAgentTools(server) {
     expected_output: params.expected_output,
     subagent_mode: params.subagent_mode,
     wait: params.wait,
-    timeout_ms: params.timeout_ms
+    timeout_ms: params.timeout_ms,
+    permissions_contract: params.permissions_contract
   }));
 
   server.registerTool('complete_subtask', {

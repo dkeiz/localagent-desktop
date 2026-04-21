@@ -19,7 +19,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   executeMCPTool: (toolName, params) => ipcRenderer.invoke('execute-mcp-tool', toolName, params),
   executeMCPToolOnce: (toolName, params) => ipcRenderer.invoke('execute-mcp-tool-once', toolName, params),
   getToolStates: () => ipcRenderer.invoke('get-tool-states'),
-  setToolActive: (toolName, active) => ipcRenderer.invoke('set-tool-active', toolName, active),
+  setToolActive: (toolName, active, context = {}) => ipcRenderer.invoke('set-tool-active', toolName, active, context),
   createCustomTool: (toolData) => ipcRenderer.invoke('create-custom-tool', toolData),
   getCustomTools: () => ipcRenderer.invoke('get-custom-tools'),
   deleteCustomTool: (toolName) => ipcRenderer.invoke('delete-custom-tool', toolName),
@@ -95,7 +95,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
     setMain: (enabled) => ipcRenderer.invoke('capability:set-main', enabled),
     setGroup: (groupId, enabled) => ipcRenderer.invoke('capability:set-group', groupId, enabled),
     setFilesMode: (mode) => ipcRenderer.invoke('capability:set-files-mode', mode),
-    getActiveTools: () => ipcRenderer.invoke('capability:get-active-tools'),
+    getActiveTools: (context = {}) => ipcRenderer.invoke('capability:get-active-tools', context),
     addPortListener: (listener) => ipcRenderer.invoke('capability:add-port-listener', listener),
     removePortListener: (port) => ipcRenderer.invoke('capability:remove-port-listener', port),
     getPortListeners: () => ipcRenderer.invoke('capability:get-port-listeners'),
@@ -195,4 +195,11 @@ window.electronAPI = Object.assign(ipcRenderer, {
   },
   onBackgroundEvent: (callback) => ipcRenderer.on('background-event', callback),
   onBackgroundNotification: (callback) => ipcRenderer.on('background-notification', callback),
+  permissions: {
+    getContext: (context = {}) => ipcRenderer.invoke('permissions:get-context', context),
+    getAgentProfile: (agentId) => ipcRenderer.invoke('permissions:get-agent-profile', agentId),
+    setAgentGroup: (agentId, groupId, value) => ipcRenderer.invoke('permissions:set-agent-group', agentId, groupId, value),
+    setAgentTool: (agentId, toolName, active) => ipcRenderer.invoke('permissions:set-agent-tool', agentId, toolName, active),
+    resetAgentProfile: (agentId) => ipcRenderer.invoke('permissions:reset-agent-profile', agentId)
+  }
 });
