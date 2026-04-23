@@ -27,6 +27,7 @@ const ServiceContainer = require('./service-container');
 const PluginManager = require('./plugin-manager');
 const KnowledgeManager = require('./knowledge-manager');
 const ResearchRuntime = require('./research-runtime');
+const TaskQueueService = require('./task-queue-service');
 const setupIpcHandlers = require('./ipc-handlers');
 const { WindowManager } = require('./window-manager');
 const { buildRuntimePaths } = require('./runtime-paths');
@@ -108,6 +109,16 @@ async function bootstrapApplication(options = {}) {
   const agentMemory = new AgentMemory(paths.memoryBasePath);
   container.register('agentMemory', agentMemory);
 
+  const taskQueueService = new TaskQueueService({
+    db,
+    tasksFilePath: paths.tasksQueueFile,
+    onQueueUpdated(payload) {
+      windowManager.send('task-queue-update', payload || {});
+    }
+  });
+  await taskQueueService.initialize();
+  container.register('taskQueueService', taskQueueService);
+
   const sessionWorkspace = new SessionWorkspace(paths.sessionWorkspaceBase);
   sessionWorkspace.cleanupStale(30);
   container.register('sessionWorkspace', sessionWorkspace);
@@ -156,7 +167,8 @@ async function bootstrapApplication(options = {}) {
 
   const agentLoop = new AgentLoop(dispatcher, agentMemory, db, sessionWorkspace, {
     templateBasePath: paths.promptTemplatesDir,
-    userProfilePath: paths.userProfilePath
+    userProfilePath: paths.userProfilePath,
+    taskQueueService
   });
   mcpServer.setAgentLoop(agentLoop);
   mcpServer.setSessionWorkspace(sessionWorkspace);
@@ -209,7 +221,8 @@ async function bootstrapApplication(options = {}) {
 
   const memoryDaemon = new BackgroundMemoryDaemon(dispatcher, agentMemory, db, eventBus, {
     basePath: paths.backgroundDaemonBasePath,
-    userProfilePath: paths.userProfilePath
+    userProfilePath: paths.userProfilePath,
+    taskQueueService
   });
   container.register('memoryDaemon', memoryDaemon);
 

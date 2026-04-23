@@ -11,6 +11,8 @@ function buildRuntimePaths(options = {}) {
   const connectorsDir = options.connectorsDir || path.join(agentinRoot, 'connectors');
   const pluginsDir = options.pluginsDir || path.join(agentinRoot, 'plugins');
   const memoryBasePath = options.memoryBasePath || path.join(agentinRoot, 'memory');
+  const tasksBasePath = options.tasksBasePath || path.join(agentinRoot, 'tasks');
+  const tasksQueueFile = options.tasksQueueFile || path.join(tasksBasePath, 'tasks.md');
   const userProfilePath = options.userProfilePath || path.join(agentinRoot, 'userabout', 'memoryaboutuser.md');
 
   return {
@@ -24,6 +26,8 @@ function buildRuntimePaths(options = {}) {
     connectorsDir,
     pluginsDir,
     memoryBasePath,
+    tasksBasePath,
+    tasksQueueFile,
     userProfilePath,
     backgroundNotifyPromptPath: options.backgroundNotifyPromptPath || path.join(promptTemplatesDir, 'background-notify.md'),
     backgroundDaemonBasePath: options.backgroundDaemonBasePath || path.join(agentBasePath, 'pro', 'background-daemon'),

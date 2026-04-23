@@ -269,6 +269,88 @@ class CommandHandler {
         });
 
         // /memory [list|read <type> [filename]]
+        this.commands.set('/tasks', {
+            description: 'Manage global task queue (/tasks list|run|defer|approve|cancel)',
+            execute: async (args) => {
+                try {
+                    const action = String(args[0] || 'list').toLowerCase();
+                    const sessionId = this.mainPanel.activeTabId || null;
+
+                    if (action === 'list') {
+                        const result = await window.electronAPI.tasks.list({ includeTerminal: false });
+                        const tasks = Array.isArray(result?.tasks) ? result.tasks : [];
+                        if (!tasks.length) {
+                            return { output: '🧾 No active global tasks.', style: 'system' };
+                        }
+                        const lines = [`🧾 **Global Tasks** (${tasks.length}):`];
+                        for (const task of tasks.slice(0, 30)) {
+                            const actionLabel = task.action && task.action !== 'none' ? ` | ${task.action}` : '';
+                            lines.push(
+                                `  ${task.id} [${task.status}] ${task.listener} ${task.requires_user_action ? 'ask-user' : 'auto'} ${actionLabel}`
+                            );
+                            lines.push(`    ${task.title}`);
+                        }
+                        if (tasks.length > 30) lines.push(`  ...and ${tasks.length - 30} more`);
+                        return { output: lines.join('\n'), style: 'system' };
+                    }
+
+                    const taskId = String(args[1] || '').trim();
+                    if (!taskId) {
+                        return { output: 'Usage: /tasks <list|run|defer|approve|cancel> [task_id] [minutes]', style: 'system' };
+                    }
+
+                    if (action === 'run') {
+                        const result = await window.electronAPI.tasks.run(taskId, {
+                            actor: 'chat-user',
+                            owner: 'chat',
+                            sessionId
+                        });
+                        if (!result?.success) {
+                            return { output: `Task run failed: ${result?.error || 'unknown error'}`, style: 'system' };
+                        }
+                        return { output: `▶ Task ${taskId} completed.`, style: 'system' };
+                    }
+
+                    if (action === 'defer') {
+                        const minutes = Math.max(1, Number(args[2] || 5));
+                        const result = await window.electronAPI.tasks.defer(taskId, minutes, {
+                            actor: 'chat-user',
+                            reason: `Deferred via command for ${minutes} minute(s)`
+                        });
+                        if (!result?.success) {
+                            return { output: `Task defer failed: ${result?.error || 'unknown error'}`, style: 'system' };
+                        }
+                        return { output: `⏳ Task ${taskId} deferred for ${minutes} minute(s).`, style: 'system' };
+                    }
+
+                    if (action === 'approve') {
+                        const result = await window.electronAPI.tasks.approve(taskId, { actor: 'chat-user' });
+                        if (!result?.success) {
+                            return { output: `Task approve failed: ${result?.error || 'unknown error'}`, style: 'system' };
+                        }
+                        return { output: `✅ Task ${taskId} approved.`, style: 'system' };
+                    }
+
+                    if (action === 'cancel') {
+                        const result = await window.electronAPI.tasks.cancel(taskId, { actor: 'chat-user' });
+                        if (!result?.success) {
+                            return { output: `Task cancel failed: ${result?.error || 'unknown error'}`, style: 'system' };
+                        }
+                        return { output: `🛑 Task ${taskId} cancelled.`, style: 'system' };
+                    }
+
+                    return { output: 'Usage: /tasks <list|run|defer|approve|cancel> [task_id] [minutes]', style: 'system' };
+                } catch (e) {
+                    return { output: `Tasks error: ${e.message}`, style: 'system' };
+                }
+            }
+        });
+        this.commands.set('/task', {
+            description: 'Alias for /tasks',
+            execute: async (args) => this.commands.get('/tasks').execute(args)
+        });
+
+        // /memory [list|read <type> [filename]]
         this.commands.set('/memory', {
             description: 'View or list agent memory files',
             execute: async (args) => {

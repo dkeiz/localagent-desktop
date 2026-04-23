@@ -55,6 +55,7 @@ class BackgroundMemoryDaemon {
         this.statePath = options.statePath || path.join(this.basePath, 'config', 'state.json');
         this.systemPromptPath = options.systemPromptPath || path.join(this.basePath, 'system.md');
         this.userProfilePath = options.userProfilePath || path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
+        this.taskQueueService = options.taskQueueService || null;
 
         // Listen for chat activity events from EventBus
         if (this.eventBus) {
@@ -189,6 +190,7 @@ class BackgroundMemoryDaemon {
             const resources = await this._checkResources();
             if (!resources.available) {
                 console.log(`[MemoryDaemon] Resources busy (CPU: ${resources.cpu}%, GPU: ${resources.gpu}%), retrying in 5 min`);
+                await this._deferDueGlobalDaemonTasks('Resources busy');
                 this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
                 if (typeof this._retryTimer.unref === 'function') {
                     this._retryTimer.unref();
@@ -199,6 +201,7 @@ class BackgroundMemoryDaemon {
             // Check if user is actively chatting
             if (this._userActive) {
                 console.log('[MemoryDaemon] User is active, deferring tick');
+                await this._deferDueGlobalDaemonTasks('User is active');
                 this._retryTimer = setTimeout(() => this._onTick(), this.RETRY_DELAY);
                 if (typeof this._retryTimer.unref === 'function') {
                     this._retryTimer.unref();
@@ -269,6 +272,24 @@ class BackgroundMemoryDaemon {
      * Execute a tick — ask LLM what needs doing, then do it.
      */
     async _executeTick() {
+        const globalProcessed = await this._drainGlobalQueueTasks(this.MAX_QUEUED_JOBS_PER_TICK);
+        if (globalProcessed > 0) {
+            const state = this._loadState();
+            state.lastTickTime = new Date().toISOString();
+            state.lastTaskName = 'global-daemon-queue';
+            state.tasksCompleted = (state.tasksCompleted || 0) + globalProcessed;
+            this._saveStateData(state);
+            console.log(`[MemoryDaemon] Processed ${globalProcessed} global daemon queue task(s)`);
+            if (this.eventBus) {
+                this.eventBus.publish('daemon:task-completed', {
+                    daemon: 'memory',
+                    task: 'global-daemon-queue',
+                    summary: `Processed ${globalProcessed} queued daemon task(s)`
+                });
+            }
+            return;
+        }
+
         const queueProcessed = await this._drainQueuedSummaryJobs(this.MAX_QUEUED_JOBS_PER_TICK);
         if (queueProcessed > 0) {
             const state = this._loadState();
@@ -400,6 +421,84 @@ After completing the task, end with a brief summary of what you did in the forma
         }
 
         return processed;
+    }
+
+    async _deferDueGlobalDaemonTasks(reason = 'Daemon deferred') {
+        if (!this.taskQueueService || typeof this.taskQueueService.deferDueListenerTasks !== 'function') {
+            return;
+        }
+        try {
+            await this.taskQueueService.deferDueListenerTasks('daemon', Math.ceil(this.RETRY_DELAY / 60000), {
+                actor: 'daemon',
+                reason,
+                limit: 5
+            });
+        } catch (error) {
+            console.error('[MemoryDaemon] Failed to defer global daemon tasks:', error.message);
+        }
+    }
+
+    async _drainGlobalQueueTasks(maxJobs = 5) {
+        if (!this.taskQueueService || typeof this.taskQueueService.claimNextTask !== 'function') {
+            return 0;
+        }
+
+        const limit = Math.max(1, Number(maxJobs) || 5);
+        let processed = 0;
+
+        for (let i = 0; i < limit; i++) {
+            if (!this.running) break;
+
+            const task = await this.taskQueueService.claimNextTask({
+                listener: 'daemon',
+                owner: 'daemon',
+                actor: 'daemon',
+                statuses: ['pending', 'approved', 'deferred']
+            });
+            if (!task) {
+                break;
+            }
+
+            try {
+                await this._executeGlobalDaemonTask(task);
+                await this.taskQueueService.completeTask(task.id, {
+                    actor: 'daemon',
+                    summary: `Executed action ${task.action || 'none'}`
+                });
+                processed++;
+            } catch (error) {
+                await this.taskQueueService.failTask(task.id, error.message, { actor: 'daemon' });
+                console.error(`[MemoryDaemon] Global queue task failed (${task.id}):`, error.message);
+            }
+        }
+
+        return processed;
+    }
+
+    async _executeGlobalDaemonTask(task) {
+        const action = String(task?.action || '').trim().toLowerCase();
+        const payload = task?.payload && typeof task.payload === 'object' ? task.payload : {};
+        if (action === 'daemon.enqueue_memory_job') {
+            const sessionId = String(payload.sessionId || '').trim();
+            if (!sessionId) {
+                throw new Error('Missing payload.sessionId for daemon.enqueue_memory_job');
+            }
+            if (!this.db || typeof this.db.enqueueMemoryJob !== 'function') {
+                throw new Error('Database memory job queue unavailable');
+            }
+            await this.db.enqueueMemoryJob({
+                jobType: String(payload.jobType || 'summarize_session'),
+                sessionId,
+                payload: {
+                    source: payload.source || 'global_task',
+                    enqueued_at: new Date().toISOString(),
+                    global_task_id: task.id
+                }
+            });
+            return;
+        }
+
+        throw new Error(`Unsupported daemon task action: ${action || 'none'}`);
     }
 
     _buildQueuedSummaryPrompt(job, transcript) {

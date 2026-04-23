@@ -15,10 +15,13 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     windowManager,
     chainController,
     agentLoop,
+    agentManager,
     dispatcher,
     sessionWorkspace,
     sessionInitManager,
     promptFileManager,
+    memoryDaemon,
+    taskQueueService,
     testClientMode,
     testClientStore
   } = runtime;
@@ -164,6 +167,129 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     const result = await db.deleteTodo(id);
     windowManager.send('todo-update');
     return result;
+  });
+
+  async function executeTaskAction(task, context = {}) {
+    const action = String(task?.action || '').trim().toLowerCase();
+    const payload = task?.payload && typeof task.payload === 'object' ? task.payload : {};
+
+    if (!action || action === 'none' || action === 'chat.request_decision') {
+      return {
+        success: true,
+        summary: `Task ${task.id} acknowledged for chat handling.`
+      };
+    }
+
+    if (action === 'daemon.enqueue_memory_job') {
+      const sessionId = String(payload.sessionId || '').trim();
+      if (!sessionId) {
+        throw new Error('Missing payload.sessionId for daemon.enqueue_memory_job');
+      }
+      await db.enqueueMemoryJob({
+        jobType: String(payload.jobType || 'summarize_session'),
+        sessionId,
+        payload: {
+          source: payload.source || 'task_queue_manual_run',
+          enqueued_at: new Date().toISOString(),
+          global_task_id: task.id
+        }
+      });
+      return {
+        success: true,
+        summary: `Queued ${payload.jobType || 'summarize_session'} for session ${sessionId}.`
+      };
+    }
+
+    if (action === 'subagent.delegate') {
+      if (!agentManager || typeof agentManager.invokeSubAgent !== 'function') {
+        throw new Error('Sub-agent runtime is unavailable');
+      }
+      const subagentId = Number(payload.subagentId || payload.subagent_id || 0);
+      const delegatedTask = String(payload.task || payload.prompt || '').trim();
+      if (!subagentId || !delegatedTask) {
+        throw new Error('subagent.delegate requires payload.subagentId and payload.task');
+      }
+      const parentSessionId = context.sessionId || null;
+      const run = await agentManager.invokeSubAgent(parentSessionId, subagentId, delegatedTask, {
+        contractType: payload.contract_type || payload.contractType || 'task_complete',
+        expectedOutput: payload.expected_output || payload.expectedOutput || '',
+        subagentMode: payload.subagent_mode || payload.subagentMode || 'no_ui',
+        permissionsContract: payload.permissions_contract || payload.permissionsContract || null
+      });
+      return {
+        success: true,
+        delegated: true,
+        run,
+        summary: `Delegated to subagent ${subagentId} (${run.run_id}).`
+      };
+    }
+
+    throw new Error(`Unsupported task action: ${action}`);
+  }
+
+  ipcMain.handle('task-queue:list', async (event, options = {}) => {
+    if (!taskQueueService?.listTasks) return { success: false, error: 'Task queue service unavailable', tasks: [] };
+    return taskQueueService.listTasks(options || {});
+  });
+
+  ipcMain.handle('task-queue:approve', async (event, taskId, options = {}) => {
+    if (!taskQueueService?.approveTask) return { success: false, error: 'Task queue service unavailable' };
+    return taskQueueService.approveTask(taskId, { actor: options.actor || 'chat-user' });
+  });
+
+  ipcMain.handle('task-queue:cancel', async (event, taskId, options = {}) => {
+    if (!taskQueueService?.cancelTask) return { success: false, error: 'Task queue service unavailable' };
+    return taskQueueService.cancelTask(taskId, { actor: options.actor || 'chat-user' });
+  });
+
+  ipcMain.handle('task-queue:defer', async (event, taskId, minutes = 5, options = {}) => {
+    if (!taskQueueService?.deferTask) return { success: false, error: 'Task queue service unavailable' };
+    return taskQueueService.deferTask(taskId, minutes, {
+      actor: options.actor || 'chat-user',
+      reason: options.reason || 'Deferred by user'
+    });
+  });
+
+  ipcMain.handle('task-queue:run', async (event, taskId, context = {}) => {
+    if (!taskQueueService?.claimTaskById) return { success: false, error: 'Task queue service unavailable' };
+
+    const claimed = await taskQueueService.claimTaskById(taskId, {
+      owner: context.owner || 'chat',
+      actor: context.actor || 'chat-user',
+      allowFuture: context.allowFuture === true
+    });
+    if (!claimed?.success) {
+      return claimed || { success: false, error: 'Failed to claim task' };
+    }
+
+    try {
+      const execResult = await executeTaskAction(claimed.task, context || {});
+      if (execResult.deferred && taskQueueService?.deferTask) {
+        await taskQueueService.deferTask(claimed.task.id, Number(execResult.deferMinutes || 5), {
+          actor: context.actor || 'chat-user',
+          reason: execResult.reason || 'Deferred by task executor'
+        });
+      } else {
+        await taskQueueService.completeTask(claimed.task.id, {
+          actor: context.actor || 'chat-user',
+          summary: execResult.summary || 'Task executed successfully'
+        });
+      }
+
+      if (memoryDaemon && context.triggerDaemonRun === true && memoryDaemon.runNow) {
+        memoryDaemon.runNow().catch(() => {});
+      }
+
+      return { success: true, taskId: claimed.task.id, result: execResult };
+    } catch (error) {
+      await taskQueueService.failTask(claimed.task.id, error.message, { actor: context.actor || 'chat-user' });
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('task-queue:create-or-reuse', async (event, taskInput, options = {}) => {
+    if (!taskQueueService?.createOrReuseTask) return { success: false, error: 'Task queue service unavailable' };
+    return taskQueueService.createOrReuseTask(taskInput || {}, { actor: options.actor || 'chat-user' });
   });
 
   ipcMain.handle('get-conversations', async (event, limit = 100, sessionId = null) => {

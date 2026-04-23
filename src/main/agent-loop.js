@@ -31,6 +31,7 @@ class AgentLoop extends EventEmitter {
             close: path.join(basePath, 'memory-close.md')
         };
         this.userProfilePath = options.userProfilePath || path.join(__dirname, '../../agentin/userabout/memoryaboutuser.md');
+        this.taskQueueService = options.taskQueueService || null;
     }
 
     // ==================== Session Management ====================
@@ -216,6 +217,30 @@ class AgentLoop extends EventEmitter {
     // ==================== Trigger 3: Chat Close ====================
 
     async _enqueueCloseSummaryJob(sessionId) {
+        if (this.taskQueueService && typeof this.taskQueueService.createOrReuseTask === 'function') {
+            try {
+                await this.taskQueueService.createOrReuseTask({
+                    listener: 'daemon',
+                    status: 'pending',
+                    requires_user_action: false,
+                    priority: 'normal',
+                    dedupe: `daemon:summarize_session:${sessionId}`,
+                    action: 'daemon.enqueue_memory_job',
+                    payload: {
+                        jobType: 'summarize_session',
+                        sessionId,
+                        source: 'session_close',
+                        enqueued_at: new Date().toISOString()
+                    },
+                    title: `Summarize closed session ${sessionId}`,
+                    by: 'agent-loop'
+                }, { actor: 'agent-loop' });
+                return;
+            } catch (error) {
+                console.error(`[AgentLoop] Failed to enqueue global task for session ${sessionId}:`, error.message);
+            }
+        }
+
         if (!this.db || typeof this.db.enqueueMemoryJob !== 'function') {
             return;
         }

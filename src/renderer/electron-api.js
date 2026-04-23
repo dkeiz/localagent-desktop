@@ -86,6 +86,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   stopGeneration: () => ipcRenderer.invoke('stop-generation'),
   isGenerating: () => ipcRenderer.invoke('is-generating'),
   onConversationUpdate: (callback) => ipcRenderer.on('conversation-update', callback),
+  onTaskQueueUpdate: (callback) => ipcRenderer.on('task-queue-update', callback),
   onCalendarUpdate: (callback) => ipcRenderer.on('calendar-update', callback),
   onTodoUpdate: (callback) => ipcRenderer.on('todo-update', callback),
   onToolUpdate: (callback) => ipcRenderer.on('tool-update', callback),
@@ -204,5 +205,13 @@ window.electronAPI = Object.assign(ipcRenderer, {
     setAgentGroup: (agentId, groupId, value) => ipcRenderer.invoke('permissions:set-agent-group', agentId, groupId, value),
     setAgentTool: (agentId, toolName, active) => ipcRenderer.invoke('permissions:set-agent-tool', agentId, toolName, active),
     resetAgentProfile: (agentId) => ipcRenderer.invoke('permissions:reset-agent-profile', agentId)
+  },
+  tasks: {
+    list: (options = {}) => ipcRenderer.invoke('task-queue:list', options),
+    run: (taskId, context = {}) => ipcRenderer.invoke('task-queue:run', taskId, context),
+    defer: (taskId, minutes = 5, options = {}) => ipcRenderer.invoke('task-queue:defer', taskId, minutes, options),
+    approve: (taskId, options = {}) => ipcRenderer.invoke('task-queue:approve', taskId, options),
+    cancel: (taskId, options = {}) => ipcRenderer.invoke('task-queue:cancel', taskId, options),
+    createOrReuse: (taskInput = {}, options = {}) => ipcRenderer.invoke('task-queue:create-or-reuse', taskInput, options)
   }
 });

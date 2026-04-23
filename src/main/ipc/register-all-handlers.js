@@ -32,6 +32,7 @@ function buildRuntime(container) {
     dispatcher: container.get('dispatcher'),
     agentManager: container.get('agentManager'),
     pluginManager: container.optional('pluginManager'),
+    taskQueueService: container.optional('taskQueueService'),
     eventBus: container.get('eventBus'),
     memoryDaemon: container.get('memoryDaemon'),
     workflowScheduler: container.get('workflowScheduler'),
