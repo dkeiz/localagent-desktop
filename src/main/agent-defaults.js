@@ -43,6 +43,7 @@ Organize findings by file, with severity ratings and actionable suggestions.`
             type: 'pro',
             icon: '📂',
             description: 'Manages files, organizes directories, performs bulk operations',
+            config: { chat_ui_plugin: 'agent-file-browser' },
             system_prompt: `You are a **File Management Agent**. You handle file operations, directory organization, and bulk file processing.
 
 ## Behavior
@@ -77,6 +78,7 @@ Dashboard-style reports with metrics, status indicators, and recommendations.`
             type: 'pro',
             icon: '🧪',
             description: 'Plans, coordinates, and synthesizes multi-source research by delegating to sub-agents',
+            config: { chat_ui_plugin: 'agent-research-orchestrator-ui' },
             system_prompt: [
                 'You are a **Research Orchestrator Agent**. You plan, coordinate, and synthesize',
                 'multi-source research by delegating tasks to sub-agents and managing findings as files.',
@@ -112,6 +114,7 @@ Dashboard-style reports with metrics, status indicators, and recommendations.`
             type: 'pro',
             icon: '🗂️',
             description: 'Builds RAG datasets, vectorizes content, and serves mode-driven retrieval answers',
+            config: { chat_ui_plugin: 'agent-rag-studio' },
             system_prompt: [
                 'You are a **Universal RAG Agent**.',
                 'Your job is to ingest user data, vectorize it, define retrieval modes, and answer using the active mode.',

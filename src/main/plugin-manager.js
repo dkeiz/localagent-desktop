@@ -455,6 +455,105 @@ class PluginManager extends EventEmitter {
         return this.getAgentPlugins(agentSlug)[0] || null;
     }
 
+    _parseAgentConfig(agentInfo) {
+        const raw = agentInfo?.config;
+        if (!raw) return {};
+        if (typeof raw === 'object' && !Array.isArray(raw)) {
+            return raw;
+        }
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    return parsed;
+                }
+            } catch (error) {
+                return {};
+            }
+        }
+        return {};
+    }
+
+    _normalizeUiMode(value) {
+        const mode = String(value || 'plugin').trim().toLowerCase();
+        if (mode === 'no_ui' || mode === 'noplugin' || mode === 'classic') {
+            return 'no_ui';
+        }
+        return 'plugin';
+    }
+
+    _getConfiguredUiPluginId(agentInfo) {
+        const config = this._parseAgentConfig(agentInfo);
+        return String(
+            config.chat_ui_plugin
+            || config.chatUiPlugin
+            || config.ui_plugin_id
+            || config.uiPluginId
+            || ''
+        ).trim() || null;
+    }
+
+    _resolveFallbackUiPluginId(agentInfo) {
+        const slug = String(agentInfo?.slug || '').trim();
+        if (!slug) return null;
+
+        const legacyContractMap = {
+            'file-manager': 'agent-file-browser',
+            'research-orchestrator': 'agent-research-orchestrator-ui',
+            'universal-rag-agent': 'agent-rag-studio'
+        };
+        const mappedPlugin = legacyContractMap[slug];
+        if (mappedPlugin && this.plugins.has(mappedPlugin)) {
+            return mappedPlugin;
+        }
+
+        const exactMatches = [];
+        for (const [id, plugin] of this.plugins) {
+            const declared = String(plugin.manifest?.agentSlug || '').trim();
+            if (declared && declared === slug) {
+                exactMatches.push(id);
+            }
+        }
+        exactMatches.sort((a, b) => a.localeCompare(b));
+        return exactMatches[0] || null;
+    }
+
+    resolvePrimaryAgentChatUIPlugin(agentInfo, options = {}) {
+        const allowFallback = options.allowFallback !== false;
+        const configured = this._getConfiguredUiPluginId(agentInfo);
+        if (configured && this.plugins.has(configured)) {
+            return configured;
+        }
+        if (!allowFallback) return null;
+        return this._resolveFallbackUiPluginId(agentInfo);
+    }
+
+    _resolveAgentChatUITarget(agentInfo, uiContext = {}) {
+        const uiMode = this._normalizeUiMode(uiContext?.uiMode);
+        if (uiMode !== 'plugin') {
+            return { uiMode, pluginId: null, plugin: null };
+        }
+
+        const requestedPluginId = String(uiContext?.uiPluginId || '').trim() || null;
+        const primaryPluginId = this.resolvePrimaryAgentChatUIPlugin(agentInfo, { allowFallback: true });
+        const resolvedPluginId = requestedPluginId || primaryPluginId;
+        if (!resolvedPluginId) {
+            return { uiMode, pluginId: null, plugin: null };
+        }
+
+        // Enforce 1:1 contract: only the primary plugin can own chat UI for this agent.
+        if (primaryPluginId && resolvedPluginId !== primaryPluginId) {
+            return { uiMode, pluginId: primaryPluginId, plugin: null, rejectedPluginId: resolvedPluginId };
+        }
+
+        const plugin = this.plugins.get(resolvedPluginId) || null;
+        if (!plugin || plugin.status !== 'enabled' || !plugin.chatUIs?.length) {
+            return { uiMode, pluginId: resolvedPluginId, plugin: null };
+        }
+
+        return { uiMode, pluginId: resolvedPluginId, plugin };
+    }
+
     getPluginsByCapability(capability, options = {}) {
         const requested = String(capability || '').trim();
         if (!requested) return [];
@@ -497,33 +596,31 @@ class PluginManager extends EventEmitter {
         return matches;
     }
 
-    async getAgentChatUI(agentInfo) {
-        const slug = String(agentInfo?.slug || '').trim();
-        const pluginIds = this.getAgentPlugins(slug);
+    async getAgentChatUI(agentInfo, uiContext = {}) {
+        const target = this._resolveAgentChatUITarget(agentInfo, uiContext);
+        if (!target.plugin) {
+            return null;
+        }
+
         const panels = [];
         const css = [];
         const actions = {};
 
-        for (const pluginId of pluginIds) {
-            const plugin = this.plugins.get(pluginId);
-            if (!plugin || plugin.status !== 'enabled' || !plugin.chatUIs?.length) {
-                continue;
-            }
-
-            for (const contribution of plugin.chatUIs) {
-                try {
-                    const html = typeof contribution.renderPanel === 'function'
-                        ? await contribution.renderPanel(agentInfo)
-                        : contribution.html;
-                    if (!html) continue;
-                    panels.push(`<div class="agent-ui-plugin" data-agent-ui-plugin-id="${pluginId}">${html}</div>`);
-                    if (contribution.css) {
-                        css.push(`/* ${pluginId} */\n${contribution.css}`);
-                    }
-                    actions[pluginId] = Object.keys(contribution.actions || {});
-                } catch (error) {
-                    console.error(`[PluginManager] Chat UI render failed for "${pluginId}":`, error.message);
+        const pluginId = target.pluginId;
+        const plugin = target.plugin;
+        for (const contribution of plugin.chatUIs) {
+            try {
+                const html = typeof contribution.renderPanel === 'function'
+                    ? await contribution.renderPanel(agentInfo)
+                    : contribution.html;
+                if (!html) continue;
+                panels.push(`<div class="agent-ui-plugin" data-agent-ui-plugin-id="${pluginId}">${html}</div>`);
+                if (contribution.css) {
+                    css.push(`/* ${pluginId} */\n${contribution.css}`);
                 }
+                actions[pluginId] = Object.keys(contribution.actions || {});
+            } catch (error) {
+                console.error(`[PluginManager] Chat UI render failed for "${pluginId}":`, error.message);
             }
         }
 
@@ -532,7 +629,9 @@ class PluginManager extends EventEmitter {
         }
 
         return {
-            pluginIds,
+            pluginIds: [pluginId],
+            uiPluginId: pluginId,
+            uiMode: target.uiMode,
             title: agentInfo?.name || 'Agent',
             html: panels.join('\n'),
             css: css.join('\n\n'),
@@ -540,9 +639,13 @@ class PluginManager extends EventEmitter {
         };
     }
 
-    _getEnabledChatContributions(agentInfo, pluginId = null) {
-        const slug = String(agentInfo?.slug || '').trim();
-        const pluginIds = pluginId ? [pluginId] : this.getAgentPlugins(slug);
+    _getEnabledChatContributions(agentInfo, pluginId = null, uiContext = {}) {
+        const contextWithPlugin = {
+            ...uiContext,
+            ...(pluginId ? { uiPluginId: pluginId } : {})
+        };
+        const target = this._resolveAgentChatUITarget(agentInfo, contextWithPlugin);
+        const pluginIds = target.plugin ? [target.pluginId] : [];
         const output = [];
 
         for (const id of pluginIds) {
@@ -558,14 +661,14 @@ class PluginManager extends EventEmitter {
         return output;
     }
 
-    async runAgentChatUIAction(agentInfo, action, payload = {}) {
+    async runAgentChatUIAction(agentInfo, action, payload = {}, uiContext = {}) {
         const actionName = String(action || '').trim();
         if (!actionName) {
             throw new Error('Agent chat UI action is required');
         }
 
         const requestedPluginId = payload?.pluginId || payload?._pluginId || null;
-        const contributions = this._getEnabledChatContributions(agentInfo, requestedPluginId);
+        const contributions = this._getEnabledChatContributions(agentInfo, requestedPluginId, uiContext);
         for (const { pluginId, plugin, contribution } of contributions) {
             const handler = contribution.actions?.[actionName];
             if (typeof handler !== 'function') {
@@ -588,7 +691,7 @@ class PluginManager extends EventEmitter {
         throw new Error(`Agent chat UI action "${actionName}" not found`);
     }
 
-    async handleAgentChatUIEvent(agentInfo, eventName, payload = {}) {
+    async handleAgentChatUIEvent(agentInfo, eventName, payload = {}, uiContext = {}) {
         const key = eventName === 'activated'
             ? 'onTabActivated'
             : eventName === 'deactivated'
@@ -597,7 +700,7 @@ class PluginManager extends EventEmitter {
         if (!key) return null;
 
         const results = [];
-        for (const { pluginId, plugin, contribution } of this._getEnabledChatContributions(agentInfo)) {
+        for (const { pluginId, plugin, contribution } of this._getEnabledChatContributions(agentInfo, null, uiContext)) {
             const handler = contribution[key];
             if (typeof handler !== 'function') continue;
             results.push(await handler(agentInfo, payload, plugin.context, pluginId));

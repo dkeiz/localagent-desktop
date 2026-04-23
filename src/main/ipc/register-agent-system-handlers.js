@@ -281,34 +281,34 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     }
   });
 
-  ipcMain.handle('get-agent-chat-ui', async (event, agentId) => {
+  ipcMain.handle('get-agent-chat-ui', async (event, agentId, uiContext = {}) => {
     if (!agentManager || !pluginManager?.getAgentChatUI) return null;
     const agentInfo = await getAgentUiInfo(agentManager, agentId);
     if (!agentInfo) return null;
-    return pluginManager.getAgentChatUI(agentInfo);
+    return pluginManager.getAgentChatUI(agentInfo, uiContext);
   });
 
-  ipcMain.handle('run-agent-chat-ui-action', async (event, agentId, action, payload = {}) => {
+  ipcMain.handle('run-agent-chat-ui-action', async (event, agentId, action, payload = {}, uiContext = {}) => {
     if (!agentManager || !pluginManager?.runAgentChatUIAction) {
       return { success: false, error: 'Agent chat UI actions are unavailable' };
     }
     const agentInfo = await getAgentUiInfo(agentManager, agentId);
     if (!agentInfo) return { success: false, error: 'Agent not found' };
     try {
-      return await pluginManager.runAgentChatUIAction(agentInfo, action, payload);
+      return await pluginManager.runAgentChatUIAction(agentInfo, action, payload, uiContext);
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
 
-  ipcMain.handle('agent-chat-ui-event', async (event, agentId, eventName, payload = {}) => {
+  ipcMain.handle('agent-chat-ui-event', async (event, agentId, eventName, payload = {}, uiContext = {}) => {
     if (!agentManager || !pluginManager?.handleAgentChatUIEvent) {
       return { success: false, error: 'Agent chat UI events are unavailable' };
     }
     const agentInfo = await getAgentUiInfo(agentManager, agentId);
     if (!agentInfo) return { success: false, error: 'Agent not found' };
     try {
-      return await pluginManager.handleAgentChatUIEvent(agentInfo, eventName, payload);
+      return await pluginManager.handleAgentChatUIEvent(agentInfo, eventName, payload, uiContext);
     } catch (error) {
       return { success: false, error: error.message };
     }

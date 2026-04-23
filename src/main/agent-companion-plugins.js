@@ -8,10 +8,10 @@ async function hasOtherActiveAgentForPlugin(manager, currentAgent, pluginId) {
         if (agent.status !== 'active') continue;
 
         const slug = manager._getSafeFolderName(agent.name);
-        const pluginIds = typeof pluginManager.getAgentPlugins === 'function'
-            ? pluginManager.getAgentPlugins(slug)
-            : [pluginManager.getAgentPlugin(slug)].filter(Boolean);
-        if (pluginIds.includes(pluginId)) {
+        const resolved = typeof pluginManager.resolvePrimaryAgentChatUIPlugin === 'function'
+            ? pluginManager.resolvePrimaryAgentChatUIPlugin({ ...agent, slug }, { allowFallback: true })
+            : null;
+        if (resolved && resolved === pluginId) {
             return true;
         }
     }
@@ -21,46 +21,34 @@ async function hasOtherActiveAgentForPlugin(manager, currentAgent, pluginId) {
 
 async function enableCompanionPlugin(manager, agent) {
     const pluginManager = manager.pluginManager;
-    if (!pluginManager || (
-        typeof pluginManager.getAgentPlugins !== 'function'
-        && typeof pluginManager.getAgentPlugin !== 'function'
-    )) return;
+    if (!pluginManager || typeof pluginManager.resolvePrimaryAgentChatUIPlugin !== 'function') return;
 
     const slug = manager._getSafeFolderName(agent.name);
-    const pluginIds = typeof pluginManager.getAgentPlugins === 'function'
-        ? pluginManager.getAgentPlugins(slug)
-        : [pluginManager.getAgentPlugin(slug)].filter(Boolean);
+    const pluginId = pluginManager.resolvePrimaryAgentChatUIPlugin({ ...agent, slug }, { allowFallback: true });
+    if (!pluginId) return;
 
-    for (const pluginId of pluginIds) {
-        try {
-            await pluginManager.enablePlugin(pluginId, { persistStatus: false });
-            console.log(`[AgentManager] Auto-enabled companion plugin "${pluginId}" for agent "${agent.name}"`);
-        } catch (error) {
-            console.warn(`[AgentManager] Failed to auto-enable companion plugin "${pluginId}":`, error.message);
-        }
+    try {
+        await pluginManager.enablePlugin(pluginId, { persistStatus: false });
+        console.log(`[AgentManager] Auto-enabled companion plugin "${pluginId}" for agent "${agent.name}"`);
+    } catch (error) {
+        console.warn(`[AgentManager] Failed to auto-enable companion plugin "${pluginId}":`, error.message);
     }
 }
 
 async function disableCompanionPlugin(manager, agent) {
     const pluginManager = manager.pluginManager;
-    if (!pluginManager || (
-        typeof pluginManager.getAgentPlugins !== 'function'
-        && typeof pluginManager.getAgentPlugin !== 'function'
-    )) return;
+    if (!pluginManager || typeof pluginManager.resolvePrimaryAgentChatUIPlugin !== 'function') return;
 
     const slug = manager._getSafeFolderName(agent.name);
-    const pluginIds = typeof pluginManager.getAgentPlugins === 'function'
-        ? pluginManager.getAgentPlugins(slug)
-        : [pluginManager.getAgentPlugin(slug)].filter(Boolean);
+    const pluginId = pluginManager.resolvePrimaryAgentChatUIPlugin({ ...agent, slug }, { allowFallback: true });
+    if (!pluginId) return;
 
-    for (const pluginId of pluginIds) {
-        if (await hasOtherActiveAgentForPlugin(manager, agent, pluginId)) continue;
-        try {
-            await pluginManager.disablePlugin(pluginId, { persistStatus: false });
-            console.log(`[AgentManager] Auto-disabled companion plugin "${pluginId}" for agent "${agent.name}"`);
-        } catch (error) {
-            console.warn(`[AgentManager] Failed to auto-disable companion plugin "${pluginId}":`, error.message);
-        }
+    if (await hasOtherActiveAgentForPlugin(manager, agent, pluginId)) return;
+    try {
+        await pluginManager.disablePlugin(pluginId, { persistStatus: false });
+        console.log(`[AgentManager] Auto-disabled companion plugin "${pluginId}" for agent "${agent.name}"`);
+    } catch (error) {
+        console.warn(`[AgentManager] Failed to auto-disable companion plugin "${pluginId}":`, error.message);
     }
 }
 

@@ -957,7 +957,12 @@ class Sidebar {
                     title: `Chat`,
                     messagesHTML: '',
                     isSending: false,
-                    loadingId: null
+                    loadingId: null,
+                    uiMode: 'plugin',
+                    uiPluginId: null,
+                    needsReload: false,
+                    hasUnread: false,
+                    interruptionState: null
                 });
 
                 mainPanel.activeTabId = sessionId;

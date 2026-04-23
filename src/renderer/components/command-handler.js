@@ -123,6 +123,15 @@ class CommandHandler {
             execute: async () => {
                 try {
                     await window.electronAPI.stopGeneration();
+                    const sessionId = this.mainPanel.activeTabId;
+                    const tab = sessionId ? this.mainPanel.chatTabs.get(sessionId) : null;
+                    if (tab) {
+                        tab.interruptionState = {
+                            type: 'manual_stop',
+                            at: new Date().toISOString(),
+                            reason: 'Stopped by user'
+                        };
+                    }
                     this.mainPanel.isSending = false;
                     const sendBtn = document.getElementById('send-btn');
                     const stopBtn = document.getElementById('stop-btn');
@@ -135,16 +144,44 @@ class CommandHandler {
             }
         });
 
-        // /resume
-        this.commands.set('/resume', {
-            description: 'Continue generation after /stop',
-            execute: async () => {
-                return {
-                    output: null,
-                    passthrough: 'Continue from where you left off. Pick up exactly where you stopped and complete your response.',
-                    style: 'system'
-                };
+        const continueHandler = async () => {
+            const sessionId = this.mainPanel.activeTabId;
+            const tab = sessionId ? this.mainPanel.chatTabs.get(sessionId) : null;
+            if (!sessionId || !tab) {
+                return { output: 'No active chat tab to continue.', style: 'system' };
             }
+            if (this.mainPanel.isSending || tab.isSending) {
+                return { output: 'Generation is already running in this tab.', style: 'system' };
+            }
+
+            const state = tab.interruptionState || {};
+            let hint = String(state.reason || '').trim();
+            if (!hint) {
+                try {
+                    const conversations = await window.electronAPI.loadChatSession(sessionId);
+                    const lastUser = [...conversations].reverse().find(message => message.role === 'user');
+                    if (lastUser?.content) {
+                        hint = `Resume and complete the response to the most recent user request: "${String(lastUser.content).slice(0, 240)}"`;
+                    }
+                } catch (error) {
+                    // Fallback below.
+                }
+            }
+
+            const passthrough = hint
+                ? `Continue from the interruption and finish the pending response. Context: ${hint}`
+                : 'Continue from where you left off and complete the pending response.';
+            return { output: null, passthrough, style: 'system' };
+        };
+
+        this.commands.set('/continue', {
+            description: 'Continue after interruption in current tab',
+            execute: continueHandler
+        });
+
+        this.commands.set('/resume', {
+            description: 'Alias for /continue',
+            execute: continueHandler
         });
 
         // /stats

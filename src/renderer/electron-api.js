@@ -131,9 +131,9 @@ window.electronAPI = Object.assign(ipcRenderer, {
     compact: (id) => ipcRenderer.invoke('compact-agent', id),
     listFiles: (id) => ipcRenderer.invoke('list-agent-files', id),
     readFile: (id, relativePath) => ipcRenderer.invoke('read-agent-file', id, relativePath),
-    getChatUI: (id) => ipcRenderer.invoke('get-agent-chat-ui', id),
-    runChatUIAction: (id, action, payload = {}) => ipcRenderer.invoke('run-agent-chat-ui-action', id, action, payload),
-    chatUIEvent: (id, eventName, payload = {}) => ipcRenderer.invoke('agent-chat-ui-event', id, eventName, payload),
+    getChatUI: (id, uiContext = {}) => ipcRenderer.invoke('get-agent-chat-ui', id, uiContext),
+    runChatUIAction: (id, action, payload = {}, uiContext = {}) => ipcRenderer.invoke('run-agent-chat-ui-action', id, action, payload, uiContext),
+    chatUIEvent: (id, eventName, payload = {}, uiContext = {}) => ipcRenderer.invoke('agent-chat-ui-event', id, eventName, payload, uiContext),
   },
   subagents: {
     listRuns: (filters = {}) => ipcRenderer.invoke('subagents:list-runs', filters),

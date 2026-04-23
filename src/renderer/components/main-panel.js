@@ -668,8 +668,8 @@ class MainPanel {
     async newChat() {
         return window.mainPanelTabs.newChat(this);
     }
-    async openAgentChat(agentId, sessionId, agent) {
-        return window.mainPanelTabs.openAgentChat(this, agentId, sessionId, agent);
+    async openAgentChat(agentId, sessionId, agent, options = {}) {
+        return window.mainPanelTabs.openAgentChat(this, agentId, sessionId, agent, options);
     }
     async ensureSubagentChat(eventPayload, options = {}) {
         return window.mainPanelTabs.ensureSubagentChat(this, eventPayload, options);
