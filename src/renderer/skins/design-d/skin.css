@@ -104,7 +104,7 @@ html[data-active-skin="design-d"] .chat-tab-new {
 html[data-active-skin="design-d"] .input-container {
     border-top: none !important;
     background: transparent !important;
-    padding: 0 24px 32px 24px !important;
+    padding: 0 24px 0 24px !important;
 }
 
 html[data-active-skin="design-d"] .chat-input-row {

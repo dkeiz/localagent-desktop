@@ -28,6 +28,7 @@ function buildRuntime(container) {
     promptFileManager: container.get('promptFileManager'),
     agentLoop: container.get('agentLoop'),
     connectorRuntime: container.get('connectorRuntime'),
+    sessionWorkspace: container.get('sessionWorkspace'),
     dispatcher: container.get('dispatcher'),
     agentManager: container.get('agentManager'),
     pluginManager: container.optional('pluginManager'),

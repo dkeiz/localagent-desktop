@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { getModelRuntimeConfig } = require('../llm-config');
 const { getEffectiveLlmSelection, rememberLastWorkingModel } = require('../llm-state');
 const {
@@ -14,6 +16,7 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     chainController,
     agentLoop,
     dispatcher,
+    sessionWorkspace,
     sessionInitManager,
     promptFileManager,
     testClientMode,
@@ -102,6 +105,25 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     }
 
     return null;
+  }
+
+  const TEXT_EXTENSIONS = new Set([
+    '.txt', '.md', '.markdown', '.json', '.jsonl', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
+    '.js', '.cjs', '.mjs', '.ts', '.tsx', '.jsx', '.py', '.java', '.cs', '.go', '.rs', '.cpp', '.c',
+    '.h', '.hpp', '.rb', '.php', '.sh', '.ps1', '.bat', '.sql', '.xml', '.html', '.css', '.scss',
+    '.less', '.csv', '.log'
+  ]);
+  const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
+  const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac']);
+  const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.mov', '.mkv', '.avi', '.m4v']);
+
+  function artifactKindFromExt(fileName) {
+    const ext = path.extname(String(fileName || '')).toLowerCase();
+    if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+    if (AUDIO_EXTENSIONS.has(ext)) return 'audio';
+    if (VIDEO_EXTENSIONS.has(ext)) return 'video';
+    if (TEXT_EXTENSIONS.has(ext)) return 'text';
+    return 'binary';
   }
 
   ipcMain.handle('get-calendar-events', async () => db.getCalendarEvents());
@@ -315,6 +337,139 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     } catch (error) {
       console.error('Error deleting all conversations:', error);
       throw error;
+    }
+  });
+
+  ipcMain.handle('get-session-artifacts', async (event, sessionId = null) => {
+    try {
+      const effectiveSessionId = testClientMode ? ensureTestSession(sessionId) : sessionId;
+      if (isTestSessionId(effectiveSessionId)) {
+        return { success: true, sessionId: effectiveSessionId, files: [], fileCount: 0 };
+      }
+
+      const resolvedSessionId = effectiveSessionId || (await db.getCurrentSession())?.id || null;
+      if (!resolvedSessionId || !sessionWorkspace?.listFiles) {
+        return { success: true, sessionId: resolvedSessionId, files: [], fileCount: 0 };
+      }
+
+      const files = sessionWorkspace.listFiles(resolvedSessionId)
+        .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+        .map(file => ({
+          name: file.name,
+          size: file.size,
+          created: file.created,
+          kind: artifactKindFromExt(file.name)
+        }));
+
+      return {
+        success: true,
+        sessionId: resolvedSessionId,
+        files,
+        fileCount: files.length
+      };
+    } catch (error) {
+      console.error('Error getting session artifacts:', error);
+      return { success: false, error: error.message, files: [], fileCount: 0 };
+    }
+  });
+
+  ipcMain.handle('read-session-artifact', async (event, sessionId, fileName) => {
+    try {
+      const effectiveSessionId = testClientMode ? ensureTestSession(sessionId) : sessionId;
+      if (isTestSessionId(effectiveSessionId)) {
+        return { success: false, error: 'Test sessions do not expose workspace artifacts' };
+      }
+      if (!effectiveSessionId) {
+        return { success: false, error: 'Missing sessionId' };
+      }
+      if (!sessionWorkspace?.getWorkspacePath) {
+        return { success: false, error: 'Session workspace unavailable' };
+      }
+
+      const safeName = path.basename(String(fileName || ''));
+      if (!safeName || safeName !== String(fileName || '')) {
+        return { success: false, error: 'Invalid artifact name' };
+      }
+
+      const workspaceDir = sessionWorkspace.getWorkspacePath(effectiveSessionId);
+      const artifactPath = path.resolve(workspaceDir, safeName);
+      if (!artifactPath.startsWith(path.resolve(workspaceDir) + path.sep)) {
+        return { success: false, error: 'Requested artifact is outside workspace' };
+      }
+      if (!fs.existsSync(artifactPath) || !fs.statSync(artifactPath).isFile()) {
+        return { success: false, error: 'Artifact file not found' };
+      }
+
+      const stat = fs.statSync(artifactPath);
+      const kind = artifactKindFromExt(safeName);
+      const maxTextBytes = 1024 * 1024;
+      let content = null;
+      if (kind === 'text') {
+        if (stat.size > maxTextBytes) {
+          return {
+            success: false,
+            error: `Text artifact is too large to open (${Math.round(stat.size / 1024)} KB, max 1024 KB)`
+          };
+        }
+        content = fs.readFileSync(artifactPath, 'utf-8');
+      }
+
+      return {
+        success: true,
+        name: safeName,
+        size: stat.size,
+        kind,
+        path: artifactPath,
+        content
+      };
+    } catch (error) {
+      console.error('Error reading session artifact:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('write-session-artifact', async (event, sessionId, fileName, content) => {
+    try {
+      const effectiveSessionId = testClientMode ? ensureTestSession(sessionId) : sessionId;
+      if (isTestSessionId(effectiveSessionId)) {
+        return { success: false, error: 'Test sessions do not support artifact writes' };
+      }
+      if (!effectiveSessionId) {
+        return { success: false, error: 'Missing sessionId' };
+      }
+      if (!sessionWorkspace?.getWorkspacePath) {
+        return { success: false, error: 'Session workspace unavailable' };
+      }
+
+      const safeName = path.basename(String(fileName || ''));
+      if (!safeName || safeName !== String(fileName || '')) {
+        return { success: false, error: 'Invalid artifact name' };
+      }
+      if (artifactKindFromExt(safeName) !== 'text') {
+        return { success: false, error: 'Only text artifacts are editable' };
+      }
+
+      const workspaceDir = sessionWorkspace.getWorkspacePath(effectiveSessionId);
+      const artifactPath = path.resolve(workspaceDir, safeName);
+      if (!artifactPath.startsWith(path.resolve(workspaceDir) + path.sep)) {
+        return { success: false, error: 'Requested artifact is outside workspace' };
+      }
+      if (!fs.existsSync(artifactPath) || !fs.statSync(artifactPath).isFile()) {
+        return { success: false, error: 'Artifact file not found' };
+      }
+
+      const normalizedContent = String(content ?? '');
+      const maxBytes = 2 * 1024 * 1024;
+      if (Buffer.byteLength(normalizedContent, 'utf-8') > maxBytes) {
+        return { success: false, error: 'Edited content exceeds 2 MB limit' };
+      }
+
+      fs.writeFileSync(artifactPath, normalizedContent, 'utf-8');
+      windowManager.send('conversation-update', { sessionId: effectiveSessionId });
+      return { success: true, name: safeName, size: Buffer.byteLength(normalizedContent, 'utf-8') };
+    } catch (error) {
+      console.error('Error writing session artifact:', error);
+      return { success: false, error: error.message };
     }
   });
 

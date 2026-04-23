@@ -173,6 +173,10 @@
     color: #e53935;
 }
 
+.chat-tab[data-session-id^="artifact:"] .chat-tab-reset {
+    display: none;
+}
+
 /* New Chat Button (in tab bar) */
 .chat-tab-new {
     width: var(--control-h-sm);

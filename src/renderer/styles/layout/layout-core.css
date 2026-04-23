@@ -245,6 +245,212 @@
     opacity: 1;
 }
 
+.chat-provider-row {
+    position: relative;
+}
+
+.artifacts-btn {
+    position: relative;
+}
+
+.artifacts-btn.has-artifacts::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary-color);
+}
+
+.artifacts-popover {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 6px);
+    z-index: 40;
+    width: min(340px, 85vw);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+    padding: 0.4rem;
+}
+
+.artifacts-popover.hidden {
+    display: none;
+}
+
+.artifacts-popover-title {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding: 0.1rem 0.25rem 0.35rem;
+}
+
+.artifacts-popover-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    max-height: 180px;
+    overflow: auto;
+}
+
+.artifacts-popover-item {
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    padding: 0.28rem 0.42rem;
+    font-size: 0.76rem;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.artifacts-popover-item:hover {
+    background: rgba(127, 127, 127, 0.12);
+}
+
+.artifacts-popover-empty {
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+    padding: 0.35rem 0.3rem 0.25rem;
+}
+
+.artifacts-workbench-overlay {
+    position: absolute;
+    inset: 8px;
+    z-index: 30;
+    display: flex;
+    pointer-events: none;
+}
+
+.artifacts-workbench-overlay.hidden {
+    display: none;
+}
+
+.artifacts-workbench {
+    margin-left: auto;
+    width: min(760px, calc(100% - 8px));
+    max-height: min(70vh, 640px);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--card-bg);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    pointer-events: all;
+}
+
+.artifacts-workbench-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.45rem 0.55rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.artifacts-workbench-tabs {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    padding: 0.35rem 0.45rem 0.2rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.artifacts-tab {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border-color);
+    border-radius: 6px 6px 0 0;
+    background: rgba(127, 127, 127, 0.06);
+}
+
+.artifacts-tab.active {
+    background: rgba(56, 139, 253, 0.2);
+}
+
+.artifacts-tab-main,
+.artifacts-tab-close {
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.artifacts-tab-main {
+    padding: 0.24rem 0.45rem;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.76rem;
+}
+
+.artifacts-tab-close {
+    padding: 0.24rem 0.34rem;
+    opacity: 0.75;
+}
+
+.artifacts-workbench-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 260px;
+    padding: 0.5rem;
+    overflow: auto;
+}
+
+.artifacts-doc-meta {
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+}
+
+.artifacts-editor {
+    width: 100%;
+    min-height: 300px;
+    resize: vertical;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.artifacts-doc-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.artifacts-media-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 220px;
+}
+
+.artifacts-image {
+    max-width: 100%;
+    max-height: 58vh;
+    object-fit: contain;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.artifacts-media {
+    width: 100%;
+    max-height: 58vh;
+}
+
+.artifacts-binary-note,
+.artifacts-empty {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    padding: 0.35rem;
+}
+
 /* Settings and configuration styles */
 .settings-group {
     display: flex;
