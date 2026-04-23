@@ -1,6 +1,7 @@
 {
   "version": 1,
   "active_mode_id": "mode-1776696853085-rag-skill-mode",
+  "response_mode": "agent",
   "datasets": [],
   "modes": [
     {
@@ -26,6 +27,6 @@
       "updated_at": "2026-04-20T14:54:13.085Z"
     }
   ],
-  "updated_at": "2026-04-23T13:53:47.449Z",
+  "updated_at": "2026-04-23T15:41:00.013Z",
   "last_message": "RAG runtime shutdown."
 }
