@@ -1,7 +1,23 @@
+const fs = require('fs');
 const path = require('path');
 
+function resolveDefaultAgentinRoot(options = {}) {
+  if (options.agentinRoot) {
+    return options.agentinRoot;
+  }
+
+  const packagedRoot = process.resourcesPath
+    ? path.join(process.resourcesPath, 'agentin')
+    : '';
+  if (packagedRoot && fs.existsSync(packagedRoot)) {
+    return packagedRoot;
+  }
+
+  return path.resolve(__dirname, '../../agentin');
+}
+
 function buildRuntimePaths(options = {}) {
-  const agentinRoot = options.agentinRoot || path.resolve(__dirname, '../../agentin');
+  const agentinRoot = resolveDefaultAgentinRoot(options);
   const rendererPath = options.rendererPath || path.join(__dirname, '../renderer/index.html');
   const promptBasePath = options.promptBasePath || path.join(agentinRoot, 'prompts');
   const promptTemplatesDir = options.promptTemplatesDir || path.join(promptBasePath, 'templates');
@@ -14,6 +30,9 @@ function buildRuntimePaths(options = {}) {
   const tasksBasePath = options.tasksBasePath || path.join(agentinRoot, 'tasks');
   const tasksQueueFile = options.tasksQueueFile || path.join(tasksBasePath, 'tasks.md');
   const userProfilePath = options.userProfilePath || path.join(agentinRoot, 'userabout', 'memoryaboutuser.md');
+  const userDataPath = options.userDataPath
+    || options.app?.getPath?.('userData')
+    || null;
 
   return {
     agentinRoot,
@@ -28,6 +47,7 @@ function buildRuntimePaths(options = {}) {
     memoryBasePath,
     tasksBasePath,
     tasksQueueFile,
+    userDataPath,
     userProfilePath,
     backgroundNotifyPromptPath: options.backgroundNotifyPromptPath || path.join(promptTemplatesDir, 'background-notify.md'),
     backgroundDaemonBasePath: options.backgroundDaemonBasePath || path.join(agentBasePath, 'pro', 'background-daemon'),

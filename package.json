@@ -24,6 +24,8 @@
     "test:testclient-mode": "node tools/test-testclient-mode.js",
     "test:searxng-smoke": "node tools/test-searxng-plugin-smoke.js",
     "test:searxng-e2e": "electron tools/test-searxng-e2e-electron.js",
+    "test:tts-fast-qwen-smoke": "node tools/test-tts-plugin-fast-qwen-smoke.js",
+    "test:tts-piper-smoke": "node tools/test-tts-plugin-piper-smoke.js",
     "test:rag-superagent": "node tools/test-rag-superagent-flow.js",
     "test:subagent-external": "node tests/external/subagent-dual-mode.external-test.js",
     "test:subagent-live-search": "node tests/external/subagent-live-search.external-test.js",
@@ -66,10 +68,18 @@
       "src/**/*",
       "package.json"
     ],
+    "extraFiles": [
+      {
+        "from": "agentin",
+        "to": "agentin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "win": {
       "sign": false
     },
-    "extraFiles": [],
     "asar": true
   }
 }

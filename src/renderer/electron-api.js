@@ -183,6 +183,11 @@ window.electronAPI = Object.assign(ipcRenderer, {
     quickSetup: (pluginName) => ipcRenderer.invoke('plugins:quick-setup', pluginName)
   },
 
+  dialogs: {
+    pickDirectory: (options = {}) => ipcRenderer.invoke('dialog:pick-directory', options),
+    pickFile: (options = {}) => ipcRenderer.invoke('dialog:pick-file', options)
+  },
+
   tts: {
     getContract: () => ipcRenderer.invoke('tts:get-contract'),
     getSettings: () => ipcRenderer.invoke('tts:get-settings'),

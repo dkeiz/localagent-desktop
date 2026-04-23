@@ -25,14 +25,17 @@ class TtsService {
   async getSettings() {
     return {
       defaultPluginId: await this.db.getSetting('tts.defaultPluginId') || '',
+      provider: await this.db.getSetting('tts.provider') || 'browser',
       voice: await this.db.getSetting('tts.voice') || '',
+      voiceDescription: await this.db.getSetting('tts.voiceDescription') || '',
       speed: this._number(await this.db.getSetting('tts.speed'), 1),
-      autoSpeak: this._bool(await this.db.getSetting('tts.autoSpeak'), false)
+      autoSpeak: this._bool(await this.db.getSetting('tts.autoSpeak'), false),
+      autoSpeakMode: await this.db.getSetting('tts.autoSpeakMode') || 'answer'
     };
   }
 
   async saveSettings(settings = {}) {
-    const allowed = ['defaultPluginId', 'voice', 'speed', 'autoSpeak'];
+    const allowed = ['defaultPluginId', 'provider', 'voice', 'voiceDescription', 'speed', 'autoSpeak', 'autoSpeakMode'];
     for (const key of allowed) {
       if (settings[key] !== undefined) {
         await this.db.saveSetting(`tts.${key}`, String(settings[key]));
@@ -99,11 +102,14 @@ class TtsService {
     if (!pluginId) return { success: false, error: 'No enabled TTS plugin' };
 
     const settings = await this.getSettings();
+    const provider = params.provider || settings.provider;
     const agent = await this._getAgentInfo(params.agentId);
     const payload = {
       ...params,
       text,
+      provider,
       voice: params.voice || settings.voice,
+      style: params.style !== undefined ? params.style : (provider === 'fast-qwen' ? settings.voiceDescription : ''),
       speed: params.speed || settings.speed,
       settings,
       agent

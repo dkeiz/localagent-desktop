@@ -74,7 +74,7 @@
 
 .plugin-studio-config-pane {
     overflow-y: auto;
-    padding: 12px;
+    padding: 10px;
 }
 
 .plugin-studio-empty {
@@ -109,22 +109,22 @@
 }
 
 .plugin-studio-form {
-    margin-top: 10px;
+    margin-top: 8px;
     display: grid;
-    gap: 8px;
+    gap: 7px;
 }
 
 .plugin-studio-form-tts {
-    gap: 10px;
+    gap: 8px;
 }
 
 .plugin-studio-tts-panel {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-bg);
-    padding: 10px;
+    padding: 9px;
     display: grid;
-    gap: 8px;
+    gap: 7px;
 }
 
 .plugin-studio-tts-title {
@@ -134,12 +134,292 @@
 }
 
 .plugin-studio-tts-text {
-    min-height: 74px;
+    min-height: 52px;
 }
 
 .plugin-studio-tts-actions {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
+}
+
+.plugin-studio-tts-compact {
+    display: grid;
+    gap: 7px;
+}
+
+.plugin-studio-tts-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.plugin-studio-tts-main-panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(250px, 1fr);
+    gap: 7px;
+    align-items: start;
+}
+
+.plugin-studio-tts-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 7px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+}
+
+.plugin-studio-tts-toolbar-left {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+}
+
+.plugin-studio-tts-toolbar-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.plugin-studio-tts-pill {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+}
+
+.plugin-studio-tts-pill-loading {
+    position: relative;
+    padding-left: 19px;
+}
+
+.plugin-studio-tts-pill-loading::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: plugin-studio-pulse 1s ease-in-out infinite;
+}
+
+.plugin-studio-tts-pill-good {
+    color: #0f7b4c;
+    border-color: rgba(15, 123, 76, 0.25);
+    background: rgba(15, 123, 76, 0.08);
+}
+
+.plugin-studio-tts-pill-warm {
+    color: #9a5a00;
+    border-color: rgba(154, 90, 0, 0.22);
+    background: rgba(154, 90, 0, 0.08);
+}
+
+.plugin-studio-tts-pill-bad {
+    color: #a83d3d;
+    border-color: rgba(168, 61, 61, 0.22);
+    background: rgba(168, 61, 61, 0.08);
+}
+
+.plugin-studio-tts-pill-muted {
+    color: var(--text-secondary);
+}
+
+.plugin-studio-tts-quiet {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+.plugin-studio-tts-section-label {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.plugin-studio-tts-compact-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 7px;
+}
+
+.plugin-studio-tts-field-label {
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+}
+
+.plugin-studio-tts-inline-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 28px;
+    font-size: 0.77rem;
+    color: var(--text-secondary);
+}
+
+.plugin-studio-tts-inline-check input {
+    margin: 0;
+}
+
+.plugin-studio-tts-details {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    overflow: hidden;
+}
+
+.plugin-studio-tts-details-summary {
+    cursor: pointer;
+    padding: 7px 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    user-select: none;
+}
+
+.plugin-studio-tts-details-body {
+    padding: 0 8px 8px;
+    display: grid;
+    gap: 7px;
+}
+
+.plugin-studio-tts-model-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
+    padding-top: 2px;
+}
+
+.plugin-studio-tts-model-meta {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.plugin-studio-tts-model-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.plugin-studio-tts-model-sub {
+    font-size: 0.73rem;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+.plugin-studio-tts-model-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.plugin-studio-tts-prepare-status,
+.plugin-studio-tts-downloads {
+    display: grid;
+    gap: 5px;
+}
+
+.plugin-studio-tts-download-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.plugin-studio-tts-download-name {
+    font-size: 0.77rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.plugin-studio-tts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+}
+
+.plugin-studio-tts-kv {
+    display: grid;
+    gap: 3px;
+}
+
+.plugin-studio-tts-kv-label {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.plugin-studio-tts-kv-value {
+    font-size: 0.81rem;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.plugin-studio-tts-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.plugin-studio-tts-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    padding: 7px;
+}
+
+.plugin-studio-tts-card-label {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.plugin-studio-tts-card-value {
+    margin-top: 4px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.plugin-studio-tts-voice-panel {
+    min-height: 82px;
+}
+
+.plugin-studio-tts-voice-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.plugin-studio-tts-voice-name {
+    font-size: 0.83rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.plugin-studio-tts-voice-subline {
+    font-size: 0.73rem;
+    color: var(--text-secondary);
 }
 
 .plugin-studio-field {
@@ -165,7 +445,7 @@
     border-radius: 6px;
     background: var(--input-bg);
     color: var(--text-primary);
-    padding: 7px 8px;
+    padding: 6px 8px;
 }
 
 .plugin-studio-field textarea {
@@ -174,16 +454,31 @@
 }
 
 .plugin-studio-result {
-    margin-top: 12px;
+    margin-top: 8px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--bg-secondary);
     padding: 8px;
-    max-height: 220px;
+    max-height: 110px;
     overflow: auto;
     font-size: 0.72rem;
     color: var(--text-secondary);
     white-space: pre-wrap;
+}
+
+.plugin-studio-result:empty {
+    display: none;
+}
+
+@media (max-width: 1080px) {
+    .plugin-studio-tts-meta-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .plugin-studio-tts-main-panels {
+        grid-template-columns: 1fr;
+    }
 }
 
 #plugin-studio-toggle.is-busy,
@@ -213,4 +508,9 @@
 @keyframes plugin-studio-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+
+@keyframes plugin-studio-pulse {
+    0%, 100% { opacity: 0.35; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.1); }
 }

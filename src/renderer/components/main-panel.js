@@ -5,15 +5,15 @@ class MainPanel {
         this.recognition = null;
         this.synthesis = window.speechSynthesis;
         this.autoSpeak = false;
-        // Multi-chat tab management
+        this.ttsController = null;
         this.chatTabs = new Map(); // sessionId -> { title, messagesHTML, isSending, loadingId }
         this.activeTabId = null;
-        // Initialize immediately since we're already in DOMContentLoaded
         this.commandHandler = new CommandHandler(this);
         this._autocompleteVisible = false;
         this._autocompleteItems = [];
         this._autocompleteIndex = 0;
         this.initializeEvents();
+        this.initializeTtsController();
         this.initializeVoice();
         this.initContextSettings();
         this.restoreOpenTabs();
@@ -30,7 +30,6 @@ class MainPanel {
         }
     }
     initializeEvents() {
-        // Chat send functionality
         const sendBtn = document.getElementById('send-btn');
         const stopBtn = document.getElementById('stop-btn');
         const messageInput = document.getElementById('message-input');
@@ -41,7 +40,6 @@ class MainPanel {
         const dropZone = document.getElementById('drop-zone');
         const messagesContainer = document.getElementById('messages-container');
         sendBtn.addEventListener('click', () => this.sendMessage());
-        // Stop generation button
         if (stopBtn) {
             stopBtn.addEventListener('click', async () => {
                 console.log('[UI] Stop button clicked');
@@ -111,7 +109,6 @@ class MainPanel {
                 this.acceptHighlightedAutocomplete();
             }
         });
-        // Drag and drop
         window.addEventListener('dragenter', (e) => {
             e.preventDefault();
             if (e.dataTransfer.types.includes('Files')) {
@@ -146,16 +143,12 @@ class MainPanel {
             event.preventDefault();
             this._pageDownMessages();
         });
-        // Settings tab events
         document.getElementById('save-prompt-btn').addEventListener('click', () => this.saveSystemPrompt());
-        // MCP tab events
         const addProxyBtn = document.getElementById('add-proxy-btn');
         if (addProxyBtn) {
             addProxyBtn.addEventListener('click', () => this.addProxyServer());
         }
-        // Listen for updates from main process
         this.setupEventListeners();
-        // Reinitialize context slider when API tab is opened
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 if (btn.dataset.tab === 'api') {
@@ -190,6 +183,14 @@ class MainPanel {
             console.warn('Speech recognition not supported in this browser');
         }
     }
+    initializeTtsController() {
+        if (window.LocalAgentTtsController) {
+            this.ttsController = new window.LocalAgentTtsController({
+                panel: this,
+                button: document.getElementById('speak-btn')
+            });
+        }
+    }
     toggleVoiceInput() {
         if (!this.recognition) {
             this.showNotification('Voice input not supported in this browser. Try Chrome/Edge.', 'error');
@@ -209,17 +210,22 @@ class MainPanel {
             }
         }
     }
-    toggleAutoSpeak() {
+    async toggleAutoSpeak() {
+        if (this.ttsController) {
+            await this.ttsController.toggleAutoSpeak();
+            this.autoSpeak = Boolean(this.ttsController.settings.autoSpeak);
+            return;
+        }
         this.autoSpeak = !this.autoSpeak;
-        const speakBtn = document.getElementById('speak-btn');
-        speakBtn.style.opacity = this.autoSpeak ? '1' : '0.6';
-        speakBtn.title = this.autoSpeak ? 'Auto-speak ON' : 'Auto-speak OFF';
-        this.showNotification(`Auto-speak ${this.autoSpeak ? 'enabled' : 'disabled'}`);
     }
-    speakText(text) {
+    async speakText(text) {
+        if (this.ttsController) {
+            return this.ttsController.speakText(text);
+        }
         this.synthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         this.synthesis.speak(utterance);
+        return { ok: true, provider: 'browser' };
     }
     attachFile() {
         const input = document.createElement('input');

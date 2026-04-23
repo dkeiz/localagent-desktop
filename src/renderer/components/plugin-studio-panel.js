@@ -37,8 +37,9 @@
                 await this.show(options || {});
             });
 
-            window.electronAPI.on('plugins:state-changed', async () => {
+            window.electronAPI.on('plugins:state-changed', async (event, payload = {}) => {
                 if (this.overlay.classList.contains('hidden')) return;
+                if (String(payload?.source || '').startsWith('action:')) return;
                 const focused = this.selectedPluginId;
                 await this.loadPlugins(focused);
             });
@@ -57,6 +58,10 @@
         }
 
         setResult(payload) {
+            if (payload == null || payload === '') {
+                this.result.textContent = '';
+                return;
+            }
             this.result.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
         }
 
@@ -150,8 +155,10 @@
             this.toggleBtn.textContent = plugin.status === 'enabled' ? 'Disable' : 'Enable';
             const capabilities = this.selectedDetail?.capabilities || this.selectedDetail?.manifest?.capabilities || [];
             const isTts = capabilities.includes('tts');
+            const isEmbeddedTts = plugin.id === 'http-tts-bridge';
             this.discoverBtn.hidden = isTts;
             this.discoverBtn.textContent = isTts ? 'Probe' : 'Discover';
+            this.saveBtn.hidden = isEmbeddedTts;
 
             await this.renderForm();
         }
@@ -163,6 +170,10 @@
             const isTts = this.isSelectedTts();
             this.form.classList.toggle('plugin-studio-form-tts', isTts);
 
+            if (window.LocalAgentPluginTtsStudio?.canHandle?.(this)) {
+                await window.LocalAgentPluginTtsStudio.render(this);
+                return;
+            }
             if (isTts) {
                 await this.renderTtsPanel();
                 return;

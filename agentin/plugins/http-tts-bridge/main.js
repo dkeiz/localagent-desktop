@@ -1,178 +1,27 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const fetch = require('node-fetch');
+const { DEFAULT_BUILTIN_MODEL, DEFAULT_CLONE_MODEL, DEFAULT_PIPER_VOICE_ID, getPluginConfig, parseJsonObject } = require('./lib/config');
+const { createProcessState, getBackendStatus, requestBackendJson, startBackend, stopBackend } = require('./lib/backend-runtime');
+const { copyVoiceSourceFile, importPiperAssets } = require('./lib/file-actions');
+const { buildRuntimePaths } = require('./lib/runtime-paths');
+const { buildVoiceCatalog, resolveVoiceChoice } = require('./lib/tts-routing');
 
-function cleanBaseUrl(value) {
-  return String(value || 'http://127.0.0.1:8000').trim().replace(/\/+$/, '');
-}
-
-function joinUrl(baseUrl, requestPath) {
-  const path = String(requestPath || '').trim() || '/';
-  return new URL(path.startsWith('/') ? path : `/${path}`, cleanBaseUrl(baseUrl)).toString();
-}
-
-function parseNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function parseVoiceOptions(raw) {
-  return String(raw || 'default')
-    .split(/[,\n]/g)
-    .map(value => value.trim())
-    .filter(Boolean)
-    .map(value => ({ id: value, name: value }));
-}
-
-function parseJsonMap(raw) {
-  try {
-    const parsed = JSON.parse(String(raw || '{}'));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch (_) {
-    return {};
-  }
-}
-
-function readConfigFile(context) {
-  const rawPath = String(context.getConfig('configFile') || '').trim();
-  if (!rawPath) return {};
-  const filePath = path.isAbsolute(rawPath)
-    ? rawPath
-    : path.resolve(context.pluginDir, rawPath);
-  try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch (error) {
-    return { __configError: error.message, __configFile: filePath };
-  }
-}
-
-function getByPath(source, pathList) {
-  const paths = String(pathList || '')
-    .split('|')
-    .map(path => path.trim())
-    .filter(Boolean);
-
-  for (const entry of paths) {
-    const value = entry.split('.').reduce((current, key) => {
-      if (current == null) return undefined;
-      return current[key];
-    }, source);
-    if (value !== undefined && value !== null && value !== '') return value;
-  }
-  return undefined;
-}
-
-function replaceTokens(value, vars) {
-  if (Array.isArray(value)) return value.map(item => replaceTokens(item, vars));
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replaceTokens(item, vars)]));
-  }
-  if (typeof value !== 'string') return value;
-
-  const exact = value.match(/^\{([^{}]+)\}$/);
-  if (exact && vars[exact[1]] !== undefined) return vars[exact[1]];
-  return value.replace(/\{([^{}]+)\}/g, (match, key) => {
-    const replacement = vars[key];
-    return replacement === undefined || replacement === null ? match : String(replacement);
-  });
-}
-
-function makeTemplateVars(params, voice, speed) {
-  const agent = params.agent || {};
-  return {
-    text: String(params.text || ''),
-    voice,
-    speed,
-    style: params.style || '',
-    sessionId: params.sessionId || '',
-    'agent.id': agent.id || '',
-    'agent.name': agent.name || '',
-    'agent.slug': agent.slug || '',
-    agentId: agent.id || '',
-    agentName: agent.name || '',
-    agentSlug: agent.slug || ''
-  };
-}
-
-function buildRequestPayload(params, cfg, voice, speed) {
-  const fallback = {
-    [cfg.textField]: String(params.text || ''),
-    [cfg.voiceField]: voice,
-    [cfg.speedField]: speed
-  };
-  const template = cfg.requestTemplate;
-  if (!template || (typeof template === 'string' && !template.trim())) return fallback;
-  const vars = makeTemplateVars(params, voice, speed);
-
-  if (template && typeof template === 'object') {
-    return replaceTokens(template, vars);
-  }
-
-  try {
-    return replaceTokens(JSON.parse(String(template).trim()), vars);
-  } catch (_) {
-    return replaceTokens(String(template), vars);
-  }
-}
-
-function appendQuery(url, payload) {
-  const parsed = new URL(url);
-  const entries = payload && typeof payload === 'object' && !Array.isArray(payload)
-    ? Object.entries(payload)
-    : [['input', String(payload || '')]];
-  entries.forEach(([key, value]) => {
-    if (value !== undefined && value !== null) parsed.searchParams.set(key, String(value));
-  });
-  return parsed.toString();
-}
-
-function getConfig(context) {
-  const fileConfig = readConfigFile(context);
-  const request = fileConfig.request || {};
-  const response = fileConfig.response || {};
-  const voices = fileConfig.voices || {};
-  return {
-    serverUrl: cleanBaseUrl(context.getConfig('serverUrl')),
-    style: context.getConfig('style') || fileConfig.style || 'default',
-    apiKey: context.getConfig('apiKey') || fileConfig.apiKey || '',
-    configError: fileConfig.__configError || '',
-    configFile: fileConfig.__configFile || '',
-    synthesizePath: request.path || fileConfig.synthesizePath || context.getConfig('synthesizePath') || '/tts',
-    synthesizeMethod: String(request.method || fileConfig.synthesizeMethod || context.getConfig('synthesizeMethod') || 'POST').toUpperCase(),
-    requestMode: String(request.mode || fileConfig.requestMode || context.getConfig('requestMode') || 'json').toLowerCase(),
-    requestTemplate: request.template || fileConfig.requestTemplate || context.getConfig('requestTemplate') || '',
-    headersJson: JSON.stringify(request.headers || fileConfig.headers || parseJsonMap(context.getConfig('headersJson'))),
-    apiKeyHeader: request.apiKeyHeader || fileConfig.apiKeyHeader || 'Authorization',
-    apiKeyPrefix: request.apiKeyPrefix || fileConfig.apiKeyPrefix || 'Bearer ',
-    voicesPath: voices.path || fileConfig.voicesPath || context.getConfig('voicesPath') || '/voices',
-    healthPath: context.getConfig('probePath') || fileConfig.probePath || fileConfig.healthPath || context.getConfig('healthPath') || '/health',
-    textField: request.textField || fileConfig.requestTextField || context.getConfig('requestTextField') || 'text',
-    voiceField: request.voiceField || fileConfig.requestVoiceField || context.getConfig('requestVoiceField') || 'voice',
-    speedField: request.speedField || fileConfig.requestSpeedField || context.getConfig('requestSpeedField') || 'speed',
-    styleField: request.styleField || fileConfig.requestStyleField || 'style',
-    audioUrlField: response.audioUrlField || fileConfig.responseAudioUrlField || context.getConfig('responseAudioUrlField') || 'audio_url',
-    audioUrlPath: response.audioUrlPath || fileConfig.responseAudioUrlPath || context.getConfig('responseAudioUrlPath') || 'audio.url|audio_url|audioUrl|url',
-    audioBase64Field: response.audioBase64Field || fileConfig.responseAudioBase64Field || context.getConfig('responseAudioBase64Field') || 'audio_base64',
-    audioBase64Path: response.audioBase64Path || fileConfig.responseAudioBase64Path || context.getConfig('responseAudioBase64Path') || 'audio.base64|audio_base64|audioBase64|base64',
-    mimeTypePath: response.mimeTypePath || fileConfig.responseMimeTypePath || context.getConfig('responseMimeTypePath') || 'audio.mimeType|mimeType|mime_type|content_type',
-    voicesResponsePath: voices.responsePath || fileConfig.voicesResponsePath || context.getConfig('voicesResponsePath') || 'voices|data.voices|data',
-    defaultVoice: fileConfig.defaultVoice || context.getConfig('defaultVoice') || 'default',
-    voiceOptions: Array.isArray(voices.fallback) ? voices.fallback.join('\n') : fileConfig.voiceOptions || context.getConfig('voiceOptions') || 'default',
-    speed: parseNumber(fileConfig.speed || context.getConfig('speed'), 1),
-    agentVoiceOverrides: JSON.stringify(fileConfig.agentVoiceOverrides || parseJsonMap(context.getConfig('agentVoiceOverrides')))
-  };
-}
+const PLUGIN_ID = 'http-tts-bridge';
+const RUNTIME = createProcessState();
 
 async function ensureDefaults(context) {
   const defaults = {
-    serverUrl: 'http://127.0.0.1:8000',
-    style: 'default',
-    apiKey: '',
-    configFile: 'config.txt',
-    probePath: '/health'
+    pythonCommand: 'python',
+    backendHost: '127.0.0.1',
+    backendPort: '58001',
+    backendAutoStart: 'false',
+    backendStartupTimeoutMs: '60000',
+    builtinModel: DEFAULT_BUILTIN_MODEL,
+    cloneModel: DEFAULT_CLONE_MODEL,
+    qwenModelsRoot: '',
+    modelPathsJson: '{}',
+    piperSourceDir: '',
+    piperVoiceId: DEFAULT_PIPER_VOICE_ID
   };
 
   for (const [key, value] of Object.entries(defaults)) {
@@ -182,149 +31,319 @@ async function ensureDefaults(context) {
   }
 }
 
-function resolveVoice(params, cfg) {
-  const overrides = parseJsonMap(cfg.agentVoiceOverrides);
-  const agent = params.agent || {};
-  return params.voice
-    || overrides[String(agent.id || '')]
-    || overrides[String(agent.slug || '')]
-    || overrides[String(agent.name || '')]
-    || cfg.defaultVoice
-    || 'default';
+async function ensureBackendIfNeeded(context) {
+  return startBackend(RUNTIME, context);
 }
 
-function normalizeAudioUrl(rawUrl, cfg) {
-  const value = String(rawUrl || '').trim();
-  if (!value) return '';
-  try {
-    return new URL(value, cfg.serverUrl).toString();
-  } catch (_) {
-    return value;
-  }
+function beginBackendStart(context) {
+  startBackend(RUNTIME, context).catch(error => {
+    RUNTIME.lastError = error.message || String(error);
+    context.log(`Embedded backend start failed: ${RUNTIME.lastError}`);
+  });
 }
 
-async function speak(params, context) {
-  const cfg = getConfig(context);
-  if (cfg.configError) {
-    throw new Error(`TTS config file error: ${cfg.configError}`);
-  }
-  const voice = resolveVoice(params, cfg);
-  const speed = parseNumber(params.speed, cfg.speed);
-  const payload = buildRequestPayload({ ...params, style: params.style || cfg.style }, cfg, voice, speed);
-  if (payload && typeof payload === 'object' && !Array.isArray(payload) && cfg.styleField && !payload[cfg.styleField]) {
-    payload[cfg.styleField] = params.style || cfg.style;
-  }
-  const headers = {
-    Accept: 'application/json,audio/*,text/plain,*/*',
-    ...parseJsonMap(cfg.headersJson)
+async function getModelsPayload(context) {
+  await ensureBackendIfNeeded(context);
+  const [models, backend] = await Promise.all([
+    requestBackendJson(RUNTIME, context, '/api/models'),
+    getBackendStatus(RUNTIME)
+  ]);
+  return {
+    ...models,
+    backend,
+    recommended: {
+      builtinModel: getPluginConfig(context).builtinModel,
+      cloneModel: getPluginConfig(context).cloneModel,
+      piperVoiceId: getPluginConfig(context).piperVoiceId
+    }
   };
-  if (cfg.apiKey && cfg.apiKeyHeader) {
-    headers[cfg.apiKeyHeader] = `${cfg.apiKeyPrefix || ''}${cfg.apiKey}`;
+}
+
+async function ensureSelectedModel(context, params = {}) {
+  const config = getPluginConfig(context);
+  const selection = resolveVoiceChoice(params, config);
+  if (!selection.usePlugin) {
+    throw new Error('Browser provider does not use the embedded TTS plugin backend');
   }
 
-  let url = joinUrl(cfg.serverUrl, cfg.synthesizePath);
-  const method = cfg.synthesizeMethod === 'GET' ? 'GET' : 'POST';
-  const request = { method, headers };
-
-  if (method === 'GET' || cfg.requestMode === 'query') {
-    url = appendQuery(url, payload);
-  } else if (cfg.requestMode === 'form') {
-    headers['Content-Type'] = 'application/x-www-form-urlencoded';
-    request.body = new URLSearchParams(payload).toString();
-  } else if (typeof payload === 'string') {
-    headers['Content-Type'] = headers['Content-Type'] || 'text/plain; charset=utf-8';
-    request.body = payload;
-  } else {
-    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-    request.body = JSON.stringify(payload);
+  const models = await getModelsPayload(context);
+  const loadedModel = String(models.loaded_model || '').trim();
+  if (loadedModel === selection.modelName) {
+    return selection;
   }
 
-  const response = await fetch(url, request);
-
-  if (!response.ok) {
-    throw new Error(`TTS server returned HTTP ${response.status}`);
+  const body = {
+    model_name: selection.modelName,
+    auto_download: false
+  };
+  if (selection.provider === 'fast-qwen') {
+    body.tts_engine = 'faster_qwen3_tts';
   }
+  await requestBackendJson(RUNTIME, context, '/api/models/select', {
+    method: 'POST',
+    body
+  });
+  return selection;
+}
 
-  const contentType = String(response.headers.get('content-type') || '');
-  if (contentType.startsWith('audio/') || contentType === 'application/octet-stream') {
-    const buffer = await response.buffer();
-    return {
-      ok: true,
-      voice,
-      mimeType: contentType.split(';')[0] || 'audio/wav',
-      audioBase64: buffer.toString('base64')
-    };
+function normalizeAudioResult(result, selection) {
+  const durationMs = Number(result.duration || 0) * 1000;
+  return {
+    ok: result.success !== false,
+    voice: selection.selectedVoiceId,
+    mimeType: result.mime_type || 'audio/wav',
+    audioUrl: result.audio_url
+      ? new URL(result.audio_url, RUNTIME.baseUrl).toString()
+      : '',
+    audioBase64: result.audio_base64 || '',
+    durationMs: Number.isFinite(durationMs) ? Math.round(durationMs) : 0,
+    provider: selection.provider
+  };
+}
+
+async function speakAction(params, context) {
+  const text = String(params?.text || '').trim();
+  if (!text) {
+    throw new Error('Text is required');
   }
+  const selection = await ensureSelectedModel(context, params);
+  const result = await requestBackendJson(RUNTIME, context, '/api/agent/speak', {
+    method: 'POST',
+    body: {
+      text,
+      voice: selection.backendVoice,
+      language: 'auto',
+      style: String(params?.style || '').trim() || null,
+      include_base64: params?.includeBase64 !== false,
+      output_format: 'wav',
+      metadata: params?.metadata || null
+    },
+    timeoutMs: 120000
+  });
+  return normalizeAudioResult(result, selection);
+}
 
-  if (contentType.startsWith('text/plain')) {
-    return {
-      ok: true,
-      voice,
-      audioUrl: normalizeAudioUrl(await response.text(), cfg),
-      mimeType: 'audio/wav'
-    };
+async function listVoicesAction(context) {
+  await ensureBackendIfNeeded(context);
+  const [voicesResponse, modelsResponse, backend] = await Promise.all([
+    requestBackendJson(RUNTIME, context, '/api/voices'),
+    requestBackendJson(RUNTIME, context, '/api/models'),
+    getBackendStatus(RUNTIME)
+  ]);
+  return {
+    success: true,
+    voices: buildVoiceCatalog(voicesResponse, modelsResponse),
+    builtinVoices: voicesResponse.builtin_voices || [],
+    customVoices: voicesResponse.custom_voices || [],
+    modelItems: modelsResponse.items || [],
+    backend
+  };
+}
+
+async function healthCheckAction() {
+  return getBackendStatus(RUNTIME);
+}
+
+async function startBackendAction(context) {
+  await startBackend(RUNTIME, context);
+  return getBackendStatus(RUNTIME);
+}
+
+async function stopBackendAction() {
+  await stopBackend(RUNTIME);
+  return getBackendStatus(RUNTIME);
+}
+
+async function restartBackendAction(context) {
+  await stopBackend(RUNTIME);
+  await startBackend(RUNTIME, context);
+  return getBackendStatus(RUNTIME);
+}
+
+async function getStreamPlanAction(params, context) {
+  const text = String(params?.text || '').trim();
+  if (!text) {
+    throw new Error('Text is required');
   }
-
-  const data = await response.json();
-  const audioUrl = getByPath(data, cfg.audioUrlPath) || data[cfg.audioUrlField];
-  const audioBase64 = getByPath(data, cfg.audioBase64Path) || data[cfg.audioBase64Field];
-  const mimeType = getByPath(data, cfg.mimeTypePath) || 'audio/wav';
+  const selection = await ensureSelectedModel(context, params);
   return {
     ok: true,
-    voice,
-    mimeType,
-    audioUrl: normalizeAudioUrl(audioUrl, cfg),
-    audioBase64: audioBase64 || '',
-    durationMs: Number(getByPath(data, 'durationMs|duration_ms') || 0)
+    transport: 'sse',
+    provider: selection.provider,
+    voice: selection.selectedVoiceId,
+    url: new URL('/api/agent/speak/stream', RUNTIME.baseUrl).toString(),
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: {
+      text,
+      voice: selection.backendVoice,
+      language: 'auto',
+      style: String(params?.style || '').trim() || null,
+      output_format: 'wav'
+    }
   };
 }
 
-async function listVoices(context) {
-  const cfg = getConfig(context);
-  if (cfg.configError) {
-    return { voices: parseVoiceOptions(cfg.voiceOptions), fallback: true, error: cfg.configError };
+async function downloadModelAction(params, context) {
+  const modelName = String(params?.modelName || params?.model_name || '').trim();
+  if (!modelName) {
+    throw new Error('modelName is required');
   }
-  try {
-    const headers = parseJsonMap(cfg.headersJson);
-    if (cfg.apiKey && cfg.apiKeyHeader) headers[cfg.apiKeyHeader] = `${cfg.apiKeyPrefix || ''}${cfg.apiKey}`;
-    const response = await fetch(joinUrl(cfg.serverUrl, cfg.voicesPath), { method: 'GET', headers });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    const raw = Array.isArray(data) ? data : getByPath(data, cfg.voicesResponsePath);
-    const voices = Array.isArray(raw)
-      ? raw.map(voice => typeof voice === 'string'
-        ? { id: voice, name: voice }
-        : { id: String(voice.id || voice.name || ''), name: String(voice.name || voice.id || '') })
-      : [];
-    return { voices: voices.filter(voice => voice.id) };
-  } catch (error) {
-    return { voices: parseVoiceOptions(cfg.voiceOptions), fallback: true, error: error.message };
-  }
+  await ensureBackendIfNeeded(context);
+  return requestBackendJson(RUNTIME, context, '/api/models/download', {
+    method: 'POST',
+    body: { model_name: modelName },
+    timeoutMs: 15000
+  });
 }
 
-async function healthCheck(context) {
-  const cfg = getConfig(context);
-  if (cfg.configError) {
-    return { ok: false, error: cfg.configError, configFile: cfg.configFile };
+async function getDownloadStatusAction(params, context) {
+  const taskId = String(params?.taskId || params?.task_id || '').trim();
+  if (!taskId) {
+    throw new Error('taskId is required');
   }
-  const headers = parseJsonMap(cfg.headersJson);
-  if (cfg.apiKey && cfg.apiKeyHeader) headers[cfg.apiKeyHeader] = `${cfg.apiKeyPrefix || ''}${cfg.apiKey}`;
-  const response = await fetch(joinUrl(cfg.serverUrl, cfg.healthPath), { method: 'GET', headers });
-  return { ok: response.ok, status: response.status, serverUrl: cfg.serverUrl, style: cfg.style };
+  await ensureBackendIfNeeded(context);
+  return requestBackendJson(RUNTIME, context, `/api/models/download/${encodeURIComponent(taskId)}`);
+}
+
+async function setModelFolderAction(params, context) {
+  const modelName = String(params?.modelName || params?.model_name || '').trim();
+  const folderPath = String(params?.folderPath || params?.folder_path || '').trim();
+  if (!modelName || !folderPath) {
+    throw new Error('modelName and folderPath are required');
+  }
+
+  const current = parseJsonObject(context.getConfig('modelPathsJson'));
+  current[modelName] = folderPath;
+  await context.setConfig('modelPathsJson', JSON.stringify(current));
+  await stopBackend(RUNTIME);
+  return getModelsPayload(context);
+}
+
+async function importPiperAssetsAction(params, context) {
+  const config = getPluginConfig(context);
+  const sourceDir = String(params?.sourceDir || params?.source_dir || config.piperSourceDir || '').trim();
+  const voiceId = String(params?.voiceId || params?.voice_id || config.piperVoiceId || DEFAULT_PIPER_VOICE_ID).trim();
+  const paths = buildRuntimePaths(context.pluginId, context.pluginDir);
+
+  if (sourceDir && sourceDir !== config.piperSourceDir) {
+    await context.setConfig('piperSourceDir', sourceDir);
+  }
+
+  const copied = importPiperAssets({
+    sourceDir,
+    targetPiperDir: paths.piperDir,
+    voiceId
+  });
+  let models = null;
+  try {
+    models = await getModelsPayload(context);
+  } catch (error) {
+    copied.modelRefreshWarning = error.message || String(error);
+  }
+  return {
+    ...copied,
+    models
+  };
+}
+
+async function copyVoiceSourceAction(params, context) {
+  const sourceFilePath = String(params?.sourceFilePath || params?.source_file_path || '').trim();
+  const paths = buildRuntimePaths(context.pluginId, context.pluginDir);
+  return copyVoiceSourceFile({
+    sourceFilePath,
+    targetVoicesDir: paths.voicesDir
+  });
+}
+
+async function listVoiceSourceFilesAction(context) {
+  await ensureBackendIfNeeded(context);
+  return requestBackendJson(RUNTIME, context, '/api/voices/source-files');
+}
+
+async function prepareVoiceAction(params, context) {
+  const speakerName = String(params?.speakerName || params?.speaker_name || '').trim();
+  const sourceFile = String(params?.sourceFile || params?.source_file || '').trim();
+  if (!speakerName || !sourceFile) {
+    throw new Error('speakerName and sourceFile are required');
+  }
+  await ensureBackendIfNeeded(context);
+  return requestBackendJson(RUNTIME, context, '/api/voices/prepare', {
+    method: 'POST',
+    body: {
+      speaker_name: speakerName,
+      source_file: sourceFile,
+      description: String(params?.description || '').trim() || null
+    },
+    timeoutMs: 15000
+  });
+}
+
+async function getVoicePrepareStatusAction(params, context) {
+  const taskId = String(params?.taskId || params?.task_id || '').trim();
+  if (!taskId) {
+    throw new Error('taskId is required');
+  }
+  await ensureBackendIfNeeded(context);
+  return requestBackendJson(RUNTIME, context, `/api/voices/prepare/${encodeURIComponent(taskId)}`);
+}
+
+async function getPerformanceAction(context) {
+  await ensureBackendIfNeeded(context);
+  const [snapshot, backend] = await Promise.all([
+    requestBackendJson(RUNTIME, context, '/api/performance'),
+    getBackendStatus(RUNTIME)
+  ]);
+  return {
+    ...snapshot,
+    backend
+  };
 }
 
 module.exports = {
   async onEnable(context) {
     await ensureDefaults(context);
-    context.log('HTTP TTS bridge ready');
+    const config = getPluginConfig(context);
+    if (config.backendAutoStart) {
+      beginBackendStart(context);
+    }
+    context.log('TTS plugin ready');
+  },
+
+  async onDisable() {
+    await stopBackend(RUNTIME);
   },
 
   async runAction(action, params, context) {
-    if (action === 'speak') return speak(params || {}, context);
-    if (action === 'listVoices') return listVoices(context);
-    if (action === 'previewVoice') return speak(params || {}, context);
-    if (action === 'healthCheck' || action === 'discover' || action === 'probe') return healthCheck(context);
+    if (action === 'speak') return speakAction(params || {}, context);
+    if (action === 'previewVoice') return speakAction(params || {}, context);
     if (action === 'stop') return { ok: true, localOnly: true };
+    if (action === 'listVoices') return listVoicesAction(context);
+    if (action === 'healthCheck') return healthCheckAction();
+    if (action === 'getBackendStatus') return healthCheckAction();
+    if (action === 'startBackend') return startBackendAction(context);
+    if (action === 'stopBackend') return stopBackendAction();
+    if (action === 'restartBackend') return restartBackendAction(context);
+    if (action === 'getModels') return getModelsPayload(context);
+    if (action === 'downloadModel') return downloadModelAction(params || {}, context);
+    if (action === 'getDownloadStatus') return getDownloadStatusAction(params || {}, context);
+    if (action === 'setModelFolder') return setModelFolderAction(params || {}, context);
+    if (action === 'importPiperAssets') return importPiperAssetsAction(params || {}, context);
+    if (action === 'copyVoiceSource') return copyVoiceSourceAction(params || {}, context);
+    if (action === 'listVoiceSourceFiles') return listVoiceSourceFilesAction(context);
+    if (action === 'prepareVoice') return prepareVoiceAction(params || {}, context);
+    if (action === 'getVoicePrepareStatus') return getVoicePrepareStatusAction(params || {}, context);
+    if (action === 'getStreamPlan') return getStreamPlanAction(params || {}, context);
+    if (action === 'getPerformance') return getPerformanceAction(context);
     throw new Error(`Unknown TTS action: ${action}`);
+  },
+
+  _test: {
+    PLUGIN_ID,
+    RUNTIME,
+    buildVoiceCatalog,
+    resolveVoiceChoice
   }
 };
