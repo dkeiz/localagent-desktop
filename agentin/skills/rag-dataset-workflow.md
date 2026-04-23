@@ -1,125 +1,79 @@
-# RAG Dataset Generation Skill
+# RAG Answer Menu Skill
 
-## Purpose
-This skill provides mistake-free guidance for any agent working with RAG (Retrieval-Augmented Generation) datasets.
+## Goal
+Build a simple support RAG backend from a small list of answers, then run deterministic RAG answers.
 
-## Core Workflow
+## Fast Flow
+1. Ingest answer menu entries (issue + instruction).
+2. Create a mode with `top_k=1`.
+3. Activate `rag_only` mode.
+4. Ask questions through `plugin_agent_rag_studio_rag_answer`.
+5. Use `-norag` to return to normal agent mode.
 
-### 1. Dataset Ingestion
+## 1) Ingest Menu Entries
 ```json
 TOOL:plugin_agent_rag_studio_dataset{
   "action": "ingest",
-  "title": "dataset-name",
-  "text": "inline text content",
-  "file_paths": ["/path/to/file.txt"],
-  "directory_paths": ["/path/to/folder"],
-  "urls": ["https://example.com/page"]
+  "dataset_id": "ds-tech-support-menu",
+  "title": "Tech Support Answers Menu",
+  "entries": [
+    { "issue": "I forgot my password", "instruction": "Use Reset Password from sign-in page." },
+    { "issue": "Two-factor code fails", "instruction": "Sync device time and request a new code." }
+  ]
 }
 ```
 
-**Best Practices:**
-- Use descriptive titles (lowercase, hyphenated)
-- Group related content into single datasets
-- For large folders, ingest directory_paths not individual files
-- Validate ingestion with action="list" after
-
-### 2. Mode Creation
+## 2) Create + Activate Mode
 ```json
 TOOL:plugin_agent_rag_studio_mode{
   "action": "create",
-  "name": "mode-name",
-  "guidance": "When to use this mode",
-  "top_k": 5,
-  "min_score": 0.6,
-  "dataset_ids": ["dataset-id-from-ingestion"]
+  "mode_id": "mode-tech-support-rag-answer",
+  "name": "Tech Support RAG Answer",
+  "guidance": "Return one best instruction from dataset.",
+  "top_k": 1,
+  "min_score": 0.15,
+  "dataset_ids": ["ds-tech-support-menu"]
 }
 ```
 
-**Best Practices:**
-- Create one mode per use case (support, research, docs)
-- Set min_score 0.5-0.7 to filter weak matches
-- Link only relevant datasets to each mode
-- Activate mode after creation
-
-### 3. Add Hard-Wired Rules (For FAQs)
-```json
-TOOL:plugin_agent_rag_studio_mode{
-  "action": "add_rule",
-  "mode_id": "mode-id",
-  "pattern": "reset password",
-  "answer": "To reset password, go to Settings > Security > Reset",
-  "match_type": "contains"
-}
-```
-
-**Match Types:**
-- `contains` - Pattern anywhere in question
-- `exact` - Exact match required
-- `regex` - Regular expression pattern
-
-### 4. Activate Mode
 ```json
 TOOL:plugin_agent_rag_studio_mode{
   "action": "activate",
-  "mode_id": "mode-id"
+  "mode_id": "mode-tech-support-rag-answer"
 }
 ```
 
-### 5. Query Dataset
+## 3) Enable RAG-Only Answers
 ```json
-TOOL:plugin_agent_rag_studio_query{
-  "query": "user question here",
-  "mode_id": "optional-mode-override",
-  "top_k": 3
+TOOL:plugin_agent_rag_studio_answer_mode{
+  "action": "set",
+  "mode": "rag_only"
 }
 ```
 
-## Common Mistakes to Avoid
-
-| Mistake | Fix |
-|---------|-----|
-| Querying without active mode | Always activate mode first or specify mode_id |
-| Ingesting without checking result | Use action="inspect" to verify chunks |
-| Too low min_score | Set 0.5+ to avoid irrelevant matches |
-| Mixing unrelated content | Keep datasets topic-specific |
-| Forgetting to list datasets | Use action="list" to get dataset_ids |
-
-## Quick Reference Commands
-
-```
-# Check status
-TOOL:plugin_agent_rag_studio_status{}
-
-# List datasets
-TOOL:plugin_agent_rag_studio_dataset{"action":"list"}
-
-# List modes
-TOOL:plugin_agent_rag_studio_mode{"action":"list"}
-
-# Inspect dataset
-TOOL:plugin_agent_rag_studio_dataset{"action":"inspect","dataset_id":"ds-xxx"}
+## 4) Answer Questions
+```json
+TOOL:plugin_agent_rag_studio_rag_answer{
+  "query": "I forgot my password and cannot sign in"
+}
 ```
 
-## Example: TechSupport Dataset Setup
+## 5) Disable RAG-Only Mode
+```json
+TOOL:plugin_agent_rag_studio_rag_answer{
+  "query": "-norag"
+}
+```
 
-1. Ingest Q&A file:
-   ```
-   action="ingest", title="techsupport-faq", file_paths=["C:/support/qa.txt"]
-   ```
+Or:
+```json
+TOOL:plugin_agent_rag_studio_answer_mode{
+  "action": "set",
+  "mode": "agent"
+}
+```
 
-2. Create mode:
-   ```
-   action="create", name="techsupport-mode", dataset_ids=["ds-xxx"]
-   ```
-
-3. Add rules for top 10 questions:
-   ```
-   action="add_rule", pattern="refund", answer="30-day refund policy..."
-   ```
-
-4. Activate & query!
-
----
-**Skill Version:** 1.0
-**Created For:** Universal RAG Agent
-**Location:** {agentin}/skills/rag-dataset-workflow.md
+## Notes
+- Use `top_k=1` for deterministic support menus.
+- Keep each entry short and unambiguous.
+- If answers are weak or mismatched, improve issue wording and re-ingest.

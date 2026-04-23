@@ -10,6 +10,8 @@ const READABLE_EXTENSIONS = new Set([
     '.xml', '.yaml', '.yml', '.ini', '.cfg', '.conf', '.js', '.ts', '.py', '.java',
     '.c', '.cpp', '.h', '.hpp', '.rb', '.go', '.rs', '.sql', '.rtf'
 ]);
+const RESPONSE_MODE_AGENT = 'agent';
+const RESPONSE_MODE_RAG_ONLY = 'rag_only';
 
 const runtime = {
     dataDir: '',
@@ -28,6 +30,7 @@ function createDefaultState() {
     return {
         version: 1,
         active_mode_id: null,
+        response_mode: RESPONSE_MODE_AGENT,
         datasets: [],
         modes: [],
         updated_at: new Date().toISOString(),
@@ -35,9 +38,15 @@ function createDefaultState() {
     };
 }
 
+function normalizeResponseMode(value) {
+    const mode = String(value || RESPONSE_MODE_AGENT).trim().toLowerCase();
+    return mode === RESPONSE_MODE_RAG_ONLY ? RESPONSE_MODE_RAG_ONLY : RESPONSE_MODE_AGENT;
+}
+
 function normalizeState(raw) {
     const base = createDefaultState();
     const merged = { ...base, ...(raw || {}) };
+    merged.response_mode = normalizeResponseMode(merged.response_mode);
     merged.datasets = Array.isArray(merged.datasets) ? merged.datasets : [];
     merged.modes = Array.isArray(merged.modes) ? merged.modes : [];
     return merged;
@@ -185,6 +194,23 @@ async function fetchUrlText(urlValue) {
 
 async function collectSourceBlocks(payload = {}) {
     const blocks = [];
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    for (let index = 0; index < entries.length; index++) {
+        const entry = entries[index] || {};
+        const entryId = String(entry.id || `entry-${index + 1}`).trim();
+        const issue = String(entry.issue || entry.question || entry.problem || entry.title || '').trim();
+        const instruction = String(entry.instruction || entry.answer || '').trim();
+        if (!issue || !instruction) {
+            continue;
+        }
+        blocks.push({
+            source: `entry:${entryId}`,
+            text: `Issue: ${issue}\nInstruction: ${instruction}`,
+            issue_text: issue,
+            answer_text: instruction
+        });
+    }
+
     const text = String(payload.text || '').trim();
     if (text) {
         blocks.push({ source: 'inline:text', text });
@@ -278,6 +304,31 @@ function summarizeMatches(query, mode, matches) {
     return lines.join('\n');
 }
 
+function parseModeSwitchCommand(query) {
+    const raw = String(query || '').trim();
+    if (!raw) return null;
+    const lower = raw.toLowerCase();
+    if (lower === '-rag') {
+        return { mode: RESPONSE_MODE_RAG_ONLY, remaining: '' };
+    }
+    if (lower === '-norag') {
+        return { mode: RESPONSE_MODE_AGENT, remaining: '' };
+    }
+    if (lower.startsWith('-rag ')) {
+        return { mode: RESPONSE_MODE_RAG_ONLY, remaining: raw.slice(5).trim() };
+    }
+    if (lower.startsWith('-norag ')) {
+        return { mode: RESPONSE_MODE_AGENT, remaining: raw.slice(7).trim() };
+    }
+    return null;
+}
+
+function setResponseMode(mode, message = '') {
+    runtime.state.response_mode = normalizeResponseMode(mode);
+    saveState(message || `Answer mode set to ${runtime.state.response_mode}.`);
+    return runtime.state.response_mode;
+}
+
 async function ingestDataset(payload) {
     const sourceBlocks = await collectSourceBlocks(payload);
     if (sourceBlocks.length === 0) {
@@ -291,6 +342,16 @@ async function ingestDataset(payload) {
 
     const chunks = [];
     for (const block of sourceBlocks) {
+        if (block.answer_text && block.issue_text) {
+            chunks.push({
+                id: `ch-${chunks.length + 1}`,
+                source: block.source,
+                text: String(block.text || '').trim(),
+                issue_text: block.issue_text,
+                answer_text: block.answer_text
+            });
+            continue;
+        }
         const split = chunkText(block.text, chunkSize, chunkOverlap);
         for (const chunk of split) {
             chunks.push({
@@ -305,8 +366,13 @@ async function ingestDataset(payload) {
         throw new Error('Data was collected but no chunks were produced');
     }
 
-    for (const chunk of chunks) {
-        chunk.embedding = await embedText(chunk.text);
+    const BATCH_SIZE = 4;
+    for (let index = 0; index < chunks.length; index += BATCH_SIZE) {
+        const batch = chunks.slice(index, index + BATCH_SIZE);
+        const embeddings = await Promise.all(batch.map((chunk) => embedText(chunk.text)));
+        for (let offset = 0; offset < batch.length; offset++) {
+            batch[offset].embedding = embeddings[offset];
+        }
     }
 
     const now = new Date().toISOString();
@@ -532,39 +598,10 @@ async function runQuery(payload) {
         }
     }
 
-    const queryEmbedding = await embedText(query);
-    const selectedDatasetIds = Array.isArray(mode.dataset_ids) && mode.dataset_ids.length > 0
-        ? mode.dataset_ids
-        : runtime.state.datasets.map((dataset) => dataset.id);
-    const scored = [];
-
-    for (const datasetId of selectedDatasetIds) {
-        const dataset = safeReadJson(datasetFilePath(datasetId), null);
-        if (!dataset || !Array.isArray(dataset.chunks)) continue;
-        for (const chunk of dataset.chunks) {
-            if (!Array.isArray(chunk.embedding)) continue;
-            const score = cosineSimilarity(queryEmbedding, chunk.embedding);
-            scored.push({
-                dataset_id: datasetId,
-                dataset_title: dataset.title || datasetId,
-                chunk_id: chunk.id,
-                source: chunk.source,
-                text: chunk.text,
-                score
-            });
-        }
-    }
-
-    const minScore = Number.isFinite(Number(mode.min_score)) ? Number(mode.min_score) : 0.12;
-    const topK = Math.max(1, Number(payload.top_k) || Number(mode.top_k) || 4);
-    const matches = scored
-        .filter((item) => item.score >= minScore)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, topK)
-        .map((item) => ({
-            ...item,
-            text: trimSnippet(item.text, 360)
-        }));
+    const {
+        matches,
+        selectedDatasetIds
+    } = await retrieveMatches(query, mode, payload.top_k);
 
     const answer = summarizeMatches(query, mode, matches);
     runtime.state.last_message = answer;
@@ -584,6 +621,162 @@ async function runQuery(payload) {
     };
 }
 
+function composeRagAnswer(query, mode, matches) {
+    if (!matches.length) {
+        return `I could not find a reliable instruction in "${mode?.name || 'active mode'}" for: "${query}".`;
+    }
+
+    const best = matches[0];
+    const instruction = String(best.answer_text || best.text || '').trim();
+    const issueHint = String(best.issue_text || '').trim();
+    const matchLine = issueHint
+        ? `Matched entry: "${issueHint}".`
+        : `Matched source: ${best.source}.`;
+
+    return [
+        `For this situation, use this instruction: "${instruction}"`,
+        matchLine,
+        `This answer is grounded in dataset "${best.dataset_title || best.dataset_id}" (score ${best.score.toFixed(3)}).`
+    ].join('\n');
+}
+
+async function retrieveMatches(query, mode, topKOverride) {
+    const queryEmbedding = await embedText(query);
+    const selectedDatasetIds = Array.isArray(mode.dataset_ids) && mode.dataset_ids.length > 0
+        ? mode.dataset_ids
+        : runtime.state.datasets.map((dataset) => dataset.id);
+    const scored = [];
+
+    for (const datasetId of selectedDatasetIds) {
+        const dataset = safeReadJson(datasetFilePath(datasetId), null);
+        if (!dataset || !Array.isArray(dataset.chunks)) continue;
+        for (const chunk of dataset.chunks) {
+            if (!Array.isArray(chunk.embedding)) continue;
+            const score = cosineSimilarity(queryEmbedding, chunk.embedding);
+            scored.push({
+                dataset_id: datasetId,
+                dataset_title: dataset.title || datasetId,
+                chunk_id: chunk.id,
+                source: chunk.source,
+                text: chunk.text,
+                issue_text: chunk.issue_text || '',
+                answer_text: chunk.answer_text || '',
+                score
+            });
+        }
+    }
+
+    const minScore = Number.isFinite(Number(mode.min_score)) ? Number(mode.min_score) : 0.12;
+    const topK = Math.max(1, Number(topKOverride) || Number(mode.top_k) || 4);
+    const matches = scored
+        .filter((item) => item.score >= minScore)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK)
+        .map((item) => ({
+            ...item,
+            text: trimSnippet(item.text, 360)
+        }));
+
+    return {
+        matches,
+        minScore,
+        topK,
+        selectedDatasetIds
+    };
+}
+
+async function runRagAnswer(payload) {
+    const rawQuery = String(payload.query || '').trim();
+    if (!rawQuery) {
+        throw new Error('query is required');
+    }
+
+    const command = parseModeSwitchCommand(rawQuery);
+    if (command) {
+        const modeValue = setResponseMode(command.mode, `Answer mode set to ${command.mode}.`);
+        if (!command.remaining) {
+            return {
+                success: true,
+                source: 'mode_switch',
+                response_mode: modeValue,
+                answer: modeValue === RESPONSE_MODE_RAG_ONLY
+                    ? 'RAG-only answer mode is now ON.'
+                    : 'RAG-only answer mode is now OFF (agent mode).',
+                matches: []
+            };
+        }
+    }
+
+    const query = command?.remaining || rawQuery;
+    const mode = resolveActiveMode(payload.mode_id);
+    if (!mode) {
+        return {
+            success: false,
+            answer: 'No RAG mode is configured. Create and activate a mode first.',
+            matches: []
+        };
+    }
+
+    const hardRules = Array.isArray(mode.hard_rules) ? mode.hard_rules : [];
+    for (const rule of hardRules) {
+        if (matchHardRule(rule, query)) {
+            return {
+                success: true,
+                source: 'hard_rule',
+                response_mode: runtime.state.response_mode,
+                mode: { id: mode.id, name: mode.name },
+                answer: rule.answer,
+                rule,
+                matches: []
+            };
+        }
+    }
+
+    const {
+        matches,
+        selectedDatasetIds
+    } = await retrieveMatches(query, mode, 1);
+
+    const answer = composeRagAnswer(query, mode, matches);
+    runtime.state.last_message = answer;
+    saveState();
+
+    return {
+        success: true,
+        source: 'rag_answer',
+        response_mode: runtime.state.response_mode,
+        mode: {
+            id: mode.id,
+            name: mode.name,
+            guidance: mode.guidance
+        },
+        answer,
+        matches,
+        used_dataset_ids: selectedDatasetIds
+    };
+}
+
+function handleAnswerModeOp(payload = {}) {
+    const action = String(payload.action || 'get').trim().toLowerCase();
+    if (action === 'get' || action === 'status') {
+        return {
+            success: true,
+            action: 'get',
+            response_mode: runtime.state.response_mode
+        };
+    }
+    if (action === 'set') {
+        const mode = normalizeResponseMode(payload.mode);
+        setResponseMode(mode);
+        return {
+            success: true,
+            action: 'set',
+            response_mode: mode
+        };
+    }
+    throw new Error(`Unsupported answer_mode action "${action}"`);
+}
+
 function summary() {
     const activeMode = resolveActiveMode();
     return {
@@ -591,6 +784,7 @@ function summary() {
         modeCount: runtime.state.modes.length,
         activeModeId: runtime.state.active_mode_id || null,
         activeModeName: activeMode ? activeMode.name : null,
+        responseMode: runtime.state.response_mode,
         datasets: listDatasets().slice(0, 12),
         modes: modeList().slice(0, 12),
         lastMessage: runtime.state.last_message || ''
@@ -608,7 +802,15 @@ async function handleDatasetOp(payload) {
 
 async function handleModeOp(payload) {
     const action = String(payload.action || '').toLowerCase();
-    if (action === 'list') return { success: true, action: 'list', modes: modeList(), active_mode_id: runtime.state.active_mode_id };
+    if (action === 'list') {
+        return {
+            success: true,
+            action: 'list',
+            modes: modeList(),
+            active_mode_id: runtime.state.active_mode_id,
+            response_mode: runtime.state.response_mode
+        };
+    }
     if (action === 'create') return { success: true, action: 'create', mode: createMode(payload) };
     if (action === 'update') return { success: true, action: 'update', mode: updateMode(payload) };
     if (action === 'activate') return { success: true, action: 'activate', mode: activateMode(String(payload.mode_id || '')) };
@@ -659,7 +861,9 @@ async function route(action, payload) {
     if (action === 'summary') return summary();
     if (action === 'dataset_op') return handleDatasetOp(payload || {});
     if (action === 'mode_op') return handleModeOp(payload || {});
+    if (action === 'answer_mode') return handleAnswerModeOp(payload || {});
     if (action === 'query') return runQuery(payload || {});
+    if (action === 'answer') return runRagAnswer(payload || {});
     if (action === 'shutdown') {
         saveState('RAG runtime shutdown.');
         return { success: true };

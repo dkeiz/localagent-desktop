@@ -3,6 +3,8 @@ const path = require('path');
 const { fork } = require('child_process');
 
 const RUNTIME_TIMEOUT_MS = 120000;
+const SAMPLE_DATASET_ID = 'ds-tech-support-menu-20';
+const SAMPLE_MODE_ID = 'mode-tech-support-rag-answer';
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -127,9 +129,7 @@ function renderModes(modes, activeModeId) {
                 <strong>${escapeHtml(mode.name)}</strong>
                 <span>${escapeHtml((mode.guidance || '').slice(0, 140))}</span>
             </div>
-            <button type="button" data-agent-ui-action="activate-mode" data-mode-id="${escapeHtml(mode.id)}">
-                ${isActive ? 'Active' : 'Activate'}
-            </button>
+            <span class="rag-badge">${isActive ? 'Active' : 'Idle'}</span>
         </div>`;
     }).join('');
 }
@@ -143,34 +143,39 @@ function renderDatasets(datasets) {
             <strong>${escapeHtml(dataset.title || dataset.id)}</strong>
             <span>${escapeHtml(`${dataset.chunk_count || 0} chunks • ${dataset.source_count || 0} sources`)}</span>
         </div>
-        <button type="button" data-agent-ui-action="remove-dataset" data-dataset-id="${escapeHtml(dataset.id)}">Remove</button>
+        <span class="rag-badge">Ready</span>
     </div>`).join('');
 }
 
 function renderPanel(summary, note = '') {
+    const responseMode = summary?.responseMode || 'agent';
+    const modeLabel = responseMode === 'rag_only' ? 'RAG-only answers' : 'Agent mode';
     return `<section class="rag-studio-panel">
         <div class="rag-header">
-            <strong>RAG Studio</strong>
+            <strong>RAG Answers</strong>
             <button type="button" data-agent-ui-action="refresh">Refresh</button>
         </div>
         <div class="rag-meta">
             <div><span>Datasets</span><strong>${summary?.datasetCount || 0}</strong></div>
             <div><span>Modes</span><strong>${summary?.modeCount || 0}</strong></div>
             <div><span>Active Mode</span><strong>${escapeHtml(summary?.activeModeName || 'None')}</strong></div>
+            <div><span>Answer Mode</span><strong>${escapeHtml(modeLabel)}</strong></div>
         </div>
         <div class="rag-actions">
-            <button type="button" data-agent-ui-action="create-tech-support-mode">Create Tech Support Mode</button>
-            <button type="button" data-agent-ui-action="ingest-agent-files">Ingest Agent Files</button>
-            <button type="button" data-agent-ui-action="run-health-query">Run Health Query</button>
+            <button type="button" data-agent-ui-action="load-tech-support-sample">Load Sample 20 Answers</button>
+            <button type="button" data-agent-ui-action="create-rag-answer-mode">Create RAG Answer Mode</button>
+            <button type="button" data-agent-ui-action="enable-rag-only">Enable RAG-Only</button>
+            <button type="button" data-agent-ui-action="disable-rag-only">Disable RAG-Only</button>
+            <button type="button" data-agent-ui-action="run-rag-answer-smoke">Run Smoke Check</button>
         </div>
         <div class="rag-note">${escapeHtml(note || summary?.lastMessage || '')}</div>
         <div class="rag-sections">
             <section>
-                <h4>Modes</h4>
+                <h4>Configured Modes</h4>
                 ${renderModes(summary?.modes || [], summary?.activeModeId)}
             </section>
             <section>
-                <h4>Datasets</h4>
+                <h4>Indexed Datasets</h4>
                 ${renderDatasets(summary?.datasets || [])}
             </section>
         </div>
@@ -192,8 +197,7 @@ const css = `
     margin-bottom: 8px;
 }
 .rag-header button,
-.rag-actions button,
-.rag-item button {
+.rag-actions button {
     border: 1px solid var(--border-color);
     background: transparent;
     color: var(--text-primary);
@@ -203,7 +207,7 @@ const css = `
 }
 .rag-meta {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
     margin-bottom: 8px;
 }
@@ -249,6 +253,13 @@ const css = `
     padding: 6px;
     margin-bottom: 6px;
 }
+.rag-badge {
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
 .rag-item-main {
     min-width: 0;
     display: flex;
@@ -264,6 +275,7 @@ const css = `
 
 module.exports = {
     async onEnable(context) {
+        const sampleDatasetPath = path.join(context.pluginDir, 'data', 'tech-support-menu-20.json');
         const runtime = new RagRuntimeClient({
             scriptPath: path.join(context.pluginDir, 'rag-runtime-process.js'),
             dataDir: path.join(context.pluginDir, 'data'),
@@ -288,6 +300,7 @@ module.exports = {
                     dataset_id: { type: 'string', description: 'Dataset id for inspect/delete' },
                     title: { type: 'string', description: 'Dataset title for ingest' },
                     text: { type: 'string', description: 'Inline dataset text for ingest' },
+                    entries: { type: 'array', description: 'Structured entries [{issue, instruction}] for deterministic support menus' },
                     file_paths: { type: 'array', description: 'Absolute file paths for ingest' },
                     directory_paths: { type: 'array', description: 'Absolute directory paths for ingest' },
                     urls: { type: 'array', description: 'Optional text URLs for ingest' }
@@ -330,6 +343,29 @@ module.exports = {
             }
         }, async (params) => runtime.call('query', params));
 
+        context.registerHandler('answer_mode', {
+            description: 'Get or set response mode. Modes: agent | rag_only',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    action: { type: 'string', description: 'get | set' },
+                    mode: { type: 'string', description: 'agent | rag_only for set action' }
+                }
+            }
+        }, async (params) => runtime.call('answer_mode', params || {}));
+
+        context.registerHandler('rag_answer', {
+            description: 'Return one deterministic instruction from RAG data. Supports in-query controls: -rag and -norag.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'User support question. Prefix -rag or -norag to toggle mode.' },
+                    mode_id: { type: 'string', description: 'Optional retrieval mode override' }
+                },
+                required: ['query']
+            }
+        }, async (params) => runtime.call('answer', params));
+
         context.registerChatUI({
             title: 'RAG Studio',
             async renderPanel() {
@@ -341,31 +377,55 @@ module.exports = {
                 async refresh({ render, pluginId }) {
                     return { success: true, pluginId, html: await render(), css };
                 },
-                async 'create-tech-support-mode'({ render, pluginId }) {
-                    await runtime.call('mode_op', {
-                        action: 'create',
-                        name: 'Tech Support',
-                        guidance: 'Prioritize deterministic troubleshooting steps and concise resolutions.',
-                        top_k: 4,
-                        min_score: 0.15
-                    });
-                    const summary = await runtime.call('summary');
-                    return { success: true, pluginId, html: renderPanel(summary, 'Tech Support mode created.'), css };
-                },
-                async 'ingest-agent-files'({ agentInfo, pluginId }) {
-                    const base = agentInfo?.folderPath || '';
-                    const directoryPaths = [path.join(base, 'tasks'), path.join(base, 'outputs')];
+                async 'load-tech-support-sample'({ render, pluginId }) {
+                    const raw = fs.readFileSync(sampleDatasetPath, 'utf-8');
+                    const parsed = JSON.parse(raw);
+                    const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
                     await runtime.call('dataset_op', {
                         action: 'ingest',
-                        title: `Agent Files ${new Date().toISOString()}`,
-                        directory_paths: directoryPaths
+                        dataset_id: SAMPLE_DATASET_ID,
+                        title: 'Tech Support Answers Menu (20)',
+                        entries
                     });
                     const summary = await runtime.call('summary');
-                    return { success: true, pluginId, html: renderPanel(summary, 'Agent task/output files indexed.'), css };
+                    return { success: true, pluginId, html: renderPanel(summary, 'Loaded sample 20-answer dataset.'), css };
                 },
-                async 'run-health-query'({ pluginId }) {
-                    const result = await runtime.call('query', {
-                        query: 'What topics and procedures are currently covered by indexed data?'
+                async 'create-rag-answer-mode'({ render, pluginId }) {
+                    await runtime.call('mode_op', {
+                        action: 'create',
+                        mode_id: SAMPLE_MODE_ID,
+                        name: 'Tech Support RAG Answer',
+                        guidance: 'Return one best instruction from the support answer menu and keep output concise.',
+                        top_k: 1,
+                        min_score: 0.15,
+                        dataset_ids: [SAMPLE_DATASET_ID]
+                    });
+                    await runtime.call('mode_op', {
+                        action: 'activate',
+                        mode_id: SAMPLE_MODE_ID
+                    });
+                    const summary = await runtime.call('summary');
+                    return { success: true, pluginId, html: renderPanel(summary, 'RAG answer mode created and activated.'), css };
+                },
+                async 'enable-rag-only'({ render, pluginId }) {
+                    await runtime.call('answer_mode', {
+                        action: 'set',
+                        mode: 'rag_only'
+                    });
+                    const summary = await runtime.call('summary');
+                    return { success: true, pluginId, html: renderPanel(summary, 'RAG-only answers enabled.'), css };
+                },
+                async 'disable-rag-only'({ render, pluginId }) {
+                    await runtime.call('answer_mode', {
+                        action: 'set',
+                        mode: 'agent'
+                    });
+                    const summary = await runtime.call('summary');
+                    return { success: true, pluginId, html: renderPanel(summary, 'RAG-only answers disabled (agent mode).'), css };
+                },
+                async 'run-rag-answer-smoke'({ pluginId }) {
+                    const result = await runtime.call('answer', {
+                        query: 'I forgot my password and cannot sign in'
                     });
                     const summary = await runtime.call('summary');
                     return {
@@ -374,22 +434,6 @@ module.exports = {
                         html: renderPanel(summary, result.answer || 'No answer generated.'),
                         css
                     };
-                },
-                async 'activate-mode'({ payload, pluginId }) {
-                    await runtime.call('mode_op', {
-                        action: 'activate',
-                        mode_id: payload.modeId
-                    });
-                    const summary = await runtime.call('summary');
-                    return { success: true, pluginId, html: renderPanel(summary, 'Mode activated.'), css };
-                },
-                async 'remove-dataset'({ payload, pluginId }) {
-                    await runtime.call('dataset_op', {
-                        action: 'delete',
-                        dataset_id: payload.datasetId
-                    });
-                    const summary = await runtime.call('summary');
-                    return { success: true, pluginId, html: renderPanel(summary, 'Dataset removed.'), css };
                 }
             }
         });

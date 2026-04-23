@@ -1,0 +1,26 @@
+{
+  "id": "tech-support-menu-20",
+  "title": "Tech Support Answers Menu (20)",
+  "entries": [
+    { "id": "ts-01", "issue": "I forgot my password and cannot sign in.", "instruction": "Use the Reset Password link on the sign-in page, then confirm from your email and create a new password." },
+    { "id": "ts-02", "issue": "My two-factor code is not accepted.", "instruction": "Check device time sync, request a fresh code, and retry once; if still failing, use backup codes or contact admin reset." },
+    { "id": "ts-03", "issue": "I do not receive verification email.", "instruction": "Check spam/junk, verify mailbox quota, allow sender domain, then request a new verification message." },
+    { "id": "ts-04", "issue": "The app is very slow.", "instruction": "Restart the app, clear cache, check network stability, and disable heavy background tabs or downloads." },
+    { "id": "ts-05", "issue": "I cannot upload files.", "instruction": "Confirm file type and size limits, rename file without special characters, and retry on a stable connection." },
+    { "id": "ts-06", "issue": "Audio is not playing.", "instruction": "Verify output device, unmute system and app volume, refresh the page, and test with another browser profile." },
+    { "id": "ts-07", "issue": "Microphone is not detected.", "instruction": "Allow microphone permissions, select the correct input device, and reconnect or restart audio drivers." },
+    { "id": "ts-08", "issue": "Camera is black or unavailable.", "instruction": "Close other apps using camera, grant camera permission, and reconnect webcam or restart browser." },
+    { "id": "ts-09", "issue": "I get network timeout errors.", "instruction": "Switch networks if possible, disable VPN/proxy temporarily, and retry after checking service status page." },
+    { "id": "ts-10", "issue": "Session keeps logging me out.", "instruction": "Enable cookies for the site, avoid private mode for long sessions, and refresh token by signing in again." },
+    { "id": "ts-11", "issue": "I cannot save settings.", "instruction": "Check required fields, remove invalid characters, and confirm your account has permissions to edit settings." },
+    { "id": "ts-12", "issue": "Permission denied when accessing project.", "instruction": "Request access from project owner, verify correct account is active, and re-open the invite link." },
+    { "id": "ts-13", "issue": "Search returns no results even for known items.", "instruction": "Clear filters, check date range, and reindex or wait for background indexing to complete." },
+    { "id": "ts-14", "issue": "Notifications are not arriving.", "instruction": "Enable notifications in profile and browser settings, whitelist app domain, and check do-not-disturb rules." },
+    { "id": "ts-15", "issue": "Desktop app fails to launch.", "instruction": "Reboot machine, install latest app version, and remove corrupted local cache before relaunching." },
+    { "id": "ts-16", "issue": "Update failed during installation.", "instruction": "Run installer as administrator, ensure enough disk space, and disable antivirus briefly during update." },
+    { "id": "ts-17", "issue": "I see data sync conflicts.", "instruction": "Keep the latest trusted record, resolve field conflicts manually, then trigger a full sync." },
+    { "id": "ts-18", "issue": "Export report fails.", "instruction": "Reduce report size, shorten date range, and retry export with CSV before PDF if limits are strict." },
+    { "id": "ts-19", "issue": "The page layout is broken.", "instruction": "Hard refresh browser, disable extensions for the site, and test in incognito or another browser." },
+    { "id": "ts-20", "issue": "How do I contact human support?", "instruction": "Open Help > Contact Support, include error screenshot and timestamp, and provide your account email." }
+  ]
+}
