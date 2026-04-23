@@ -6,6 +6,7 @@ const { registerAgentSystemHandlers } = require('./register-agent-system-handler
 const { registerPluginKnowledgeHandlers } = require('./register-plugin-knowledge-handlers');
 const { registerDialogHandlers } = require('./register-dialog-handlers');
 const { registerTtsHandlers } = require('./register-tts-handlers');
+const { registerAppControlHandlers } = require('./register-app-control-handlers');
 const { createStaticWindowManager } = require('../window-manager');
 
 function buildRuntime(container) {
@@ -102,6 +103,7 @@ function registerAllHandlers(ipcMain, container) {
   registerPluginKnowledgeHandlers(ipcMain, runtime);
   registerDialogHandlers(ipcMain, runtime);
   registerTtsHandlers(ipcMain, runtime);
+  registerAppControlHandlers(ipcMain, runtime);
 }
 
 module.exports = { registerAllHandlers };

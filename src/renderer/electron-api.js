@@ -188,6 +188,11 @@ window.electronAPI = Object.assign(ipcRenderer, {
     pickFile: (options = {}) => ipcRenderer.invoke('dialog:pick-file', options)
   },
 
+  app: {
+    refresh: () => ipcRenderer.invoke('app:refresh-window'),
+    restart: () => ipcRenderer.invoke('app:restart')
+  },
+
   tts: {
     getContract: () => ipcRenderer.invoke('tts:get-contract'),
     getSettings: () => ipcRenderer.invoke('tts:get-settings'),

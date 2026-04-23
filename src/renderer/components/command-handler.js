@@ -117,6 +117,28 @@ class CommandHandler {
             }
         });
 
+        this.commands.set('/refresh', {
+            description: 'Reload the current UI window',
+            execute: async () => {
+                const result = await window.electronAPI.app.refresh();
+                if (!result?.success) {
+                    return { output: `Refresh failed: ${result?.error || 'unknown error'}`, style: 'system' };
+                }
+                return { output: '🔄 Refreshing UI...', style: 'system' };
+            }
+        });
+
+        this.commands.set('/restart', {
+            description: 'Restart the full application',
+            execute: async () => {
+                const result = await window.electronAPI.app.restart();
+                if (!result?.success) {
+                    return { output: `Restart failed: ${result?.error || 'unknown error'}`, style: 'system' };
+                }
+                return { output: '♻️ Restarting app...', style: 'system' };
+            }
+        });
+
         // /stop
         this.commands.set('/stop', {
             description: 'Stop current AI generation',
