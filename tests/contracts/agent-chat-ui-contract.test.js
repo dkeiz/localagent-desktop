@@ -7,7 +7,7 @@ const { MemoryDB, TestContainer, PluginCapabilityStub, makeTempDir } = require('
 module.exports = {
   name: 'agent-chat-ui-contract',
   tags: ['contract', 'fast'],
-  async run({ assert, rootDir }) {
+  async run({ assert }) {
     const tempDir = makeTempDir('localagent-agent-ui-');
     const agentHome = path.join(tempDir, 'research-orchestrator');
     fs.mkdirSync(path.join(agentHome, 'tasks'), { recursive: true });
@@ -37,39 +37,46 @@ module.exports = {
         folderPath: agentHome
       };
 
-      const plugins = pluginManager.getAgentPlugins(agentInfo.slug);
-      const chatUI = await pluginManager.getAgentChatUI(agentInfo);
-      await pluginManager.runAgentChatUIAction(agentInfo, 'use-agent-home', {
-        pluginId: 'agent-file-browser'
+      const chatUI = await pluginManager.getAgentChatUI(agentInfo, {
+        sessionId: 'session-17',
+        uiMode: 'plugin'
       });
-      await pluginManager.runAgentChatUIAction(agentInfo, 'approve-root-change', {
-        pluginId: 'agent-file-browser'
-      });
-      const preview = await pluginManager.runAgentChatUIAction(agentInfo, 'open-file', {
-        pluginId: 'agent-file-browser',
-        relativePath: 'tasks/plan.md'
-      });
+      assert.ok(chatUI, 'Expected chat UI to resolve for plugin mode');
+      assert.equal(chatUI.uiPluginId, 'agent-research-orchestrator-ui', 'Expected primary contract plugin to own chat UI');
+      assert.includes(chatUI.html, 'data-agent-ui-plugin-id="agent-research-orchestrator-ui"', 'Expected research owner plugin wrapper');
+      assert.equal(
+        chatUI.html.includes('data-agent-ui-plugin-id="agent-file-browser"'),
+        false,
+        'Expected non-owner chat UI plugin to be excluded from rendering'
+      );
+
       const refresh = await pluginManager.runAgentChatUIAction(agentInfo, 'refresh', {
         pluginId: 'agent-research-orchestrator-ui'
+      }, {
+        sessionId: 'session-17',
+        uiMode: 'plugin'
       });
-      const chartPreview = await pluginManager.runAgentChatUIAction(agentInfo, 'preview-chart', {
-        pluginId: 'agent-research-orchestrator-ui',
-        relativePath: 'outputs/summary.chart.json'
-      });
-      const lifecycle = await pluginManager.handleAgentChatUIEvent(agentInfo, 'activated', {
-        sessionId: 'session-17'
-      });
+      assert.includes(refresh.html, 'Research Orchestrator', 'Expected owner action to execute');
 
-      assert.ok(plugins.includes('agent-file-browser'), 'Expected shared artifact plugin for research agent');
-      assert.ok(plugins.includes('agent-research-orchestrator-ui'), 'Expected individual research UI plugin');
-      assert.includes(chatUI.html, 'data-agent-ui-plugin-id="agent-file-browser"', 'Expected file browser wrapper');
-      assert.includes(chatUI.html, 'data-agent-ui-plugin-id="agent-research-orchestrator-ui"', 'Expected research UI wrapper');
-      assert.includes(chatUI.css, '.research-orchestrator-panel', 'Expected plugin CSS to be returned');
-      assert.includes(chatUI.html, 'data-agent-chart=', 'Expected research UI to expose chart specs to the chat renderer');
-      assert.includes(preview.html, 'Status: draft', 'Expected plugin action to read agent file');
-      assert.includes(refresh.html, 'Research Orchestrator', 'Expected refresh action to return updated panel HTML');
-      assert.includes(chartPreview.replaceHtml.html, 'data-agent-chart=', 'Expected chart action to return declarative chart markup');
-      assert.equal(lifecycle.success, true, 'Expected lifecycle event to succeed');
+      let rejected = false;
+      try {
+        await pluginManager.runAgentChatUIAction(agentInfo, 'open-file', {
+          pluginId: 'agent-file-browser',
+          relativePath: 'tasks/plan.md'
+        }, {
+          sessionId: 'session-17',
+          uiMode: 'plugin'
+        });
+      } catch (error) {
+        rejected = /not found/i.test(String(error?.message || ''));
+      }
+      assert.equal(rejected, true, 'Expected non-owner plugin action to be rejected');
+
+      const classicUi = await pluginManager.getAgentChatUI(agentInfo, {
+        sessionId: 'session-17',
+        uiMode: 'no_ui'
+      });
+      assert.equal(classicUi, null, 'Expected no_ui mode to bypass plugin chat UI');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
