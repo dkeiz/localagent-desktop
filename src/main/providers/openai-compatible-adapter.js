@@ -90,7 +90,7 @@ class OpenAICompatibleAdapter extends BaseAdapter {
     }
 
     async _getHeaders() {
-        const apiKey = await this.db.getSetting(`llm.${this.providerId}.apiKey`) || await this.db.getAPIKey(this.providerId);
+        const apiKey = await this.db.getAPIKey(this.providerId) || await this.db.getSetting(`llm.${this.providerId}.apiKey`);
         if (!apiKey && !this.apiKeyOptional) {
             throw new Error(`${this.providerLabel} API key not configured`);
         }

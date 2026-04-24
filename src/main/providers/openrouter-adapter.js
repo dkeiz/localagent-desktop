@@ -95,7 +95,7 @@ class OpenRouterAdapter extends BaseAdapter {
     }
 
     async _getHeaders() {
-        const apiKey = await this.db.getSetting('llm.openrouter.apiKey') || await this.db.getAPIKey('openrouter');
+        const apiKey = await this.db.getAPIKey('openrouter') || await this.db.getSetting('llm.openrouter.apiKey');
         const headers = { 'Content-Type': 'application/json' };
         if (apiKey) {
             headers['Authorization'] = `Bearer ${apiKey}`;

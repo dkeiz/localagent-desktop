@@ -2,6 +2,7 @@ const OllamaAdapter = require('./providers/ollama-adapter');
 const LMStudioAdapter = require('./providers/lmstudio-adapter');
 const OpenRouterAdapter = require('./providers/openrouter-adapter');
 const OpenAICompatibleAdapter = require('./providers/openai-compatible-adapter');
+const OpenAIHybridAdapter = require('./providers/openai-hybrid-adapter');
 const QwenAdapter = require('./providers/qwen-adapter');
 const { getEffectiveLlmSelection } = require('./llm-state');
 
@@ -27,11 +28,7 @@ class AIService {
       lmstudio: new LMStudioAdapter(db),
       openrouter: new OpenRouterAdapter(db),
       qwen: new QwenAdapter(db),
-      openai: new OpenAICompatibleAdapter('openai', db, {
-        label: 'OpenAI',
-        defaultBaseURL: 'https://api.openai.com/v1',
-        apiPrefix: '/v1'
-      }),
+      openai: new OpenAIHybridAdapter(db),
       groq: new OpenAICompatibleAdapter('groq', db, {
         label: 'Groq',
         defaultBaseURL: 'https://api.groq.com/openai/v1',
@@ -153,9 +150,6 @@ class AIService {
     if (!this.adapters[provider]) {
       throw new Error(`Unknown provider: ${provider}`);
     }
-    // Save to new-style setting
-    await this.db.setSetting(`llm.${provider}.apiKey`, key);
-    // Also save to legacy location for backward compat
     await this.db.setAPIKey(provider, key);
   }
 

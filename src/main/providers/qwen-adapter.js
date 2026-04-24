@@ -34,7 +34,7 @@ class QwenAdapter extends BaseAdapter {
 
     async _callAPI(messages, options, mode = 'api') {
         const signal = this._startRequest();
-        let apiKey = await this.db.getSetting('llm.qwen.apiKey');
+        let apiKey = await this.db.getAPIKey('qwen') || await this.db.getSetting('llm.qwen.apiKey');
         const useOAuth = mode === 'oauth' || (await this.db.getSetting('llm.qwen.useOAuth')) === 'true';
 
         if (useOAuth) {
@@ -177,7 +177,7 @@ class QwenAdapter extends BaseAdapter {
         }
 
         // Try API key
-        const apiKey = await this.db.getSetting('llm.qwen.apiKey');
+        const apiKey = await this.db.getAPIKey('qwen') || await this.db.getSetting('llm.qwen.apiKey');
         if (apiKey) {
             try {
                 const response = await axios.get('https://dashscope.aliyuncs.com/api/v1/models', {

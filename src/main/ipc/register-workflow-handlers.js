@@ -171,7 +171,10 @@ function registerWorkflowHandlers(ipcMain, runtime) {
     const settings = await db.getAllSettings();
     const apiKeys = {};
     for (const provider of aiService.getProviders()) {
-      apiKeys[provider] = await db.getAPIKey(provider);
+      const info = typeof db.getAPIKeyInfo === 'function'
+        ? await db.getAPIKeyInfo(provider)
+        : { configured: Boolean(await db.getAPIKey(provider)) };
+      apiKeys[provider] = info.configured ? 'configured' : '';
     }
     return { ...settings, apiKeys };
   });

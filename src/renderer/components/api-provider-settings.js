@@ -61,9 +61,17 @@
             : [];
 
         const fieldMarkup = fields.map(field => {
-            const value = connection[field.id] ?? field.defaultValue ?? '';
+            const isSecret = field.id === 'apiKey' || field.type === 'password';
+            const configured = Boolean(connection[`${field.id}Configured`] || (field.id === 'apiKey' && connection.apiKeyConfigured));
+            const value = isSecret ? '' : (connection[field.id] ?? field.defaultValue ?? '');
+            const placeholder = configured
+                ? 'Configured - enter a new value to replace'
+                : (field.placeholder || '');
             const helpMarkup = field.helpText
                 ? `<div class="config-help">${escapeHtml(field.helpText)}</div>`
+                : '';
+            const statusMarkup = configured
+                ? `<div class="config-help">Secret is saved securely and hidden here.</div>`
                 : '';
 
             return `
@@ -72,10 +80,13 @@
                     <input
                         type="${field.type === 'password' ? 'password' : 'text'}"
                         id="${providerFieldId(field.id)}"
-                        placeholder="${escapeHtml(field.placeholder || '')}"
+                        data-secret-field="${isSecret ? 'true' : 'false'}"
+                        data-configured="${configured ? 'true' : 'false'}"
+                        placeholder="${escapeHtml(placeholder)}"
                         value="${escapeHtml(value)}"
                     >
                     ${helpMarkup}
+                    ${statusMarkup}
                 </div>
             `;
         }).join('');
@@ -88,6 +99,54 @@
             <div class="api-provider-settings-block">
                 ${fieldMarkup}
                 ${noteMarkup}
+            </div>
+        `;
+    }
+
+    function renderOpenAIProviderSettings(profile, connection = {}, config = {}) {
+        const transport = config.transport || 'codex-cli';
+        const apiSettings = renderGenericProviderSettings(profile, connection);
+        const sandbox = config.codexSandbox || 'read-only';
+        const searchChecked = config.codexSearch ? 'checked' : '';
+
+        return `
+            <div class="api-provider-settings-block">
+                <div class="config-field">
+                    <label>OpenAI access</label>
+                    <div class="config-inline-row">
+                        <label class="config-checkbox"><input type="radio" name="openai-transport" value="codex-cli" ${transport !== 'api-key' ? 'checked' : ''}> <span>Codex subscription</span></label>
+                        <label class="config-checkbox"><input type="radio" name="openai-transport" value="api-key" ${transport === 'api-key' ? 'checked' : ''}> <span>API key</span></label>
+                    </div>
+                </div>
+                <div id="openai-codex-settings" class="api-subsection">
+                    <div class="api-action-row">
+                        <button type="button" id="openai-codex-login" class="secondary-btn">Sign in</button>
+                        <button type="button" id="openai-codex-check" class="secondary-btn">Check</button>
+                    </div>
+                    <div id="openai-codex-status" class="config-help api-status-text"></div>
+                    <details class="api-advanced-settings">
+                        <summary>Advanced</summary>
+                        <div class="api-settings-grid">
+                            <div class="api-field">
+                                <label for="openai-codex-sandbox">Sandbox</label>
+                                <select id="openai-codex-sandbox">
+                                    <option value="read-only" ${sandbox === 'read-only' ? 'selected' : ''}>read-only</option>
+                                    <option value="workspace-write" ${sandbox === 'workspace-write' ? 'selected' : ''}>workspace-write</option>
+                                </select>
+                            </div>
+                            <label class="api-toggle-row">
+                                <span class="api-toggle-copy">
+                                    <span class="api-toggle-title">Web search</span>
+                                    <span class="api-toggle-help">Passes --search to Codex CLI.</span>
+                                </span>
+                                <input type="checkbox" id="openai-codex-search" ${searchChecked}>
+                            </label>
+                        </div>
+                    </details>
+                </div>
+                <div id="openai-api-settings" class="api-subsection">
+                    ${apiSettings}
+                </div>
             </div>
         `;
     }
@@ -315,12 +374,21 @@
             const profile = getProviderProfile(provider);
             const model = llmModelSelect.value;
 
+            if (provider === 'openai') {
+                config.transport = document.querySelector('input[name="openai-transport"]:checked')?.value || 'codex-cli';
+                config.codexSandbox = document.getElementById('openai-codex-sandbox')?.value || 'read-only';
+                config.codexSearch = Boolean(document.getElementById('openai-codex-search')?.checked);
+            }
+
             if (profile?.settings?.connectionFields?.length) {
                 config.connection = {};
                 profile.settings.connectionFields.forEach(field => {
                     const input = document.getElementById(providerFieldId(field.id));
                     if (!input) return;
                     const value = input.value?.trim() || '';
+                    if ((field.id === 'apiKey' || field.type === 'password') && !value) {
+                        return;
+                    }
                     config.connection[field.id] = value;
                     if (field.id === 'apiKey' && value) config.apiKey = value;
                     if (field.id === 'url' && value) config.url = value;
@@ -481,6 +549,8 @@
                         <div id="qwen-oauth-status" class="config-help api-status-text"></div>
                     </div>
                 `;
+            } else if (provider === 'openai' && profile) {
+                providerSettingsContainer.innerHTML = renderOpenAIProviderSettings(profile, savedConnection, currentConfig);
             } else if (profile) {
                 providerSettingsContainer.innerHTML = renderGenericProviderSettings(profile, savedConnection);
             }
@@ -502,7 +572,7 @@
 
                 const savedMode = await window.electronAPI.getSettingValue('llm.qwen.mode');
                 const savedUseOAuth = await window.electronAPI.getSettingValue('llm.qwen.useOAuth');
-                const savedApiKey = await window.electronAPI.getSettingValue('llm.qwen.apiKey');
+                const qwenConfigured = Boolean(currentConfig?.apiKeyConfigured);
                 const mode = currentConfig?.provider === provider
                     ? (currentConfig.mode || (currentConfig.useOAuth ? 'oauth' : 'cli'))
                     : (savedMode || (savedUseOAuth === 'true' ? 'oauth' : 'cli'));
@@ -510,8 +580,8 @@
                 if (modeRadio) modeRadio.checked = true;
 
                 const qwenKeyInput = document.getElementById('qwen-key');
-                if (qwenKeyInput && (currentConfig?.apiKey || savedApiKey)) {
-                    qwenKeyInput.value = currentConfig?.apiKey || savedApiKey;
+                if (qwenKeyInput && qwenConfigured) {
+                    qwenKeyInput.placeholder = 'Configured - enter a new value to replace';
                 }
 
                 const oauthStatus = document.getElementById('qwen-oauth-status');
@@ -572,6 +642,52 @@
                 }
 
                 await applyQwenMode(mode, currentConfig?.model, mode === 'oauth');
+            } else if (provider === 'openai') {
+                const applyOpenAITransport = async (transport, preferredModel = null, refresh = false) => {
+                    const codexSettings = document.getElementById('openai-codex-settings');
+                    const apiSettings = document.getElementById('openai-api-settings');
+                    if (codexSettings) codexSettings.style.display = transport === 'api-key' ? 'none' : 'block';
+                    if (apiSettings) apiSettings.style.display = transport === 'api-key' ? 'block' : 'none';
+                    await window.electronAPI.llm.saveConfig(buildProviderConfig('openai', { includeModel: false }));
+                    await loadModelsForProvider('openai', refresh, preferredModel);
+                };
+
+                const refreshCodexStatus = async () => {
+                    const statusDiv = document.getElementById('openai-codex-status');
+                    if (!statusDiv) return;
+                    statusDiv.textContent = 'Checking Codex CLI...';
+                    try {
+                        const status = await window.electronAPI.llm.getCodexStatus();
+                        statusDiv.textContent = status.installed
+                            ? `Codex CLI detected${status.version ? ` (${status.version})` : ''}.`
+                            : `Codex CLI not found${status.error ? `: ${status.error}` : '.'}`;
+                    } catch (error) {
+                        statusDiv.textContent = `Codex check failed: ${error.message}`;
+                    }
+                };
+
+                const transport = currentConfig?.transport || 'codex-cli';
+                const transportRadio = document.querySelector(`input[name="openai-transport"][value="${transport}"]`);
+                if (transportRadio) transportRadio.checked = true;
+                document.querySelectorAll('input[name="openai-transport"]').forEach(radio => {
+                    radio.addEventListener('change', async (e) => {
+                        await applyOpenAITransport(e.target.value, llmModelSelect.value, e.target.value === 'api-key');
+                    });
+                });
+
+                document.getElementById('openai-codex-check')?.addEventListener('click', refreshCodexStatus);
+                document.getElementById('openai-codex-login')?.addEventListener('click', async () => {
+                    const statusDiv = document.getElementById('openai-codex-status');
+                    try {
+                        await window.electronAPI.llm.launchCodexLogin();
+                        if (statusDiv) statusDiv.textContent = 'Codex login launched.';
+                    } catch (error) {
+                        if (statusDiv) statusDiv.textContent = `Could not launch login: ${error.message}`;
+                    }
+                });
+
+                await applyOpenAITransport(transport, currentConfig?.model, false);
+                await refreshCodexStatus();
             } else if (providerDiscoveryStatus) {
                 providerDiscoveryStatus.textContent = profile?.settings?.supportsModelDiscovery
                     ? ''
@@ -745,7 +861,14 @@
                     return;
                 }
             } else if (profile?.settings?.connectionFields?.length) {
-                const missing = profile.settings.connectionFields.find(field => field.required && !document.getElementById(providerFieldId(field.id))?.value?.trim());
+                const missing = profile.settings.connectionFields.find(field => {
+                    const input = document.getElementById(providerFieldId(field.id));
+                    if (!field.required || !input) return false;
+                    if ((field.id === 'apiKey' || field.type === 'password') && input.dataset.configured === 'true') {
+                        return false;
+                    }
+                    return !input.value?.trim();
+                });
                 if (missing) {
                     alert(`Please enter ${missing.label}`);
                     return;

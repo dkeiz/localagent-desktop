@@ -110,7 +110,92 @@ function getProviderConnectionFields(provider) {
 function getModelFamily(provider, model) {
   const providerSpec = getProviderSpec(provider);
   if (!providerSpec || !model) return null;
-  return (providerSpec.models || []).find(entry => matchesModel(model, entry.match || [])) || null;
+  return (providerSpec.models || []).find(entry => matchesModel(model, entry.match || []))
+    || getSyntheticModelFamily(provider, model);
+}
+
+function getSyntheticModelFamily(provider, model) {
+  const providerId = normalizeId(provider);
+  const normalized = normalizeId(model);
+  if (providerId !== 'openai' || !normalized.includes('codex')) {
+    return null;
+  }
+
+  if (normalized.startsWith('gpt-5.3-codex') || normalized.startsWith('gpt-5.2-codex')) {
+    return {
+      id: 'openai-codex-frontier',
+      label: 'OpenAI Codex Frontier',
+      runtime: {
+        reasoning: {
+          enabled: true,
+          effort: 'medium'
+        },
+        contextWindow: {
+          value: 400000
+        }
+      },
+      capabilities: {
+        reasoning: {
+          supported: true,
+          toggle: true,
+          effortLevels: ['low', 'medium', 'high', 'xhigh'],
+          outputChannel: 'separate',
+          parameterMode: 'openai_reasoning_effort',
+          defaultEnabled: true
+        },
+        contextWindow: {
+          supported: true,
+          configurable: false,
+          max: 400000
+        },
+        modalities: {
+          vision: true
+        }
+      },
+      notes: [
+        'Codex-optimized model family for agentic coding and long-horizon tasks.'
+      ]
+    };
+  }
+
+  if (normalized.startsWith('gpt-5.1-codex')) {
+    return {
+      id: 'openai-codex-5.1',
+      label: 'OpenAI Codex 5.1',
+      runtime: {
+        reasoning: {
+          enabled: true,
+          effort: 'medium'
+        },
+        contextWindow: {
+          value: 400000
+        }
+      },
+      capabilities: {
+        reasoning: {
+          supported: true,
+          toggle: true,
+          effortLevels: ['low', 'medium', 'high', 'xhigh'],
+          outputChannel: 'separate',
+          parameterMode: 'openai_reasoning_effort',
+          defaultEnabled: true
+        },
+        contextWindow: {
+          supported: true,
+          configurable: false,
+          max: 400000
+        },
+        modalities: {
+          vision: true
+        }
+      },
+      notes: [
+        'Codex-optimized GPT-5.1 family for coding agents.'
+      ]
+    };
+  }
+
+  return null;
 }
 
 function resolveModelSpec(provider, model) {
@@ -347,6 +432,16 @@ async function getProviderConnectionConfig(db, provider) {
   const output = {};
 
   for (const field of fields) {
+    if (field.id === 'apiKey') {
+      const info = typeof db.getAPIKeyInfo === 'function'
+        ? await db.getAPIKeyInfo(provider)
+        : { configured: Boolean(await db.getAPIKey(provider)) };
+      output.apiKey = '';
+      output.apiKeyConfigured = Boolean(info.configured);
+      output.apiKeyEncrypted = Boolean(info.encrypted);
+      continue;
+    }
+
     const rawValue = await db.getSetting(getConnectionSettingKey(provider, field.id));
     output[field.id] = normalizeStoredConnectionValue(field, rawValue);
   }
@@ -364,10 +459,16 @@ async function saveProviderConnectionConfig(db, provider, connection = {}) {
     }
 
     const serialized = serializeConnectionValue(field, connection[field.id]);
-    await db.saveSetting(getConnectionSettingKey(provider, field.id), serialized);
-    if (field.id === 'apiKey' && serialized) {
-      await db.setAPIKey(normalizeId(provider), serialized);
+    if (field.id === 'apiKey') {
+      if (serialized) {
+        await db.setAPIKey(normalizeId(provider), serialized);
+      }
+      saved.apiKeyConfigured = Boolean(serialized) || Boolean((await db.getAPIKeyInfo?.(provider))?.configured);
+      saved.apiKeyEncrypted = Boolean((await db.getAPIKeyInfo?.(provider))?.encrypted);
+      continue;
     }
+
+    await db.saveSetting(getConnectionSettingKey(provider, field.id), serialized);
     saved[field.id] = normalizeStoredConnectionValue(field, serialized);
   }
 

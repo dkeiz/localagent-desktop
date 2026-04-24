@@ -192,7 +192,6 @@ function registerLlmHandlers(ipcMain, runtime) {
         await saveProviderConnectionConfig(db, config.provider, connection);
       }
       if (config.apiKey !== undefined && !providerSpec?.settings?.connectionFields?.some(field => field.id === 'apiKey')) {
-        await db.saveSetting(`llm.${config.provider}.apiKey`, config.apiKey);
         if (config.apiKey) {
           await db.setAPIKey(config.provider, config.apiKey);
         }
@@ -210,6 +209,15 @@ function registerLlmHandlers(ipcMain, runtime) {
           : (mode === 'oauth' || existingUseOAuth);
         await db.saveSetting('llm.qwen.mode', mode);
         await db.saveSetting('llm.qwen.useOAuth', useOAuth ? 'true' : 'false');
+      } else if (config.provider === 'openai') {
+        const transport = config.transport === 'api-key' ? 'api-key' : 'codex-cli';
+        await db.saveSetting('llm.openai.transport', transport);
+        if (config.codexSandbox) {
+          await db.saveSetting('llm.openai.codexSandbox', config.codexSandbox);
+        }
+        if (config.codexSearch !== undefined) {
+          await db.saveSetting('llm.openai.codexSearch', config.codexSearch ? 'true' : 'false');
+        }
       } else if (config.useOAuth) {
         await db.saveSetting(`llm.${config.provider}.useOAuth`, 'true');
       }
@@ -270,15 +278,23 @@ function registerLlmHandlers(ipcMain, runtime) {
       if (provider) {
         config.providerLabel = getProviderSpec(provider)?.label || provider;
         const connection = await getProviderConnectionConfig(db, provider);
-        const apiKey = await db.getSetting(`llm.${provider}.apiKey`);
+        const keyInfo = typeof db.getAPIKeyInfo === 'function'
+          ? await db.getAPIKeyInfo(provider)
+          : { configured: Boolean(await db.getAPIKey(provider)) };
         const url = await db.getSetting(`llm.${provider}.url`);
         const mode = await db.getSetting(`llm.${provider}.mode`);
         const useOAuth = await db.getSetting(`llm.${provider}.useOAuth`);
         config.connection = connection;
-        if (connection.apiKey || apiKey) config.apiKey = connection.apiKey || apiKey;
+        config.apiKeyConfigured = Boolean(connection.apiKeyConfigured || keyInfo.configured);
+        config.apiKeyEncrypted = Boolean(connection.apiKeyEncrypted || keyInfo.encrypted);
         if (connection.url || url) config.url = connection.url || url;
         if (mode) config.mode = mode;
         if (useOAuth === 'true') config.useOAuth = true;
+        if (provider === 'openai') {
+          config.transport = await db.getSetting('llm.openai.transport') || 'codex-cli';
+          config.codexSandbox = await db.getSetting('llm.openai.codexSandbox') || 'read-only';
+          config.codexSearch = (await db.getSetting('llm.openai.codexSearch')) === 'true';
+        }
       }
 
       if (provider && model) {
@@ -304,6 +320,22 @@ function registerLlmHandlers(ipcMain, runtime) {
       specFile: SPEC_FILE,
       providers: getProviderProfiles()
     };
+  });
+
+  ipcMain.handle('llm:codex-status', async () => {
+    const adapter = aiService.adapters.openai;
+    if (!adapter?.getCodexStatus) {
+      return { installed: false, loggedIn: false, error: 'OpenAI Codex bridge unavailable' };
+    }
+    return adapter.getCodexStatus();
+  });
+
+  ipcMain.handle('llm:codex-login', async () => {
+    const adapter = aiService.adapters.openai;
+    if (!adapter?.launchCodexLogin) {
+      return { launched: false, error: 'OpenAI Codex bridge unavailable' };
+    }
+    return adapter.launchCodexLogin();
   });
 
   ipcMain.handle('llm:get-model-profile', async (event, provider, model) => {

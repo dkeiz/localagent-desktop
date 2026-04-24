@@ -19,7 +19,7 @@ tts already here, kek, but i need wired my tts server with well.
 and ship it into github without any credentials, at least for now as standalone individual application. yay. 
 and make plugin to trick setup with 0credentials of json injections into different subscribe models, like openai/claude/z.ai, cause everyone doing this, so at least i can make it safer for app (dont destribute plugin, cause its almost illigal)
 file exploration tree.
-autosandboxing subagent when they work in certain directions, like when make code in suer project applications. 
+autosandboxing subagent when they work in certain directions, like when make code in user project applications. 
 and make superplugin so that well assistance could inject inteslf into game and play with player! that final destination. 
 
 but for research reason, i also need superagent that collect all the data, public for dataset rl-training, private for auto training personal lora for user only
