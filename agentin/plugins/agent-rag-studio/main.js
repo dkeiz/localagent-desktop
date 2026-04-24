@@ -24,8 +24,10 @@ class RagRuntimeClient {
         this.scriptPath = options.scriptPath;
         this.dataDir = options.dataDir;
         this.getConfig = options.getConfig;
+        this.registerManagedProcess = options.registerManagedProcess;
         this.log = options.log || (() => {});
         this.proc = null;
+        this.unregisterManagedProcess = null;
         this.pending = new Map();
         this.nextId = 1;
     }
@@ -37,11 +39,23 @@ class RagRuntimeClient {
             cwd: path.dirname(this.scriptPath),
             stdio: ['ignore', 'pipe', 'pipe', 'ipc']
         });
+        if (typeof this.registerManagedProcess === 'function') {
+            this.unregisterManagedProcess = this.registerManagedProcess(this.proc, {
+                name: 'agent-rag-studio-runtime'
+            });
+        }
 
         this.proc.stdout?.on('data', (chunk) => this.log(`[runtime] ${String(chunk).trim()}`));
         this.proc.stderr?.on('data', (chunk) => this.log(`[runtime:err] ${String(chunk).trim()}`));
         this.proc.on('message', (message) => this._handleMessage(message));
         this.proc.on('exit', (code, signal) => {
+            const unregister = this.unregisterManagedProcess;
+            this.unregisterManagedProcess = null;
+            if (typeof unregister === 'function') {
+                try {
+                    unregister();
+                } catch (_) {}
+            }
             const error = new Error(`RAG runtime exited (code=${code}, signal=${signal || 'none'})`);
             this._rejectAll(error);
             this.proc = null;
@@ -106,6 +120,13 @@ class RagRuntimeClient {
     }
 
     async stop() {
+        const unregister = this.unregisterManagedProcess;
+        this.unregisterManagedProcess = null;
+        if (typeof unregister === 'function') {
+            try {
+                unregister();
+            } catch (_) {}
+        }
         if (!this.proc) return;
         try {
             await this.call('shutdown', {}, 3000);
@@ -280,6 +301,7 @@ module.exports = {
             scriptPath: path.join(context.pluginDir, 'rag-runtime-process.js'),
             dataDir: path.join(context.pluginDir, 'data'),
             getConfig: () => context.getConfig(),
+            registerManagedProcess: (proc, metadata) => context.registerManagedProcess(proc, metadata),
             log: (message) => context.log(message)
         });
 

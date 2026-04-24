@@ -21,6 +21,7 @@ const RUNTIME = {
   backend: {
     process: null,
     pid: null,
+    unregister: null,
     startedAt: null,
     command: '',
     args: [],
@@ -309,6 +310,13 @@ function getSearchDefaults(context) {
 
 async function stopBackendProcess() {
   const proc = RUNTIME.backend.process;
+  const unregister = RUNTIME.backend.unregister;
+  RUNTIME.backend.unregister = null;
+  if (typeof unregister === 'function') {
+    try {
+      unregister();
+    } catch (_) {}
+  }
   if (!proc) return;
 
   RUNTIME.backend.process = null;
@@ -377,6 +385,11 @@ async function startBackendProcess(context) {
 
   RUNTIME.backend.process = child;
   RUNTIME.backend.pid = child.pid;
+  if (typeof context.registerManagedProcess === 'function') {
+    RUNTIME.backend.unregister = context.registerManagedProcess(child, {
+      name: 'searxng-embedded-backend'
+    });
+  }
   RUNTIME.backend.startedAt = new Date().toISOString();
   RUNTIME.backend.command = cfg.command;
   RUNTIME.backend.args = cfg.args;
@@ -385,6 +398,13 @@ async function startBackendProcess(context) {
 
   child.on('exit', (code, signal) => {
     RUNTIME.backend.process = null;
+    const unregisterOnExit = RUNTIME.backend.unregister;
+    RUNTIME.backend.unregister = null;
+    if (typeof unregisterOnExit === 'function') {
+      try {
+        unregisterOnExit();
+      } catch (_) {}
+    }
     RUNTIME.backend.ready = false;
     if (code !== 0) {
       RUNTIME.backend.lastError = `backend exited code=${code} signal=${signal || ''}`.trim();

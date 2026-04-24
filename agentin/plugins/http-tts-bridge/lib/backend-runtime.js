@@ -33,6 +33,7 @@ function appendLog(runtime, streamName, chunk) {
 function createProcessState() {
   return {
     process: null,
+    unregisterManagedProcess: null,
     pid: null,
     ready: false,
     baseUrl: '',
@@ -119,6 +120,13 @@ function closeLogStreams(runtime) {
 
 async function stopBackend(runtime) {
   const proc = runtime.process;
+  const unregisterManagedProcess = runtime.unregisterManagedProcess;
+  runtime.unregisterManagedProcess = null;
+  if (typeof unregisterManagedProcess === 'function') {
+    try {
+      unregisterManagedProcess();
+    } catch (_) {}
+  }
   runtime.ready = false;
   runtime.process = null;
   runtime.pid = null;
@@ -213,6 +221,11 @@ async function startBackend(runtime, context) {
     });
 
     runtime.process = child;
+    if (typeof context.registerManagedProcess === 'function') {
+      runtime.unregisterManagedProcess = context.registerManagedProcess(child, {
+        name: 'http-tts-bridge-embedded-backend'
+      });
+    }
     runtime.pid = child.pid || null;
     runtime.port = port;
     runtime.host = config.backendHost;
@@ -233,6 +246,13 @@ async function startBackend(runtime, context) {
       runtime.ready = false;
     });
     child.on('exit', (code, signal) => {
+      const unregisterOnExit = runtime.unregisterManagedProcess;
+      runtime.unregisterManagedProcess = null;
+      if (typeof unregisterOnExit === 'function') {
+        try {
+          unregisterOnExit();
+        } catch (_) {}
+      }
       runtime.ready = false;
       runtime.process = null;
       runtime.pid = null;

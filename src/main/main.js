@@ -7,6 +7,8 @@ const { createExternalTestControl } = require('./external-test-control');
 
 let runtime = null;
 let externalTestControl = null;
+let shutdownPromise = null;
+let allowImmediateQuit = false;
 
 const args = process.argv.slice(1);
 const isTestMode = args.includes('--test');
@@ -174,12 +176,41 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', async () => {
-  if (externalTestControl) {
-    await externalTestControl.stop();
-    externalTestControl = null;
+async function runShutdownSequence() {
+  if (shutdownPromise) {
+    return shutdownPromise;
   }
-  if (runtime) {
-    await runtime.shutdown();
+
+  shutdownPromise = (async () => {
+    if (externalTestControl) {
+      try {
+        await externalTestControl.stop();
+      } finally {
+        externalTestControl = null;
+      }
+    }
+
+    if (runtime) {
+      await runtime.shutdown();
+      runtime = null;
+    }
+  })();
+
+  return shutdownPromise;
+}
+
+app.on('before-quit', (event) => {
+  if (allowImmediateQuit) {
+    return;
   }
+
+  event.preventDefault();
+  runShutdownSequence()
+    .catch(error => {
+      console.error('[Main] Shutdown sequence failed:', error);
+    })
+    .finally(() => {
+      allowImmediateQuit = true;
+      app.quit();
+    });
 });

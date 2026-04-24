@@ -3,6 +3,10 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { getManifestCapabilityContract } = require('./plugin-capability-contracts');
 
+const ACTIVE_PLUGIN_MANAGERS = new Set();
+let EMERGENCY_HOOKS_INSTALLED = false;
+let EMERGENCY_EXIT_IN_PROGRESS = false;
+
 /**
  * PluginManager — Discovers, loads, and manages plugins.
  * 
@@ -24,6 +28,8 @@ class PluginManager extends EventEmitter {
         this.pluginsDir = options.pluginsDir || path.join(__dirname, '../../agentin/plugins');
         this.plugins = new Map(); // id -> { manifest, status, module, handlers[] }
         this._ensureDir();
+        ACTIVE_PLUGIN_MANAGERS.add(this);
+        this._installEmergencyProcessHooks();
     }
 
     _ensureDir() {
@@ -96,6 +102,9 @@ class PluginManager extends EventEmitter {
                     current.manifest = manifest;
                     current.dir = pluginDir;
                     current.persistedStatus = existing?.status || current.persistedStatus || 'disabled';
+                    if (!current.managedProcesses) {
+                        current.managedProcesses = new Set();
+                    }
                     continue;
                 }
 
@@ -107,7 +116,8 @@ class PluginManager extends EventEmitter {
                     module: null,
                     context: null,
                     handlers: [],
-                    chatUIs: []
+                    chatUIs: [],
+                    managedProcesses: new Set()
                 });
             } catch (e) {
                 console.error(`[PluginManager] Failed to read manifest in ${dir.name}:`, e.message);
@@ -194,6 +204,7 @@ class PluginManager extends EventEmitter {
                 console.error(`[PluginManager] onDisable error for "${pluginId}":`, e.message);
             }
         }
+        this._terminateManagedProcesses(plugin, `disable:${pluginId}`);
 
         this._cleanupPluginHandlers(plugin);
         plugin.status = 'disabled';
@@ -283,6 +294,10 @@ class PluginManager extends EventEmitter {
             async setConfig(key, value) {
                 await self.setPluginConfig(pluginId, key, value);
                 config[key] = value;
+            },
+
+            registerManagedProcess(proc, metadata = {}) {
+                return self._registerManagedProcess(plugin, proc, metadata);
             }
         };
     }
@@ -754,6 +769,82 @@ class PluginManager extends EventEmitter {
                     console.error(`[PluginManager] Failed to disable "${id}":`, e.message);
                 }
             }
+        }
+    }
+
+    _registerManagedProcess(plugin, proc, metadata = {}) {
+        if (!plugin || !proc || typeof proc.kill !== 'function') {
+            return () => {};
+        }
+
+        const entry = { proc, metadata };
+        plugin.managedProcesses = plugin.managedProcesses || new Set();
+        plugin.managedProcesses.add(entry);
+
+        const cleanup = () => {
+            plugin.managedProcesses.delete(entry);
+        };
+
+        if (typeof proc.once === 'function') {
+            proc.once('exit', cleanup);
+        }
+
+        return cleanup;
+    }
+
+    _terminateManagedProcesses(plugin, reason = '') {
+        const tracked = Array.from(plugin.managedProcesses || []);
+        plugin.managedProcesses?.clear();
+        for (const entry of tracked) {
+            this._terminateManagedProcess(entry.proc, reason, entry.metadata);
+        }
+    }
+
+    _terminateManagedProcess(proc, reason = '', metadata = {}) {
+        if (!proc || typeof proc.kill !== 'function') return;
+        const label = metadata?.name ? `${metadata.name}` : 'managed-process';
+        try {
+            proc.kill('SIGTERM');
+        } catch (_) {}
+        try {
+            proc.kill('SIGKILL');
+        } catch (_) {}
+        if (reason) {
+            console.log(`[PluginManager] Forced stop ${label} (${reason})`);
+        }
+    }
+
+    _emergencyTerminateAllManagedProcesses(reason = 'emergency-exit') {
+        for (const [, plugin] of this.plugins) {
+            this._terminateManagedProcesses(plugin, reason);
+        }
+    }
+
+    _installEmergencyProcessHooks() {
+        if (EMERGENCY_HOOKS_INSTALLED) return;
+        EMERGENCY_HOOKS_INSTALLED = true;
+
+        const runEmergencyStop = (reason) => {
+            if (EMERGENCY_EXIT_IN_PROGRESS) return;
+            EMERGENCY_EXIT_IN_PROGRESS = true;
+            for (const manager of ACTIVE_PLUGIN_MANAGERS) {
+                try {
+                    manager._emergencyTerminateAllManagedProcesses(reason);
+                } catch (error) {
+                    console.error('[PluginManager] Emergency managed-process cleanup failed:', error.message);
+                }
+            }
+        };
+
+        process.on('exit', () => {
+            runEmergencyStop('process-exit');
+        });
+
+        for (const signal of ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP']) {
+            process.on(signal, () => {
+                runEmergencyStop(`signal:${signal}`);
+                process.exit(0);
+            });
         }
     }
 
