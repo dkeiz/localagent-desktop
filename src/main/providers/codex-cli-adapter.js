@@ -1,12 +1,16 @@
 const { spawn, spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const BaseAdapter = require('./base-adapter');
 
 const DEFAULT_MODELS = [
-    'gpt-5.3-codex',
     'gpt-5.2-codex',
-    'gpt-5.1-codex-max',
-    'gpt-5.1-codex'
+    'gpt-5-codex',
+    'gpt-5.2',
+    'gpt-5.2-pro',
+    'gpt-5-mini',
+    'gpt-5-nano'
 ];
 
 class CodexCliAdapter extends BaseAdapter {
@@ -40,7 +44,8 @@ class CodexCliAdapter extends BaseAdapter {
             let stdout = '';
             let stderr = '';
             let settled = false;
-            const child = spawn('codex', args, {
+            const command = this._resolveCodexCommand();
+            const child = spawn(command, args, {
                 cwd,
                 windowsHide: true,
                 shell: false,
@@ -111,41 +116,40 @@ class CodexCliAdapter extends BaseAdapter {
     }
 
     async getStatus() {
-        const version = spawnSync('codex', ['--version'], {
+        const command = this._resolveCodexCommand();
+        const version = spawnSync(command, ['--version'], {
             encoding: 'utf8',
             windowsHide: true
         });
         if (version.error) {
             return {
-                installed: false,
+                installed: fs.existsSync(command),
                 loggedIn: false,
+                path: fs.existsSync(command) ? command : '',
                 error: version.error.message,
                 models: DEFAULT_MODELS
             };
         }
 
-        const auth = spawnSync('codex', ['exec', '--help'], {
+        const auth = spawnSync(command, ['exec', '--help'], {
             encoding: 'utf8',
             windowsHide: true
         });
         return {
             installed: true,
             loggedIn: auth.status === 0,
+            path: command,
             version: `${version.stdout || version.stderr}`.trim(),
             models: DEFAULT_MODELS
         };
     }
 
     async launchLogin() {
-        const command = process.platform === 'win32'
-            ? process.env.ComSpec || 'cmd.exe'
-            : 'codex';
-        const args = process.platform === 'win32'
-            ? ['/c', 'start', 'Codex Login', 'codex', 'login']
-            : ['login'];
+        const command = this._resolveCodexCommand();
+        const args = ['login'];
         const child = spawn(command, args, {
             detached: true,
-            stdio: 'ignore',
+            stdio: process.platform === 'win32' ? 'ignore' : 'ignore',
             windowsHide: false
         });
         child.unref();
@@ -179,6 +183,43 @@ class CodexCliAdapter extends BaseAdapter {
             : 'read-only';
     }
 
+    _resolveCodexCommand() {
+        const configured = process.env.LOCALAGENT_CODEX_PATH || process.env.CODEX_CLI_PATH;
+        if (configured && fs.existsSync(configured)) return configured;
+
+        const fromPath = process.platform === 'win32'
+            ? this._findOnPath('codex.exe') || this._findOnPath('codex.cmd')
+            : this._findOnPath('codex');
+        if (fromPath) return fromPath;
+
+        if (process.platform === 'win32') {
+            const vscode = path.join(os.homedir(), '.vscode', 'extensions');
+            const extensionMatch = this._findNewestCodexInExtensions(vscode);
+            if (extensionMatch) return extensionMatch;
+        }
+
+        return process.platform === 'win32' ? 'codex.exe' : 'codex';
+    }
+
+    _findOnPath(binary) {
+        const pathEntries = String(process.env.PATH || '').split(path.delimiter).filter(Boolean);
+        for (const entry of pathEntries) {
+            const candidate = path.join(entry, binary);
+            if (fs.existsSync(candidate)) return candidate;
+        }
+        return '';
+    }
+
+    _findNewestCodexInExtensions(root) {
+        if (!fs.existsSync(root)) return '';
+        const matches = fs.readdirSync(root, { withFileTypes: true })
+            .filter(entry => entry.isDirectory() && entry.name.startsWith('openai.chatgpt-'))
+            .map(entry => path.join(root, entry.name, 'bin', 'windows-x86_64', 'codex.exe'))
+            .filter(candidate => fs.existsSync(candidate))
+            .sort()
+            .reverse();
+        return matches[0] || '';
+    }
 }
 
 module.exports = {

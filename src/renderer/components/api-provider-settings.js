@@ -659,7 +659,7 @@
                     try {
                         const status = await window.electronAPI.llm.getCodexStatus();
                         statusDiv.textContent = status.installed
-                            ? `Codex CLI detected${status.version ? ` (${status.version})` : ''}.`
+                            ? `Codex CLI detected${status.version ? ` (${status.version})` : ''}${status.path ? ` at ${status.path}` : ''}${status.version ? '' : status.error ? `, but could not run it yet: ${status.error}` : ''}.`
                             : `Codex CLI not found${status.error ? `: ${status.error}` : '.'}`;
                     } catch (error) {
                         statusDiv.textContent = `Codex check failed: ${error.message}`;

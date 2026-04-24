@@ -490,9 +490,9 @@
       ]
     },
     "openai": {
-      "label": "OpenAI / ChatGPT API",
-      "description": "OpenAI API access for GPT models. This uses API billing, not ChatGPT subscription billing.",
-      "catalog": ["gpt-5.2", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini"],
+      "label": "OpenAI",
+      "description": "OpenAI models through Codex CLI subscription mode or OpenAI API key mode.",
+      "catalog": ["gpt-5.2-codex", "gpt-5-codex", "gpt-5.2", "gpt-5.2-pro", "gpt-5-mini", "gpt-5-nano", "gpt-4.1"],
       "settings": {
         "supportsModes": false,
         "supportsCustomModel": true,

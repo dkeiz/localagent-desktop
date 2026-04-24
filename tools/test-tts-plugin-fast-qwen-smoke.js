@@ -10,8 +10,12 @@ const {
 
 const ROOT = path.resolve(__dirname, '..');
 const EXTERNAL_PORT = Number(process.env.TTS_EXTERNAL_PORT || 8791);
-const QWEN_MODELS_ROOT = process.env.QWEN_TTS_MODELS_ROOT || 'C:\\Users\\dkeiz\\Documents\\qwen\\web\\qwenTTS\\models';
+const QWEN_MODELS_ROOT = process.env.QWEN_TTS_MODELS_ROOT || '';
 const PYTHON_COMMAND = process.env.TTS_PYTHON_COMMAND || 'python';
+
+if (!QWEN_MODELS_ROOT) {
+  throw new Error('Set QWEN_TTS_MODELS_ROOT to run the fast Qwen TTS smoke test.');
+}
 
 async function pluginAction(baseUrl, action, params = {}, timeoutMs = 30000) {
   const envelope = await invokeIpc(baseUrl, 'plugins:run-action', ['http-tts-bridge', action, params], timeoutMs);

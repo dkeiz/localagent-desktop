@@ -107,6 +107,13 @@ function registerLlmHandlers(ipcMain, runtime) {
     const providerId = normalizeProviderId(provider);
     const providerSpec = getProviderSpec(providerId);
     const normalizedDiscovered = normalizeModelList(discovered);
+    const openAITransport = providerId === 'openai'
+      ? await db.getSetting('llm.openai.transport') || 'codex-cli'
+      : '';
+    if (providerId === 'openai' && openAITransport !== 'api-key') {
+      return normalizedDiscovered.length > 0 ? normalizedDiscovered : ['gpt-5.2-codex'];
+    }
+
     if (normalizedDiscovered.length > 0) {
       await rememberDiscoveredModels(providerId, normalizedDiscovered);
     }

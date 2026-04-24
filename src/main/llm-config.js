@@ -121,7 +121,7 @@ function getSyntheticModelFamily(provider, model) {
     return null;
   }
 
-  if (normalized.startsWith('gpt-5.3-codex') || normalized.startsWith('gpt-5.2-codex')) {
+  if (normalized.startsWith('gpt-5.2-codex')) {
     return {
       id: 'openai-codex-frontier',
       label: 'OpenAI Codex Frontier',
@@ -158,7 +158,7 @@ function getSyntheticModelFamily(provider, model) {
     };
   }
 
-  if (normalized.startsWith('gpt-5.1-codex')) {
+  if (normalized.startsWith('gpt-5-codex') || normalized.startsWith('gpt-5.1-codex')) {
     return {
       id: 'openai-codex-5.1',
       label: 'OpenAI Codex 5.1',
