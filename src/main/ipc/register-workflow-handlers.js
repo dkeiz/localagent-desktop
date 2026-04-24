@@ -22,7 +22,33 @@ function registerWorkflowHandlers(ipcMain, runtime) {
     try {
       const result = await workflowManager.captureWorkflow(
         workflow.name || 'unnamed',
-        (workflow.tool_chain || []).map(s => ({ tool: s.tool, params: s.params || {} })),
+        (workflow.tool_chain || []).map(s => {
+          if (String(s.type || '').toLowerCase() === 'agent' || !s.tool) {
+            return {
+              type: 'agent',
+              id: s.id,
+              agent: s.agent,
+              name: s.name,
+              goal: s.goal,
+              input: s.input,
+              required_output: s.required_output,
+              output_schema: s.output_schema,
+              final: s.final === true,
+              prompt: s.prompt,
+              llm: s.llm,
+              provider: s.provider,
+              model: s.model,
+              on_model_error: s.on_model_error
+            };
+          }
+          return {
+            type: 'tool',
+            id: s.id,
+            tool: s.tool,
+            params: s.params || {},
+            params_from: s.params_from
+          };
+        }),
         workflow.name
       );
       windowManager.send('workflow-update');

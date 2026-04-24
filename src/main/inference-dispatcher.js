@@ -51,7 +51,8 @@ class InferenceDispatcher {
     async dispatch(prompt, history = [], options = {}) {
         const mode = options.mode || 'chat';
         const preemptible = options.preemptible === true;
-        const provider = this.aiService.getCurrentProvider();
+        const originalProvider = this.aiService.getCurrentProvider();
+        let provider = options.provider || originalProvider;
 
         // Decide what to inject based on mode (callers can override)
         const includeTools = options.includeTools ?? (mode === 'chat');
@@ -124,6 +125,10 @@ class InferenceDispatcher {
         try {
             this._lockMode = mode;
             this._lockPreemptible = preemptible;
+            if (options.provider && options.provider !== originalProvider) {
+                await this.aiService.setProvider(options.provider);
+                provider = options.provider;
+            }
             console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} skipLock=${skipLock} historyLen=${history.length}`);
             const response = await this.aiService.sendMessage(messages, options);
             response.renderContext = {
@@ -134,6 +139,13 @@ class InferenceDispatcher {
             await this._rememberWorkingRuntimeParams(provider, options.model, options.modelSpec, options.runtimeConfig, response);
             return response;
         } finally {
+            if (options.provider && originalProvider && this.aiService.getCurrentProvider() !== originalProvider) {
+                try {
+                    await this.aiService.setProvider(originalProvider);
+                } catch (error) {
+                    console.error('[Dispatcher] Failed to restore provider:', error.message);
+                }
+            }
             this._lockMode = null;
             this._lockPreemptible = false;
             if (!skipLock) this._releaseLock();

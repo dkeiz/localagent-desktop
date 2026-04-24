@@ -82,6 +82,9 @@ class BackendEventBus extends EventEmitter {
         'daemon:task-completed':  { category: 'daemon',   needsInference: true,  uiRelay: true  },
 
         // Workflow Scheduler events
+        'workflow:run-started':       { category: 'workflow', needsInference: false, uiRelay: true  },
+        'workflow:run-completed':     { category: 'workflow', needsInference: false, uiRelay: true  },
+        'workflow:run-failed':        { category: 'workflow', needsInference: false, uiRelay: true  },
         'workflow:scheduled-complete': { category: 'workflow', needsInference: true,  uiRelay: true  },
         'workflow:scheduled-failed':   { category: 'workflow', needsInference: true,  uiRelay: true  },
         'workflow:scheduled-skipped':  { category: 'workflow', needsInference: false, uiRelay: false },

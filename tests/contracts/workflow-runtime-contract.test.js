@@ -73,13 +73,37 @@ function createFakeMcp() {
   };
 }
 
+function createFakeDispatcher() {
+  return {
+    calls: [],
+    async dispatch(prompt) {
+      this.calls.push(arguments[2] || {});
+      if (String(prompt).includes('final answer')) {
+        return {
+          content: JSON.stringify({
+            answer: 'Final workflow answer',
+            summary: 'Final workflow summary',
+            data: { ok: true }
+          }),
+          model: 'fake-model'
+    };
+}
+      return {
+        content: JSON.stringify({ value: 'from-agent' }),
+        model: 'fake-model'
+      };
+    }
+  };
+}
+
 module.exports = {
   name: 'workflow-runtime-contract',
   tags: ['contract', 'fast'],
   async run({ assert }) {
     const db = createFakeDb();
     const mcp = createFakeMcp();
-    const workflowManager = new WorkflowManager(db, mcp);
+    const dispatcher = createFakeDispatcher();
+    const workflowManager = new WorkflowManager(db, mcp, dispatcher);
     const tempBase = makeTempDir('localagent-workflow-runs-');
     const workflowRuntime = new WorkflowRuntime(
       workflowManager,
@@ -105,6 +129,30 @@ module.exports = {
         { tool: 'gamma', params: {} }
       ]
     });
+    const mixed = await db.addWorkflow({
+      name: 'Mixed',
+      description: 'mixed tool and agent chain',
+      trigger_pattern: 'mixed',
+      tool_chain: [
+        { type: 'tool', id: 'first', tool: 'alpha', params: { seed: true } },
+        {
+          type: 'agent',
+          id: 'prepare',
+          goal: 'Prepare beta params',
+          input: '{{steps.first.output}}',
+          required_output: { value: 'string' },
+          llm: { provider: 'ollama', model: 'small-local', on_error: 'error' }
+        },
+        { type: 'tool', id: 'second', tool: 'beta', params_from: '{{steps.prepare.output.next_params}}' },
+        {
+          type: 'agent',
+          id: 'final',
+          goal: 'final answer',
+          input: '{{steps.second.output}}',
+          final: true
+        }
+      ]
+    });
 
     const syncRun = await workflowManager.runWorkflow(quick.id, { mode: 'sync' });
     assert.equal(syncRun.immediate, true, 'Expected sync run to complete immediately');
@@ -120,6 +168,21 @@ module.exports = {
     assert.equal(autoRun.mode, 'async', 'Expected auto mode to choose async for long chains');
     const autoDone = await workflowManager.waitForWorkflowRun(autoRun.run_id, 2000);
     assert.equal(autoDone.status, 'completed', 'Expected auto-selected async run completion');
+
+    const mixedRun = await workflowManager.runWorkflow(mixed.id, { mode: 'sync' });
+    assert.equal(mixedRun.status, 'completed', 'Expected mixed workflow to complete');
+    assert.equal(
+      mixedRun.result.final_output.answer,
+      'Final workflow answer',
+      'Expected final agent step to become workflow final output'
+    );
+    assert.equal(
+      mixedRun.result.results[2].params.value,
+      'from-agent',
+      'Expected agent output to feed next tool params'
+    );
+    assert.equal(dispatcher.calls[0].provider, 'ollama', 'Expected agent LLM provider override');
+    assert.equal(dispatcher.calls[0].model, 'small-local', 'Expected agent LLM model override');
 
     let invalidError = null;
     try {

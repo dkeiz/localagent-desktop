@@ -2,5 +2,5 @@
 @import url('./layout/layout-widgets.css');
 @import url('./layout/layout-chat.css');
 @import url('./layout/layout-tools.css');
-@import url('./layout/layout-workflows.css');
+@import url('./layout/layout-workflows.css?v=2');
 @import url('./layout/layout-sidebar.css');

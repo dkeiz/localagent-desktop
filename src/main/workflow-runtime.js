@@ -235,20 +235,24 @@ class WorkflowRuntime {
         run.workflow_id,
         run.param_overrides || {},
         {
-          onStep: ({ tool, success, result, error }) => {
+          onStep: ({ id, type, tool, agent, success, result, output, error }) => {
             const event = {
               timestamp: new Date().toISOString(),
+              id,
+              type: type || 'tool',
               tool,
+              agent,
               success,
               result: success ? result : null,
+              output: success ? output : null,
               error: success ? null : error
             };
             appendJsonLine(run.events_path, event);
             appendTraceSection(
               run.trace_path,
-              `step ${tool}`,
+              `step ${id || tool || agent}`,
               success
-                ? `\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``
+                ? `\`\`\`json\n${JSON.stringify(output !== undefined ? output : result, null, 2)}\n\`\`\``
                 : `Error: ${error}`
             );
           }
@@ -263,16 +267,25 @@ class WorkflowRuntime {
         completed_at: completedAt,
         success: execution.success,
         results: execution.results,
+        final_output: execution.finalOutput || null,
         summary: execution.success
-          ? `Workflow completed (${execution.results.length} step${execution.results.length === 1 ? '' : 's'})`
+          ? (execution.finalOutput?.summary || `Workflow completed (${execution.results.length} step${execution.results.length === 1 ? '' : 's'})`)
           : `Workflow failed at step ${execution.results.findIndex(r => !r.success) + 1}`
       };
       writeJson(run.result_path, resultPayload);
+      let delivery = null;
+      if (execution.success && run.requested_by_session_id && this.workflowManager.deliverRunResultToSession) {
+        delivery = await this.workflowManager.deliverRunResultToSession(run, resultPayload);
+        if (delivery?.sessionId) {
+          this.eventBus?.sendToRenderer?.('conversation-update', { sessionId: delivery.sessionId });
+        }
+      }
       writeJson(run.status_path, {
         ...readJson(run.status_path),
         status: execution.success ? 'completed' : 'failed',
         summary: resultPayload.summary,
         error: execution.success ? null : (execution.results.find(r => !r.success)?.error || 'Workflow failed'),
+        delivered_to_session_id: delivery?.sessionId || null,
         completed_at: completedAt,
         updated_at: completedAt
       });
@@ -281,7 +294,9 @@ class WorkflowRuntime {
         runId: run.run_id,
         workflowId: run.workflow_id,
         workflowName: run.workflow_name,
-        success: execution.success
+        success: execution.success,
+        finalOutput: execution.finalOutput || null,
+        deliveredToSessionId: delivery?.sessionId || null
       });
       return this.getRun(run.run_id);
     } catch (error) {

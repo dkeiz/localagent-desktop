@@ -1,7 +1,7 @@
 function registerWorkflowTools(server) {
   server.registerTool('workflow_op', {
     name: 'workflow_op',
-    description: 'Unified workflow operations. Actions: list, execute, run, get_run, list_runs, create, copy, delete.',
+    description: 'Unified workflow operations. Actions: list, execute, run, get_run, list_runs, create, copy, delete. Workflows may contain tool steps and agent steps.',
     userDescription: 'Run workflow operations',
     example: 'TOOL:workflow_op{"action":"list"}',
     inputSchema: {
@@ -20,7 +20,7 @@ function registerWorkflowTools(server) {
         status: { type: 'string', description: 'Optional status filter for list_runs' },
         name: { type: 'string', description: 'Workflow name for create' },
         description: { type: 'string', description: 'Workflow description for create' },
-        tool_chain: { type: 'array', description: 'Tool chain for create' },
+        tool_chain: { type: 'array', description: 'Workflow steps for create. Tool step: {type:"tool",tool,params}. Agent step: {type:"agent",agent,goal,input,required_output,final}.' },
         source_id: { type: 'number', description: 'Source workflow ID for copy' },
         new_name: { type: 'string', description: 'New name for copied workflow' }
       },
@@ -37,7 +37,7 @@ function registerWorkflowTools(server) {
         id: workflow.id,
         name: workflow.name,
         description: workflow.description,
-        tools: (workflow.tool_chain || []).map(step => step.tool),
+        tools: (workflow.tool_chain || []).map(step => step.tool || `agent:${step.agent || step.id || step.name || 'step'}`),
         success_count: workflow.success_count || 0,
         failure_count: workflow.failure_count || 0,
         last_used: workflow.last_used,
@@ -78,7 +78,33 @@ function registerWorkflowTools(server) {
       }
       const result = await wm.captureWorkflow(
         params.name,
-        params.tool_chain.map(step => ({ tool: step.tool, params: step.params || {} })),
+        params.tool_chain.map(step => {
+          if (String(step.type || '').toLowerCase() === 'agent' || !step.tool) {
+            return {
+              type: 'agent',
+              id: step.id,
+              agent: step.agent,
+              name: step.name,
+              goal: step.goal,
+              input: step.input,
+              required_output: step.required_output,
+              output_schema: step.output_schema,
+              final: step.final === true,
+              prompt: step.prompt,
+              llm: step.llm,
+              provider: step.provider,
+              model: step.model,
+              on_model_error: step.on_model_error
+            };
+          }
+          return {
+            type: 'tool',
+            id: step.id,
+            tool: step.tool,
+            params: step.params || {},
+            params_from: step.params_from
+          };
+        }),
         params.name
       );
       return { success: true, id: result.id, name: params.name };
@@ -100,4 +126,3 @@ function registerWorkflowTools(server) {
 }
 
 module.exports = { registerWorkflowTools };
-

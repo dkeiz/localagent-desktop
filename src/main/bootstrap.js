@@ -89,7 +89,7 @@ async function bootstrapApplication(options = {}) {
   const chainController = new ToolChainController(dispatcher, mcpServer, db);
   container.register('chainController', chainController);
 
-  const workflowManager = new WorkflowManager(db, mcpServer);
+  const workflowManager = new WorkflowManager(db, mcpServer, dispatcher);
   const workflowRuntime = new WorkflowRuntime(workflowManager, eventBus);
   workflowRuntime.initialize();
   workflowManager.setWorkflowRuntime(workflowRuntime);

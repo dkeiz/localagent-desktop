@@ -7,11 +7,13 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { WorkflowStepExecutor, normalizeStep } = require('./workflow-step-executor');
 
 class WorkflowManager {
-    constructor(db, mcpServer) {
+    constructor(db, mcpServer, dispatcher = null) {
         this.db = db;
         this.mcpServer = mcpServer;
+        this.dispatcher = dispatcher;
         this.workflowRuntime = null;
         this.workflowsDir = path.join(process.cwd(), 'agentin', 'workflows');
         this._ensureDir();
@@ -19,6 +21,10 @@ class WorkflowManager {
 
     setWorkflowRuntime(runtime) {
         this.workflowRuntime = runtime;
+    }
+
+    setDispatcher(dispatcher) {
+        this.dispatcher = dispatcher;
     }
 
     _ensureDir() {
@@ -37,6 +43,41 @@ class WorkflowManager {
             + '.json';
     }
 
+    _toFolderName(name) {
+        return name.toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '');
+    }
+
+    _getWorkflowFileCandidates(name) {
+        const base = this._toFolderName(name);
+        return [
+            path.join(this.workflowsDir, `${base}.json`),
+            path.join(this.workflowsDir, base, 'workflow.json')
+        ];
+    }
+
+    resolveWorkflowDir(workflow) {
+        const folder = path.join(this.workflowsDir, this._toFolderName(workflow.name || 'workflow'));
+        if (fs.existsSync(path.join(folder, 'workflow.json')) || fs.existsSync(path.join(folder, 'agents'))) {
+            return folder;
+        }
+        return this.workflowsDir;
+    }
+
+    resolveWorkflowAgentPath(workflow, agentName) {
+        const safeAgent = String(agentName || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        const workflowDir = this.resolveWorkflowDir(workflow);
+        const candidates = [
+            path.join(workflowDir, 'agents', `${safeAgent}.md`),
+            path.join(workflowDir, 'agents', `${agentName}.md`)
+        ];
+        return candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
+    }
+
     /**
      * Scan agentin/workflows/*.json and sync to DB.
      * - New files → inserted into DB
@@ -45,27 +86,34 @@ class WorkflowManager {
      */
     async syncFromFiles() {
         const files = fs.readdirSync(this.workflowsDir)
-            .filter(f => f.endsWith('.json'));
+            .flatMap(f => {
+                const fullPath = path.join(this.workflowsDir, f);
+                if (f.endsWith('.json')) return [fullPath];
+                if (fs.statSync(fullPath).isDirectory()) {
+                    const nested = path.join(fullPath, 'workflow.json');
+                    return fs.existsSync(nested) ? [nested] : [];
+                }
+                return [];
+            });
 
         const dbWorkflows = await this.db.getWorkflows();
         const dbByName = new Map(dbWorkflows.map(w => [w.name, w]));
 
         let synced = 0;
 
-        for (const file of files) {
+        for (const filePath of files) {
             try {
-                const filePath = path.join(this.workflowsDir, file);
                 const content = fs.readFileSync(filePath, 'utf-8');
                 const wf = JSON.parse(content);
 
                 if (!wf.name || !wf.tool_chain) {
-                    console.log(`[WorkflowManager] Skipping ${file}: missing name or tool_chain`);
+                    console.log(`[WorkflowManager] Skipping ${path.basename(filePath)}: missing name or tool_chain`);
                     continue;
                 }
 
                 const validation = this.validateToolChain(wf.tool_chain);
                 if (!validation.valid) {
-                    console.log(`[WorkflowManager] Skipping ${file}: invalid tools (${validation.invalidTools.join(', ')})`);
+                    console.log(`[WorkflowManager] Skipping ${path.basename(filePath)}: invalid tools (${validation.invalidTools.join(', ')})`);
                     continue;
                 }
 
@@ -169,12 +217,36 @@ class WorkflowManager {
         }
 
         const workflowName = name || this.generateWorkflowName(toolChain);
-        const cleanChain = toolChain.map(step => ({
-            tool: step.tool,
-            params: step.params
-        }));
+        const cleanChain = toolChain.map((step, index) => {
+            const normalized = normalizeStep(step, index);
+            if (normalized.type === 'agent') {
+                return {
+                    type: 'agent',
+                    id: step.id,
+                    agent: step.agent,
+                    name: step.name,
+                    goal: step.goal,
+                    input: step.input,
+                    required_output: step.required_output,
+                    output_schema: step.output_schema,
+                    final: step.final === true,
+                    prompt: step.prompt,
+                    llm: step.llm,
+                    provider: step.provider,
+                    model: step.model,
+                    on_model_error: step.on_model_error
+                };
+            }
+            return {
+                type: 'tool',
+                id: step.id,
+                tool: step.tool,
+                params: step.params || {},
+                params_from: step.params_from
+            };
+        });
 
-        const description = `Workflow using: ${cleanChain.map(s => s.tool).join(' → ')}`;
+        const description = `Workflow using: ${cleanChain.map(s => s.tool || `agent:${s.agent || s.id || s.name || 'step'}`).join(' → ')}`;
         const workflow = {
             name: workflowName,
             description,
@@ -211,43 +283,15 @@ class WorkflowManager {
             throw new Error(`Workflow "${workflow.name}" contains unknown tools: ${validation.invalidTools.join(', ')}`);
         }
 
-        const results = [];
-        let success = true;
         console.log(`[WorkflowManager] Executing workflow: ${workflow.name}`);
-
-        for (const step of workflow.tool_chain) {
-            try {
-                const params = { ...step.params, ...(paramOverrides[step.tool] || {}) };
-                const result = await this.mcpServer.executeTool(step.tool, params);
-
-                if (result && result.needsPermission) {
-                    success = false;
-                    const stepResult = { tool: step.tool, success: false, needsPermission: true, error: 'Permission required' };
-                    results.push(stepResult);
-                    if (typeof options.onStep === 'function') {
-                        await options.onStep({ ...stepResult });
-                    }
-                    break;
-                }
-
-                const stepResult = { tool: step.tool, success: true, result };
-                results.push(stepResult);
-                if (typeof options.onStep === 'function') {
-                    await options.onStep({ ...stepResult });
-                }
-            } catch (error) {
-                success = false;
-                const stepResult = { tool: step.tool, success: false, error: error.message };
-                results.push(stepResult);
-                if (typeof options.onStep === 'function') {
-                    await options.onStep({ ...stepResult });
-                }
-                break;
-            }
-        }
-
-        await this.db.updateWorkflowStats(workflowId, success);
-        return { workflow, success, results };
+        const executor = new WorkflowStepExecutor({
+            mcpServer: this.mcpServer,
+            dispatcher: this.dispatcher,
+            workflowManager: this
+        });
+        const execution = await executor.executeSteps(workflow, paramOverrides, options);
+        await this.db.updateWorkflowStats(workflowId, execution.success);
+        return execution;
     }
 
     resolveRunMode(toolChain, mode = 'auto') {
@@ -419,7 +463,7 @@ class WorkflowManager {
     }
 
     generateWorkflowName(toolChain) {
-        const tools = toolChain.map(s => s.tool);
+        const tools = toolChain.map(s => s.tool || s.agent || s.id || 'agent_step');
         const timestamp = Date.now();
         return `${tools[0]}_chain_${timestamp}`;
     }
@@ -432,12 +476,14 @@ class WorkflowManager {
     async getWorkflowByIdWithChain(id) {
         const workflow = await this.db.getWorkflowById(id);
         if (!workflow) return null;
-        return {
+        const normalized = {
             ...workflow,
             tool_chain: typeof workflow.tool_chain === 'string'
                 ? JSON.parse(workflow.tool_chain)
                 : (workflow.tool_chain || [])
         };
+        normalized.workflow_dir = this.resolveWorkflowDir(normalized);
+        return normalized;
     }
 
     validateToolChain(toolChain) {
@@ -451,6 +497,8 @@ class WorkflowManager {
         }
         const available = new Set(toolDefs.map(tool => tool.name));
         const invalidTools = toolChain
+            .map((step, index) => normalizeStep(step, index))
+            .filter(step => step.type !== 'agent')
             .map(step => String(step?.tool || '').trim())
             .filter(name => !name || !available.has(name));
 
@@ -458,6 +506,31 @@ class WorkflowManager {
             valid: invalidTools.length === 0,
             invalidTools: Array.from(new Set(invalidTools))
         };
+    }
+
+    async deliverRunResultToSession(run, resultPayload) {
+        const sessionId = run?.requested_by_session_id;
+        if (!sessionId || !this.db?.addConversation) return null;
+
+        const finalOutput = resultPayload?.final_output || null;
+        const text = finalOutput?.answer || finalOutput?.summary || resultPayload?.summary || '';
+        if (!text) return null;
+
+        const content = [
+            `Workflow "${run.workflow_name}" completed.`,
+            '',
+            text
+        ].join('\n');
+        await this.db.addConversation({
+            role: 'system',
+            content,
+            metadata: {
+                workflow_run_id: run.run_id,
+                workflow_id: run.workflow_id,
+                source: 'workflow'
+            }
+        }, sessionId);
+        return { delivered: true, sessionId };
     }
 }
 

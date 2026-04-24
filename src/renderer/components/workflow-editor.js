@@ -17,6 +17,8 @@ class WorkflowEditor {
         this.nodeIdCounter = 0;
         this.toolGroups = [];
         this.tools = [];
+        this.providers = [];
+        this.currentWorkflowId = null;
 
         this.canvas = null;
         this.connectionsLayer = null;
@@ -47,6 +49,7 @@ class WorkflowEditor {
         try {
             this.tools = await window.electronAPI.getMCPTools?.() || [];
             this.toolGroups = await window.electronAPI.getToolGroups?.() || [];
+            this.providers = await window.electronAPI.getProviders?.() || [];
         } catch (error) {
             console.error('Failed to load tools:', error);
         }
@@ -119,7 +122,16 @@ class WorkflowEditor {
             }
         });
 
-        let html = '';
+        let html = `
+            <div class="palette-group">
+                <div class="palette-group-header">Agentic</div>
+                <div class="palette-group-items">
+                    <div class="palette-item agent-palette-item" data-node-type="agent" title="Add an agent step that transforms previous output into the next step input">
+                        Agent Activity
+                    </div>
+                </div>
+            </div>
+        `;
         for (const [groupId, group] of groupedTools) {
             if (group.tools.length === 0) continue;
             html += `
@@ -141,8 +153,13 @@ class WorkflowEditor {
         // Add click handlers to palette items
         this.nodePalette.querySelectorAll('.palette-item').forEach(item => {
             item.addEventListener('click', () => {
-                const toolName = item.dataset.tool;
-                this.addNode(toolName);
+                const nodeType = item.dataset.nodeType;
+                if (nodeType === 'agent') {
+                    this.addAgentNode();
+                } else {
+                    const toolName = item.dataset.tool;
+                    this.addNode(toolName);
+                }
                 this.nodePalette.classList.remove('visible');
             });
         });
@@ -168,6 +185,7 @@ class WorkflowEditor {
 
         const node = {
             id,
+            type: 'tool',
             tool: toolName,
             x: nodeX,
             y: nodeY,
@@ -181,12 +199,65 @@ class WorkflowEditor {
         return node;
     }
 
+    addAgentNode(x = null, y = null, preset = null) {
+        const id = preset?.id || `node-${++this.nodeIdCounter}`;
+        const node = {
+            id,
+            type: 'agent',
+            agent: preset?.agent || 'workflow-agent',
+            name: preset?.name || 'Agent Activity',
+            goal: preset?.goal || 'Transform the previous step output into JSON for the next step.',
+            input: preset?.input || '{{previous.output}}',
+            required_output: preset?.required_output || { next_params: 'object' },
+            final: preset?.final === true,
+            prompt: preset?.prompt || '',
+            llm: preset?.llm || {
+                provider: preset?.provider || '',
+                model: preset?.model || '',
+                on_error: preset?.on_model_error || 'default'
+            },
+            x: x ?? 100 + (this.nodes.size * 220),
+            y: y ?? 150,
+            description: 'Workflow-local agent activity'
+        };
+
+        this.nodes.set(id, node);
+        this.renderNode(node);
+        return node;
+    }
+
+    renameNodeId(node, newId) {
+        if (!node || !newId || node.id === newId) return node;
+        const oldId = node.id;
+        const nodeEl = document.getElementById(oldId);
+        this.nodes.delete(oldId);
+        node.id = newId;
+        this.nodes.set(newId, node);
+        if (nodeEl) {
+            nodeEl.id = newId;
+            nodeEl.querySelectorAll('[data-node]').forEach(el => {
+                el.dataset.node = newId;
+            });
+        }
+        this.connections = this.connections.map(conn => ({
+            from: conn.from === oldId ? newId : conn.from,
+            to: conn.to === oldId ? newId : conn.to
+        }));
+        return node;
+    }
+
     renderNode(node) {
         const nodeEl = document.createElement('div');
-        nodeEl.className = 'workflow-node';
+        nodeEl.className = `workflow-node ${node.type === 'agent' ? 'agent-node' : 'tool-node'}`;
         nodeEl.id = node.id;
         nodeEl.style.left = `${node.x}px`;
         nodeEl.style.top = `${node.y}px`;
+
+        if (node.type === 'agent') {
+            this.renderAgentNode(node, nodeEl);
+            this.canvas.appendChild(nodeEl);
+            return;
+        }
 
         const params = node.inputSchema?.properties || {};
         const paramKeys = Object.keys(params).slice(0, 3); // Show first 3 params
@@ -260,6 +331,175 @@ class WorkflowEditor {
         });
 
         this.canvas.appendChild(nodeEl);
+    }
+
+    renderAgentNode(node, nodeEl) {
+        const requiredOutput = JSON.stringify(node.required_output || { next_params: 'object' }, null, 2);
+        nodeEl.innerHTML = `
+            <div class="node-header" data-node="${node.id}">
+                <span class="node-title">Agent: ${node.name || node.agent || 'Activity'}</span>
+                <button class="node-delete-btn" data-node="${node.id}" title="Delete">×</button>
+            </div>
+            <div class="node-body">
+                <div class="node-param">
+                    <label>agent</label>
+                    <input type="text" class="node-agent-input" data-node="${node.id}" data-field="agent"
+                           placeholder="workflow-agent" value="${node.agent || ''}">
+                </div>
+                <div class="node-param">
+                    <label>goal</label>
+                    <textarea class="node-agent-input node-agent-textarea" data-node="${node.id}" data-field="goal"
+                              placeholder="What should this agent decide?">${node.goal || ''}</textarea>
+                </div>
+                <details class="node-agent-advanced">
+                    <summary>Advanced</summary>
+                    <div class="node-param">
+                        <label>input</label>
+                        <input type="text" class="node-agent-input" data-node="${node.id}" data-field="input"
+                               placeholder="{{previous.output}}" value="${node.input || '{{previous.output}}'}">
+                    </div>
+                    <div class="node-param">
+                        <label>required output JSON</label>
+                        <textarea class="node-agent-input node-agent-textarea node-json-textarea" data-node="${node.id}" data-field="required_output"
+                                  placeholder='{"next_params":"object"}'>${requiredOutput}</textarea>
+                    </div>
+                    <label class="node-agent-final">
+                        <input type="checkbox" class="node-agent-input" data-node="${node.id}" data-field="final" ${node.final ? 'checked' : ''}>
+                        Final output
+                    </label>
+                    <div class="node-agent-model-grid">
+                        <div class="node-param">
+                            <label>provider</label>
+                            <select class="node-agent-llm-input" data-node="${node.id}" data-llm-field="provider">
+                                ${this.renderProviderOptions(node.llm?.provider || '')}
+                            </select>
+                        </div>
+                        <div class="node-param">
+                            <label>model</label>
+                            <select class="node-agent-llm-input" data-node="${node.id}" data-llm-field="model">
+                                ${this.renderModelOptions(node.llm?.model || '')}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="node-param">
+                        <label>on model error</label>
+                        <select class="node-agent-llm-input" data-node="${node.id}" data-llm-field="on_error">
+                            <option value="default" ${(node.llm?.on_error || 'default') === 'default' ? 'selected' : ''}>Fallback to default</option>
+                            <option value="error" ${node.llm?.on_error === 'error' ? 'selected' : ''}>Stop workflow</option>
+                        </select>
+                    </div>
+                </details>
+            </div>
+            <div class="node-connectors">
+                <div class="node-connector input" data-node="${node.id}" data-type="input" title="Input"></div>
+                <div class="node-connector output" data-node="${node.id}" data-type="output" title="Output"></div>
+            </div>
+        `;
+
+        nodeEl.querySelector('.node-delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.deleteNode(node.id);
+        });
+
+        nodeEl.querySelector('.node-header').addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            this.startDragging(node.id, e);
+        });
+
+        nodeEl.querySelectorAll('.node-agent-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const n = this.nodes.get(e.target.dataset.node);
+                if (!n) return;
+                const field = e.target.dataset.field;
+                if (field === 'final') {
+                    n.final = e.target.checked;
+                    return;
+                }
+                if (field === 'required_output') {
+                    try {
+                        n.required_output = JSON.parse(e.target.value || '{}');
+                    } catch (_) {
+                        window.mainPanel?.showNotification('Required output must be valid JSON', 'error');
+                    }
+                    return;
+                }
+                n[field] = e.target.value;
+            });
+        });
+
+        this.bindNodeConnectors(nodeEl);
+
+        nodeEl.querySelectorAll('.node-agent-llm-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const n = this.nodes.get(e.target.dataset.node);
+                if (!n) return;
+                n.llm = n.llm || {};
+                n.llm[e.target.dataset.llmField] = e.target.value;
+                if (e.target.dataset.llmField === 'provider') {
+                    n.llm.model = '';
+                    this.populateAgentModelOptions(nodeEl, n).catch(error => {
+                        console.warn('Failed to load workflow agent models:', error);
+                    });
+                }
+            });
+        });
+        this.populateAgentModelOptions(nodeEl, node).catch(error => {
+            console.warn('Failed to load workflow agent models:', error);
+        });
+    }
+
+    renderProviderOptions(selectedProvider) {
+        const providers = [''].concat(Array.isArray(this.providers) ? this.providers : []);
+        const unique = Array.from(new Set(providers.map(provider => String(provider || '').trim())));
+        return unique.map(provider => {
+            const label = provider || 'Default';
+            const selected = provider === selectedProvider ? 'selected' : '';
+            return `<option value="${provider}" ${selected}>${label}</option>`;
+        }).join('');
+    }
+
+    renderModelOptions(selectedModel, models = []) {
+        const options = [''].concat(models || []);
+        if (selectedModel && !options.includes(selectedModel)) options.push(selectedModel);
+        return Array.from(new Set(options)).map(model => {
+            const label = model || 'Default';
+            const selected = model === selectedModel ? 'selected' : '';
+            return `<option value="${model}" ${selected}>${label}</option>`;
+        }).join('');
+    }
+
+    async populateAgentModelOptions(nodeEl, node) {
+        const modelSelect = nodeEl.querySelector('[data-llm-field="model"]');
+        if (!modelSelect) return;
+        const provider = String(node.llm?.provider || '').trim();
+        const selected = String(node.llm?.model || '').trim();
+        if (!provider || !window.electronAPI?.llm?.getModels) {
+            modelSelect.innerHTML = this.renderModelOptions(selected);
+            return;
+        }
+        const models = await window.electronAPI.llm.getModels(provider, false);
+        modelSelect.innerHTML = this.renderModelOptions(selected, Array.isArray(models) ? models : []);
+    }
+
+    bindNodeConnectors(nodeEl) {
+        nodeEl.querySelectorAll('.node-connector').forEach(connector => {
+            connector.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                const nodeId = e.target.dataset.node;
+                const type = e.target.dataset.type;
+                if (type === 'output') {
+                    this.startConnecting(nodeId, e);
+                }
+            });
+            connector.addEventListener('mouseup', (e) => {
+                e.stopPropagation();
+                const nodeId = e.target.dataset.node;
+                const type = e.target.dataset.type;
+                if (type === 'input' && this.connectingFrom) {
+                    this.finishConnecting(nodeId);
+                }
+            });
+        });
     }
 
     deleteNode(nodeId) {
@@ -338,10 +578,15 @@ class WorkflowEditor {
             const toNode = this.nodes.get(conn.to);
             if (!fromNode || !toNode) return;
 
-            const fromX = fromNode.x + 200; // Right side of node
-            const fromY = fromNode.y + 40;  // Middle height
-            const toX = toNode.x;            // Left side of node
-            const toY = toNode.y + 40;
+            const fromEl = document.getElementById(fromNode.id);
+            const toEl = document.getElementById(toNode.id);
+            const fromWidth = fromEl?.offsetWidth || (fromNode.type === 'agent' ? 240 : 200);
+            const fromHeight = fromEl?.offsetHeight || 80;
+            const toHeight = toEl?.offsetHeight || 80;
+            const fromX = fromNode.x + fromWidth;
+            const fromY = fromNode.y + (fromHeight / 2);
+            const toX = toNode.x;
+            const toY = toNode.y + (toHeight / 2);
 
             // Bezier curve
             const cx1 = fromX + 50;
@@ -369,9 +614,48 @@ class WorkflowEditor {
         this.canvas.innerHTML = '';
         this.connectionsLayer.innerHTML = '';
         this.nodeIdCounter = 0;
+        this.currentWorkflowId = null;
     }
 
-    async saveWorkflow() {
+    serializeNode(node) {
+        if (node.type === 'agent') {
+            return {
+                type: 'agent',
+                id: node.id,
+                agent: node.agent || node.name || 'workflow-agent',
+                name: node.name || node.agent || 'Agent Activity',
+                goal: node.goal || '',
+                input: node.input || '{{previous.output}}',
+                required_output: node.required_output || { next_params: 'object' },
+                final: node.final === true,
+                prompt: node.prompt || '',
+                llm: this.compactLlmOverride(node.llm)
+            };
+        }
+        return {
+            type: 'tool',
+            id: node.id,
+            tool: node.tool,
+            params: node.params || {},
+            params_from: node.params_from
+        };
+    }
+
+    getWorkflowLabel(node) {
+        return node.type === 'agent'
+            ? `agent:${node.agent || node.name || node.id}`
+            : node.tool;
+    }
+
+    compactLlmOverride(llm = {}) {
+        const compact = {};
+        if (llm.provider) compact.provider = llm.provider;
+        if (llm.model) compact.model = llm.model;
+        if (llm.on_error && llm.on_error !== 'default') compact.on_error = llm.on_error;
+        return Object.keys(compact).length > 0 ? compact : undefined;
+    }
+
+    async saveWorkflow({ silent = false } = {}) {
         const name = document.getElementById('workflow-name-input')?.value.trim();
         if (!name) {
             window.mainPanel?.showNotification('Please enter a workflow name', 'error');
@@ -383,15 +667,15 @@ class WorkflowEditor {
             return;
         }
 
-        // Convert nodes to tool chain format
+        // Convert nodes to workflow step format
         const toolChain = this.getExecutionOrder().map(nodeId => {
             const node = this.nodes.get(nodeId);
-            return { tool: node.tool, params: node.params };
+            return this.serializeNode(node);
         });
 
         const workflow = {
             name,
-            description: `Visual workflow: ${Array.from(this.nodes.values()).map(n => n.tool).join(' → ')}`,
+            description: `Visual workflow: ${Array.from(this.nodes.values()).map(n => this.getWorkflowLabel(n)).join(' -> ')}`,
             tool_chain: toolChain,
             visual_data: {
                 nodes: Array.from(this.nodes.values()),
@@ -400,12 +684,19 @@ class WorkflowEditor {
         };
 
         try {
-            await window.electronAPI.saveWorkflow(workflow);
-            window.mainPanel?.showNotification('Workflow saved!');
-            await this.loadSavedWorkflows();
+            const result = this.currentWorkflowId && window.electronAPI.updateWorkflow
+                ? await window.electronAPI.updateWorkflow(this.currentWorkflowId, workflow)
+                : await window.electronAPI.saveWorkflow(workflow);
+            if (result?.workflow?.id) this.currentWorkflowId = result.workflow.id;
+            if (!silent) {
+                window.mainPanel?.showNotification('Workflow saved!');
+                await this.loadSavedWorkflows();
+            }
+            return result?.workflow || null;
         } catch (error) {
             console.error('Failed to save workflow:', error);
-            window.mainPanel?.showNotification('Failed to save workflow', 'error');
+            if (!silent) window.mainPanel?.showNotification('Failed to save workflow', 'error');
+            return null;
         }
     }
 
@@ -447,7 +738,7 @@ class WorkflowEditor {
     async runWorkflow() {
         const toolChain = this.getExecutionOrder().map(nodeId => {
             const node = this.nodes.get(nodeId);
-            return { tool: node.tool, params: node.params, nodeId: nodeId };
+            return { ...this.serializeNode(node), nodeId };
         });
 
         if (toolChain.length === 0) {
@@ -458,7 +749,31 @@ class WorkflowEditor {
         // Switch to chat tab and post workflow start
         window.sidebar?.switchTab?.('chat');
         const workflowName = document.getElementById('workflow-name-input')?.value || 'Unnamed Workflow';
-        window.mainPanel?.addMessage('system', `▶️ **Running workflow: ${workflowName}** (${toolChain.length} tools)`);
+        window.mainPanel?.addMessage('system', `▶️ **Running workflow: ${workflowName}** (${toolChain.length} steps)`);
+
+        if (toolChain.some(step => step.type === 'agent')) {
+            const saved = await this.saveWorkflow({ silent: true });
+            if (!saved?.id) {
+                window.mainPanel?.addMessage('system', '❌ Agent workflows must be saved before running.');
+                return;
+            }
+            const result = await window.electronAPI.runWorkflow(saved.id);
+            if (result.results) {
+                for (const r of result.results) {
+                    const label = r.tool || r.agent || r.id;
+                    const previewSource = r.output !== undefined ? r.output : r.result;
+                    const preview = typeof previewSource === 'object'
+                        ? JSON.stringify(previewSource, null, 2).slice(0, 500)
+                        : String(previewSource || '').slice(0, 500);
+                    window.mainPanel?.addMessage('system', `${r.success ? '✅' : '❌'} **${label}**\n\`\`\`\n${preview || r.error || ''}\n\`\`\``);
+                }
+            }
+            window.mainPanel?.addMessage('system', result.success
+                ? `🎉 **Workflow "${workflowName}" completed successfully!**`
+                : `⚠️ **Workflow "${workflowName}" stopped due to error**`);
+            await this.loadSavedWorkflows();
+            return;
+        }
 
         let allSuccess = true;
 
@@ -538,7 +853,7 @@ class WorkflowEditor {
         container.innerHTML = workflows.map(w => {
             let tools = [];
             try { tools = typeof w.tool_chain === 'string' ? JSON.parse(w.tool_chain) : (w.tool_chain || []); } catch(e) {}
-            const toolNames = tools.map(s => s.tool).join(' → ');
+            const toolNames = tools.map(s => s.tool || `agent:${s.agent || s.id || s.name || 'step'}`).join(' → ');
             const stats = (w.success_count || 0) + (w.failure_count || 0);
             const successRate = stats > 0 ? Math.round(((w.success_count || 0) / stats) * 100) : null;
 
@@ -610,7 +925,7 @@ class WorkflowEditor {
                         for (const r of result.results) {
                             if (r.success) {
                                 const preview = typeof r.result === 'object' ? JSON.stringify(r.result, null, 2).slice(0, 500) : String(r.result || '').slice(0, 500);
-                                window.mainPanel?.addMessage('system', `✅ **${r.tool}**\n\`\`\`\n${preview}\n\`\`\``);
+                                window.mainPanel?.addMessage('system', `✅ **${r.tool || r.agent || r.id}**\n\`\`\`\n${preview}\n\`\`\``);
                             } else {
                                 window.mainPanel?.addMessage('system', `❌ **${r.tool}** failed: ${r.error}`);
                             }
@@ -638,6 +953,7 @@ class WorkflowEditor {
             if (!workflow) return;
 
             this.newWorkflow();
+            this.currentWorkflowId = workflow.id;
             document.getElementById('workflow-name-input').value = workflow.name;
 
             // Try to load visual data first
@@ -647,9 +963,14 @@ class WorkflowEditor {
                     : workflow.visual_data;
 
                 visualData.nodes?.forEach(node => {
-                    const newNode = this.addNode(node.tool, node.x, node.y);
-                    if (newNode && node.params) {
-                        newNode.params = node.params;
+                    if (node.type === 'agent') {
+                        this.addAgentNode(node.x, node.y, node);
+                    } else {
+                        const newNode = this.addNode(node.tool, node.x, node.y);
+                        if (newNode && node.params) {
+                            newNode.params = node.params;
+                        }
+                        if (newNode && node.id) this.renameNodeId(newNode, node.id);
                     }
                 });
 
@@ -662,7 +983,15 @@ class WorkflowEditor {
                     : workflow.tool_chain;
 
                 toolChain.forEach((step, idx) => {
-                    const node = this.addNode(step.tool, 100 + idx * 220, 150, step.params || {});
+                    if (String(step.type || '').toLowerCase() === 'agent' || !step.tool) {
+                        this.addAgentNode(100 + idx * 220, 150, step);
+                    } else {
+                        const node = this.addNode(step.tool, 100 + idx * 220, 150, step.params || {});
+                        if (node) {
+                            if (step.id) this.renameNodeId(node, step.id);
+                            node.params_from = step.params_from;
+                        }
+                    }
                 });
 
                 // Auto-connect in sequence
@@ -673,6 +1002,13 @@ class WorkflowEditor {
                 this.renderConnections();
             }
 
+            this.nodeIdCounter = Math.max(
+                this.nodeIdCounter,
+                ...Array.from(this.nodes.keys()).map(id => {
+                    const match = String(id).match(/^node-(\d+)$/);
+                    return match ? Number(match[1]) : 0;
+                })
+            );
             window.mainPanel?.showNotification('Workflow loaded');
         } catch (error) {
             console.error('Failed to load workflow:', error);
