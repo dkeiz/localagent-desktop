@@ -47,8 +47,8 @@
 
 .skin-picker {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.45rem;
 }
 
 .skin-action-row {
@@ -66,7 +66,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
     background: var(--card-bg);
-    padding: 0.45rem;
+    padding: 0.4rem;
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
@@ -167,7 +167,12 @@
     font-size: 0.68rem;
     color: var(--text-secondary);
     line-height: 1.3;
-    min-height: 1.45rem;
+    min-height: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .skin-theme-options {

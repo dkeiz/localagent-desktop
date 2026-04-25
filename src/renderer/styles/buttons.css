@@ -427,9 +427,9 @@
 
 /* Privacy Section in Settings */
 .privacy-section {
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--border-color);
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 .privacy-section h3 {
@@ -464,6 +464,38 @@
   gap: var(--space-2);
 }
 
+#settings-tab {
+  gap: var(--space-3);
+}
+
+#settings-tab.tab-content.active {
+  display: flex;
+  flex-direction: column;
+}
+
+#settings-tab>h2 {
+  margin-bottom: 0;
+}
+
+#settings-tab .settings-group {
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+#settings-tab .settings-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+#settings-tab .type-size-setting {
+  max-width: 420px;
+}
+
 #type-size-slider {
   width: min(340px, 100%);
 }
@@ -491,4 +523,18 @@
 .compact-btn:hover {
   background: var(--hover-bg);
   border-color: var(--primary-color);
+}
+
+#settings-tab .secondary-btn,
+#settings-tab .danger-btn,
+#settings-tab .primary-btn {
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  transform: none;
+}
+
+#settings-tab .danger-btn:hover,
+#settings-tab .danger-btn:active {
+  transform: none;
 }

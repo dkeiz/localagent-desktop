@@ -141,6 +141,37 @@ function registerToolsCapabilityHandlers(ipcMain, runtime) {
     }
   });
 
+  ipcMain.handle('update-custom-tool', async (event, existingName, updates = {}) => {
+    try {
+      const updated = await db.updateCustomTool(existingName, updates);
+      const oldName = String(existingName || '');
+      if (oldName && oldName !== updated.name) {
+        mcpServer.tools.delete(oldName);
+        if (capabilityManager) {
+          const wasSafe = capabilityManager.isCustomToolSafe(oldName);
+          capabilityManager.unregisterCustomTool(oldName);
+          capabilityManager.registerCustomTool(updated.name, wasSafe);
+        }
+      } else if (capabilityManager && !capabilityManager.customToolSafety.has(updated.name)) {
+        capabilityManager.registerCustomTool(updated.name, false);
+      }
+
+      mcpServer.tools.delete(updated.name);
+      mcpServer.registerCustomTool({
+        name: updated.name,
+        description: updated.description,
+        code: updated.code,
+        input_schema: JSON.parse(updated.input_schema || '{}')
+      });
+      if (capabilityManager) {
+        windowManager.send('capability-update', capabilityManager.getState());
+      }
+      return { success: true, tool: updated };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('capability:get-state', async () => {
     if (!capabilityManager) return { error: 'CapabilityManager not initialized' };
     return capabilityManager.getState();

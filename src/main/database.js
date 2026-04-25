@@ -589,6 +589,9 @@ class DatabaseWrapper {
     async getCustomTools() {
         return this.all('SELECT * FROM custom_tools ORDER BY created_at DESC');
     }
+    async getCustomTool(name) {
+        return this.get('SELECT * FROM custom_tools WHERE name = ?', [name]);
+    }
     async addCustomTool(tool) {
         const { name, description, code, input_schema } = tool;
         const result = this.run(
@@ -596,6 +599,34 @@ class DatabaseWrapper {
             [name, description, code, JSON.stringify(input_schema || {})]
         );
         return { id: result.id, ...tool };
+    }
+    async updateCustomTool(existingName, updates = {}) {
+        const current = await this.getCustomTool(existingName);
+        if (!current) {
+            throw new Error(`Custom tool "${existingName}" not found`);
+        }
+        const nextName = String(updates.name ?? current.name).trim();
+        const nextDescription = String(updates.description ?? current.description).trim();
+        if (!nextName) throw new Error('Tool name is required');
+        if (!nextDescription) throw new Error('Tool description is required');
+        if (nextName !== current.name) {
+            const conflict = await this.getCustomTool(nextName);
+            if (conflict) throw new Error(`Tool name "${nextName}" already exists`);
+        }
+        this.run(
+            'UPDATE custom_tools SET name = ?, description = ? WHERE name = ?',
+            [nextName, nextDescription, existingName]
+        );
+        if (nextName !== existingName) {
+            const oldKey = `tool.${existingName}.active`;
+            const newKey = `tool.${nextName}.active`;
+            const active = await this.getSetting(oldKey);
+            if (active !== null && active !== undefined) {
+                await this.setSetting(newKey, active);
+                this.run('DELETE FROM settings WHERE key = ?', [oldKey]);
+            }
+        }
+        return this.getCustomTool(nextName);
     }
     async deleteCustomTool(name) {
         this.run('DELETE FROM custom_tools WHERE name = ?', [name]);

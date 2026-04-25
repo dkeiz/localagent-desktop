@@ -22,6 +22,7 @@ window.electronAPI = Object.assign(ipcRenderer, {
   setToolActive: (toolName, active, context = {}) => ipcRenderer.invoke('set-tool-active', toolName, active, context),
   createCustomTool: (toolData) => ipcRenderer.invoke('create-custom-tool', toolData),
   getCustomTools: () => ipcRenderer.invoke('get-custom-tools'),
+  updateCustomTool: (existingName, updates) => ipcRenderer.invoke('update-custom-tool', existingName, updates),
   deleteCustomTool: (toolName) => ipcRenderer.invoke('delete-custom-tool', toolName),
   // Tool Groups
   getToolGroups: () => ipcRenderer.invoke('get-tool-groups'),

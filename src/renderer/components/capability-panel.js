@@ -98,7 +98,18 @@ class CapabilityPanel {
     setupMainPadToggle() {
         if (!this.mainPad) return;
 
-        this.mainPad.addEventListener('click', async () => {
+        this.mainPad.addEventListener('click', async (event) => {
+            const clickedToggle = Boolean(event.target.closest('.main-toggle-indicator'));
+            if (!clickedToggle) {
+                const mcpNavButton = document.querySelector('.nav-btn[data-tab="mcp"]');
+                if (mcpNavButton) {
+                    mcpNavButton.click();
+                } else if (window.sidebar?.switchTab) {
+                    window.sidebar.switchTab('mcp');
+                }
+                return;
+            }
+
             const newState = !this.state.mainEnabled;
             try {
                 await window.electronAPI?.capability?.setMain?.(newState);

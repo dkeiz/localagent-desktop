@@ -640,13 +640,13 @@ html[data-active-skin] .workflow-toolbar #run-workflow-btn {
     box-shadow: 0 0 10px rgba(248,113,113,0.3);
 }
 
-/* Custom Tool Card Tooltips */
-.mcp-tool-card {
+/* Custom Tool Card Tooltips (workflows tab only) */
+#workflows-tab .mcp-tool-card {
     position: relative;
 }
 
-.mcp-tool-card::before,
-.mcp-tool-card::after {
+#workflows-tab .mcp-tool-card::before,
+#workflows-tab .mcp-tool-card::after {
     position: absolute;
     z-index: 1000;
     opacity: 0;
@@ -654,12 +654,12 @@ html[data-active-skin] .workflow-toolbar #run-workflow-btn {
     transition: opacity 0.2s ease;
 }
 
-.mcp-tool-card:hover::before,
-.mcp-tool-card:hover::after {
+#workflows-tab .mcp-tool-card:hover::before,
+#workflows-tab .mcp-tool-card:hover::after {
     opacity: 1;
 }
 
-.mcp-tool-card::after {
+#workflows-tab .mcp-tool-card::after {
     content: attr(data-full-description);
     background: rgba(33, 37, 41, 0.95);
     color: white;
@@ -676,7 +676,7 @@ html[data-active-skin] .workflow-toolbar #run-workflow-btn {
     transform: translateX(-50%) translateY(-100%);
 }
 
-.mcp-tool-card::before {
+#workflows-tab .mcp-tool-card::before {
     content: "";
     border: 5px solid transparent;
     border-top-color: rgba(33, 37, 41, 0.95);
@@ -686,7 +686,7 @@ html[data-active-skin] .workflow-toolbar #run-workflow-btn {
 }
 
 /* Prevent tooltip overflow */
-#mcp-tools-container {
+#workflows-tab #mcp-tools-container {
     position: relative;
     overflow: visible;
 }

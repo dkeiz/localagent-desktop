@@ -2,7 +2,7 @@ class Sidebar {
     constructor() {
         this.currentTab = 'chat';
         this.toolActivity = [];
-        this.unseenToolCount = 0;  // Track unseen tool activities
+        this.unseenToolCount = 0;
         this.currentSessionId = null;
         this.selectedDate = null;
         this.settingsDock = null;
@@ -14,9 +14,9 @@ class Sidebar {
         this.initializeEvents();
         this.setupToolListeners();
         this.loadChatSessions();
-        this.setupCollapsibleSections();  // Added collapsible functionality
-        this.setupCapabilityListener();   // Keep MCP tab in sync with capability changes
-        this.setupTabContextListener();   // Keep MCP tab in sync with active chat/agent context
+        this.setupCollapsibleSections();
+        this.setupCapabilityListener();
+        this.setupTabContextListener();
         this.setupSettingsDock();
         this.updateToolIndicators();
     }
@@ -36,12 +36,10 @@ class Sidebar {
                 section.classList.toggle('collapsed');
                 toggleIcon.textContent = section.classList.contains('collapsed') ? '◀' : '▶';
 
-                // Save state to localStorage
                 const sectionId = section.getAttribute('data-section');
                 localStorage.setItem(`section-${sectionId}-collapsed`, section.classList.contains('collapsed'));
             });
 
-            // Restore saved state
             const sectionId = section.getAttribute('data-section');
             const isCollapsed = localStorage.getItem(`section-${sectionId}-collapsed`) === 'true';
             if (isCollapsed) {
@@ -69,7 +67,6 @@ class Sidebar {
     }
 
     switchTab(tabName) {
-        // Update active button
         const navButtons = document.querySelectorAll('.nav-btn');
         navButtons.forEach(button => {
             button.classList.remove('active');
@@ -78,12 +75,10 @@ class Sidebar {
             }
         });
 
-        // Reset unseen tool count when switching to activity-heavy tabs
         if (tabName === 'tools' || tabName === 'mcp') {
             this.resetUnseenToolCount();
         }
 
-        // Update tab content
         const tabContents = document.querySelectorAll('.tab-content');
         tabContents.forEach(content => {
             content.classList.remove('active');
@@ -101,10 +96,8 @@ class Sidebar {
             this.closeSettingsFlyout();
         }
 
-        // Load tab-specific data if needed
         this.loadTabData(tabName);
 
-        // Dispatch custom event for tab activation
         const event = new CustomEvent('tab-activated', { detail: { tab: tabName } });
         document.dispatchEvent(event);
     }
@@ -234,7 +227,6 @@ class Sidebar {
                 `;
                 container.appendChild(groupHeader);
 
-                // Tools in this group
                 groupTools.forEach(({ tool, groupInfo: gi }) => {
                     const toolElement = document.createElement('div');
                     const isCustom = customToolNames.has(tool.name);
@@ -250,6 +242,7 @@ class Sidebar {
                     toolElement.style.borderLeft = `3px solid ${groupEnabled ? groupColor : '#9ca3af'}`;
                     toolElement.setAttribute('data-full-description', tool.description);
                     toolElement.setAttribute('data-group', gi?.id || 'custom');
+                    toolElement.dataset.toolName = tool.name;
 
                     toolElement.innerHTML = `
                         <div class="tool-card-header">
@@ -273,7 +266,6 @@ class Sidebar {
                         ${tool.inputSchema?.properties ? `<div class="tool-card-params">Params: ${Object.keys(tool.inputSchema.properties).join(', ')}</div>` : ''}
                     `;
 
-                    // Toggle handler — auto-enables group if needed
                     const checkbox = toolElement.querySelector('.tool-active-checkbox');
                     checkbox.addEventListener('change', async (e) => {
                         const tName = e.target.dataset.tool;
@@ -306,8 +298,6 @@ class Sidebar {
                             } else {
                                 await window.electronAPI.setToolActive?.(tName, active, {});
                             }
-                            // Ensure UI reflects final persisted state after possible
-                            // capability-update mid-flight reloads.
                             await this.loadMCPTools();
                         } catch (error) {
                             console.error('Failed to update tool state:', error);
@@ -315,7 +305,6 @@ class Sidebar {
                         }
                     });
 
-                    // Delete handler for custom tools
                     const deleteBtn = toolElement.querySelector('.delete-tool-btn');
                     if (deleteBtn) {
                         deleteBtn.addEventListener('click', async (e) => {
@@ -348,6 +337,7 @@ class Sidebar {
                     const toolElement = document.createElement('div');
                     toolElement.className = 'mcp-tool-card';
                     toolElement.style.borderLeft = '3px solid #6b7280';
+                    toolElement.dataset.toolName = tool.name;
                     toolElement.innerHTML = `
                         <div class="tool-card-header">
                             <h4 class="tool-card-name">${tool.name}</h4>
@@ -356,6 +346,16 @@ class Sidebar {
                     `;
                     container.appendChild(toolElement);
                 });
+            }
+
+            if (!container._cardClickListenerAdded) {
+                container.addEventListener('click', (event) => {
+                    const card = event.target.closest('.mcp-tool-card');
+                    if (!card || !container.contains(card) || event.target.closest('.tool-toggle, .delete-tool-btn')) return;
+                    if (!card.dataset.toolName) return;
+                    window.mcpToolSetup?.open?.(tools.find((t) => t.name === card.dataset.toolName), this, { groupId: card.dataset.group || '', isCustom: customToolNames.has(card.dataset.toolName) });
+                });
+                container._cardClickListenerAdded = true;
             }
 
             // Update tool tester dropdown
@@ -583,9 +583,9 @@ class Sidebar {
     }
 
     selectTool(toolName) {
+        if (this.currentTab !== 'mcp') this.switchTab('mcp');
         const toolSelect = document.getElementById('tool-select');
-        if (toolSelect) toolSelect.value = toolName;
-        this.switchTab('mcp');
+        if (toolSelect) { toolSelect.value = toolName; toolSelect.focus(); }
     }
 
     async testTool() {

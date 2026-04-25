@@ -183,6 +183,11 @@ html[data-active-skin="design-d"] .capability-group-pad {
 html[data-active-skin="design-d"] .capability-group-pad.active {
     background: var(--skin-btn-bg) !important;
 }
+html[data-active-skin="design-d"] .capability-panel {
+    border: none !important;
+    box-shadow: none !important;
+    background: var(--skin-sidebar-bg) !important;
+}
 
 /* Recent Chats entries are rendered as .chat-session-compact (legacy alias: .session-item) */
 html[data-active-skin="design-d"] .chat-session-compact,
@@ -242,4 +247,28 @@ html[data-active-skin="design-d"] .calendar-widget,
 html[data-active-skin="design-d"] .agent-picker-widget, 
 html[data-active-skin="design-d"] .workflows-widget {
     border-color: transparent !important;
+}
+
+/* Keep Settings compact and consistent with non-pill controls */
+html[data-active-skin="design-d"] #settings-tab .settings-group {
+    gap: var(--space-2) !important;
+    padding: var(--space-3) !important;
+    border-radius: 8px !important;
+}
+
+html[data-active-skin="design-d"] #settings-tab .skin-action-row {
+    gap: var(--space-2) !important;
+}
+
+html[data-active-skin="design-d"] #settings-tab .secondary-btn,
+html[data-active-skin="design-d"] #settings-tab .danger-btn,
+html[data-active-skin="design-d"] #settings-tab .primary-btn {
+    border-radius: 8px !important;
+    min-height: var(--control-h-md) !important;
+    padding: 0 var(--space-3) !important;
+}
+
+html[data-active-skin="design-d"] #settings-tab .danger-btn:hover,
+html[data-active-skin="design-d"] #settings-tab .danger-btn:active {
+    transform: none !important;
 }

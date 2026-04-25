@@ -33,7 +33,7 @@
     <link rel="stylesheet" href="styles/buttons.css?v=7">
     <link rel="stylesheet" href="styles/api-provider-settings.css?v=1">
     <link rel="stylesheet" href="styles/rule-manager.css?v=7">
-    <link rel="stylesheet" href="styles/capability-panel.css?v=1">
+    <link rel="stylesheet" href="styles/capability-panel.css?v=3">
     <link rel="stylesheet" href="styles/chat-tabs.css?v=1">
     <link rel="stylesheet" href="styles/commands.css?v=2">
     <link rel="stylesheet" href="styles/skin-manager.css?v=1">
@@ -151,14 +151,6 @@
                             <span class="icon">⚙️</span>
                             <span class="label">Settings</span>
                         </button>
-                        <button class="nav-btn" data-tab="mcp">
-                            <span class="icon">🔧</span>
-                            <span class="label">MCP</span>
-                        </button>
-                        <button class="nav-btn" data-tab="workflows">
-                            <span class="icon">🔄</span>
-                            <span class="label">Workflows</span>
-                        </button>
                         <button class="nav-btn" data-tab="llm">
                             <span class="icon">🤖</span>
                             <span class="label">LLM Settings</span>
@@ -228,13 +220,11 @@
                             <span id="type-size-display">13px</span>
                         </div>
                         <input type="range" id="type-size-slider" min="11" max="18" step="1" value="13">
-                        <p class="settings-description">Sets the default text size used by UI typography tokens.</p>
                     </div>
                 </div>
 
                 <div class="settings-group privacy-section">
                     <h3>🔒 Privacy</h3>
-                    <p class="settings-description">Manage your conversation history and data.</p>
                     <button id="delete-all-conversations-btn" class="danger-btn">
                         🗑️ Delete All Conversations
                     </button>
@@ -242,7 +232,6 @@
 
                 <div class="settings-group skin-settings-section">
                     <h3>🎨 Visual Skins (Experimental)</h3>
-                    <p class="settings-description">Enable runtime skins and choose compatible concepts with supported themes.</p>
                     <label class="skin-feature-toggle">
                         <input type="checkbox" id="skin-feature-enabled">
                         Enable skin system
@@ -507,7 +496,7 @@
 
                 <div class="workflows-widget collapsible-widget">
                     <div class="widget-header" id="toggle-workflows-widget">
-                        <span>⚡ Workflows</span>
+                        <span class="workflow-header-label">⚡ Workflows</span>
                         <span class="collapse-arrow">▼</span>
                     </div>
                     <div class="widget-content" id="saved-workflows-list">
@@ -562,6 +551,7 @@
     </div>
 
     <script src="electron-api.js?v=9"></script>
+    <script src="components/mcp-tool-setup.js?v=1"></script>
     <script src="components/sidebar.js?v=9"></script>
     <script src="components/command-handler.js?v=1"></script>
     <script src="components/chart-renderer.js?v=1"></script>
@@ -580,9 +570,10 @@
     <script src="components/rule-manager.js?v=7"></script>
     <script src="components/stats.js?v=7"></script>
     <script src="components/workflow-editor.js?v=1"></script>
-    <script src="components/capability-panel.js?v=1"></script>
+    <script src="components/capability-panel.js?v=2"></script>
     <script src="components/skin-manager.js?v=1"></script>
     <script src="components/plugin-panel.js?v=2"></script>
+    <script src="components/workflow-widget.js?v=1"></script>
     <script src="components/plugin-studio-tts-panel.js?v=6"></script>
     <script src="components/plugin-studio-panel.js?v=2"></script>
     <script src="app.js?v=7"></script>
