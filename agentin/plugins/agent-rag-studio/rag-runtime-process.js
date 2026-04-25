@@ -79,6 +79,21 @@ function saveState(message = '') {
     fs.writeFileSync(runtime.statePath, JSON.stringify(runtime.state, null, 2), 'utf-8');
 }
 
+function loadInitialState() {
+    const liveState = safeReadJson(runtime.statePath, null);
+    if (liveState) {
+        return normalizeState(liveState);
+    }
+
+    const defaultStatePath = path.join(runtime.dataDir, 'state.default.json');
+    const defaultState = safeReadJson(defaultStatePath, null);
+    if (defaultState) {
+        return normalizeState(defaultState);
+    }
+
+    return normalizeState(createDefaultState());
+}
+
 function datasetFilePath(datasetId) {
     return path.join(runtime.datasetsDir, `${datasetId}.json`);
 }
@@ -836,7 +851,7 @@ async function initialize(payload) {
         chunkOverlap: Math.max(0, Number(cfg.chunkOverlap) || runtime.config.chunkOverlap)
     };
 
-    runtime.state = normalizeState(safeReadJson(runtime.statePath, createDefaultState()));
+    runtime.state = loadInitialState();
     saveState('RAG runtime initialized.');
 
     return {

@@ -693,14 +693,34 @@ ${transcript}`;
             fs.writeFileSync(this.systemPromptPath, this._defaultSystemPrompt(), 'utf-8');
         }
 
-        // Seed state.json if missing
+        // Seed state.json if missing (prefer state.default.json template when present)
         if (!fs.existsSync(this.statePath)) {
-            this._saveStateData({
-                lastTickTime: null,
-                lastTaskName: null,
-                tasksCompleted: 0,
-                createdAt: new Date().toISOString(),
-            });
+            const defaultStatePath = path.join(path.dirname(this.statePath), 'state.default.json');
+            let seeded = false;
+            try {
+                if (fs.existsSync(defaultStatePath)) {
+                    const raw = JSON.parse(fs.readFileSync(defaultStatePath, 'utf-8'));
+                    const normalized = {
+                        lastTickTime: raw?.lastTickTime ?? null,
+                        lastTaskName: raw?.lastTaskName ?? null,
+                        tasksCompleted: Number.isFinite(raw?.tasksCompleted) ? raw.tasksCompleted : 0,
+                        createdAt: raw?.createdAt || new Date().toISOString(),
+                    };
+                    this._saveStateData(normalized);
+                    seeded = true;
+                }
+            } catch (e) {
+                console.warn('[MemoryDaemon] Failed to read state.default.json, falling back to generated defaults:', e.message);
+            }
+
+            if (!seeded) {
+                this._saveStateData({
+                    lastTickTime: null,
+                    lastTaskName: null,
+                    tasksCompleted: 0,
+                    createdAt: new Date().toISOString(),
+                });
+            }
         }
     }
 

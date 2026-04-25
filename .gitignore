@@ -37,3 +37,9 @@ temp/
 
 # Local agent runtime state
 agentin/memory/.hashes.json
+
+# Per-agent runtime memory/state (generated automatically at runtime)
+agentin/agents/pro/*/memory/compact.md
+agentin/agents/pro/*/config/state.json
+agentin/plugins/agent-rag-studio/data/state.json
+agentin/userabout/memoryaboutuser.md
