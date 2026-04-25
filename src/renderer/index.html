@@ -353,8 +353,8 @@
                 <div class="llm-settings" style="display: flex; flex-direction: column; gap: 0.25rem;">
                     <div class="system-prompt-container" style="margin: 0;">
                         <h3 style="margin: 0 0 0.1rem 0; font-size: 1rem;">System Prompt</h3>
-                        <textarea id="system-prompt" placeholder="Enter system prompt..."
-                            style="margin: 0 0 0.1rem 0; width: 100%; min-height: 80px;"></textarea>
+                        <textarea id="system-prompt" placeholder="Enter system prompt..." rows="12"
+                            style="margin: 0 0 0.1rem 0; width: 100%; min-height: 20rem;"></textarea>
                         <button id="save-prompt-btn" class="primary-btn" style="margin: 0;">Save System Prompt</button>
                     </div>
 
@@ -364,7 +364,12 @@
                             style="margin: 0 0 0.25rem 0;">
                             <!-- Rules will be dynamically added here -->
                         </div>
-                        <button id="add-rule-btn" class="secondary-btn" style="margin: 0;">+ Add Rule</button>
+                        <div id="rules-action-row" class="rules-action-row">
+                            <button id="add-rule-btn" class="secondary-btn" style="margin: 0;">+ Add Rule</button>
+                            <button id="export-rules-btn" class="secondary-btn" style="margin: 0;">Export Rules</button>
+                            <button id="import-rules-btn" class="secondary-btn" style="margin: 0;">Import Rules</button>
+                            <input type="file" id="import-rules-file" accept=".json" style="display: none;">
+                        </div>
                     </div>
                 </div>
             </section>

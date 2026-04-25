@@ -17,21 +17,6 @@ class RuleManager {
         const rulesSection = document.querySelector('.llm-settings');
         if (!rulesSection) return;
 
-        // Check if import/export buttons already exist to prevent duplication
-        if (document.getElementById('export-rules-btn')) return;
-
-        const btnContainer = document.createElement('div');
-        btnContainer.style.cssText = 'display: flex; gap: 0.5rem; margin-top: 1rem;';
-        btnContainer.innerHTML = `
-            <button id="export-rules-btn" class="secondary-btn">📤 Export Rules</button>
-            <button id="import-rules-btn" class="secondary-btn">📥 Import Rules</button>
-            <input type="file" id="import-rules-file" accept=".json" style="display: none;">
-        `;
-
-        if (addRuleBtn) {
-            addRuleBtn.parentNode.insertBefore(btnContainer, addRuleBtn.nextSibling);
-        }
-
         document.getElementById('export-rules-btn')?.addEventListener('click', () => this.exportRules());
         document.getElementById('import-rules-btn')?.addEventListener('click', () => {
             document.getElementById('import-rules-file').click();

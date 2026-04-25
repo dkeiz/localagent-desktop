@@ -127,6 +127,18 @@
     display: block;
 }
 
+/* LLM tab can exceed viewport height because rules area adds extra actions */
+#llm-tab.tab-content.active {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Let LLM settings size to content so bottom action buttons are not clipped */
+#llm-tab .llm-settings {
+    height: auto;
+    min-height: 0;
+}
+
 /* Tools tab needs flex layout for proper vertical expansion */
 #tools-tab.tab-content.active {
     display: flex;

@@ -12,6 +12,32 @@
     overflow-y: auto;
 }
 
+.rules-action-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+#llm-tab .rules-action-row > .secondary-btn {
+    align-self: center;
+    width: auto;
+    min-height: var(--control-h-md) !important;
+    padding: 0 var(--space-3) !important;
+    border-radius: var(--radius-md) !important;
+    border: 1px solid #9aa3b2 !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+    opacity: 1 !important;
+    font-size: var(--text-xs) !important;
+    font-weight: 500 !important;
+}
+
+#llm-tab .rules-action-row > .secondary-btn:hover {
+    background: #f3f4f6 !important;
+    border-color: #6b7280 !important;
+}
+
 .prompt-rule-item {
     background: var(--card-bg, #fff);
     border: 1px solid var(--border-color, #ddd);
@@ -57,8 +83,9 @@
 }
 
 .prompt-rule-item .icon-btn {
-    background: #f0f0f0;
-    border: 1px solid #ccc;
+    background: var(--bg-secondary, #f0f0f0);
+    border: 1px solid var(--border-color, #bfc4cc);
+    color: var(--text-primary, #1f2937);
     cursor: pointer;
     padding: 0.25rem 0.5rem;
     font-size: 1rem;
@@ -66,7 +93,7 @@
 }
 
 .prompt-rule-item .icon-btn:hover {
-    background: #e0e0e0;
+    background: var(--hover-bg, #e6e9ef);
 }
 
 .prompt-rule-item .rule-content-container {
