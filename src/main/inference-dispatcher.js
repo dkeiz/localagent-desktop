@@ -22,10 +22,9 @@ class InferenceDispatcher {
         this.mcpServer = mcpServer;
         this.agentManager = null;
 
-        // Simple mutex to prevent concurrent inference calls from racing
-        this._lock = null;
         this._lockMode = null;
         this._lockPreemptible = false;
+        this._laneLocks = new Map();
         this._runtimeContextCache = new Map();
     }
 
@@ -51,15 +50,16 @@ class InferenceDispatcher {
     async dispatch(prompt, history = [], options = {}) {
         const mode = options.mode || 'chat';
         const preemptible = options.preemptible === true;
-        const originalProvider = this.aiService.getCurrentProvider();
-        let provider = options.provider || originalProvider;
+        const provider = String(options.provider || this.aiService.getCurrentProvider() || 'ollama').trim().toLowerCase() || 'ollama';
+        const concurrencyMode = this._normalizeConcurrencyMode(
+            options.concurrencyMode || options.concurrency_mode || (options.skipLock ? 'parallel' : 'queued')
+        );
 
         // Decide what to inject based on mode (callers can override)
         const includeTools = options.includeTools ?? (mode === 'chat');
         const includeRules = options.includeRules ?? (mode === 'chat');
         const includeEnv = options.includeEnv ?? (mode === 'chat' || mode === 'internal');
         const skipMemoryOnStart = options.skipMemoryOnStart === true;
-        const skipLock = options.skipLock === true;
 
         // Resolve model once here (not in each adapter)
         if (!options.model) {
@@ -81,6 +81,14 @@ class InferenceDispatcher {
         if (options.modelSpec && options.runtimeConfig) {
             options.runtimeConfig = await this._applyUiRuntimeOverrides(options.modelSpec, options.runtimeConfig);
         }
+
+        const scheduling = await this._resolveSchedulingDecision({
+            provider,
+            mode,
+            concurrencyMode,
+            modelSpec: options.modelSpec,
+            runtimeConfig: options.runtimeConfig
+        });
 
         if (!options.thinkingMode) {
             if (options.runtimeConfig?.reasoning) {
@@ -111,45 +119,105 @@ class InferenceDispatcher {
             ...(prompt ? [{ role: 'user', content: prompt }] : [])
         ];
 
-        // Foreground chat can preempt low-priority internal/background calls.
-        if (mode === 'chat' && this._lock && this._lockPreemptible) {
-            const stopped = this.aiService.stopGeneration();
-            if (stopped) {
-                console.log(`[Dispatcher] Preempted ${this._lockMode || 'background'} inference for foreground chat`);
-            }
-        }
-
-        // Acquire lock — serializes concurrent calls so they don't race.
-        // skipLock allows fire-and-forget subagent dispatches to run concurrently.
-        if (!skipLock) await this._acquireLock();
-        try {
+        const execute = async () => {
             this._lockMode = mode;
             this._lockPreemptible = preemptible;
-            if (options.provider && options.provider !== originalProvider) {
-                await this.aiService.setProvider(options.provider);
-                provider = options.provider;
-            }
-            console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} skipLock=${skipLock} historyLen=${history.length}`);
-            const response = await this.aiService.sendMessage(messages, options);
+            console.log(`[Dispatcher] mode=${mode} model=${options.model || 'default'} tools=${includeTools} rules=${includeRules} provider=${provider} concurrency=${scheduling.effectiveMode} lane=${scheduling.laneKey || 'none'} historyLen=${history.length}`);
+            const response = await this.aiService.sendMessage(messages, { ...options, provider });
             response.renderContext = {
                 provider,
                 model: options.model || response.model || '',
-                runtimeConfig: options.runtimeConfig ? JSON.parse(JSON.stringify(options.runtimeConfig)) : null
+                runtimeConfig: options.runtimeConfig ? JSON.parse(JSON.stringify(options.runtimeConfig)) : null,
+                concurrency: {
+                    requestedMode: scheduling.requestedMode,
+                    effectiveMode: scheduling.effectiveMode,
+                    needsEnablement: scheduling.needsEnablement
+                }
+            };
+            response.concurrency = {
+                requested_mode: scheduling.requestedMode,
+                effective_mode: scheduling.effectiveMode,
+                provider,
+                lane: scheduling.laneKey || null,
+                global_enabled: scheduling.globalEnabled,
+                needs_enablement: scheduling.needsEnablement
             };
             await this._rememberWorkingRuntimeParams(provider, options.model, options.modelSpec, options.runtimeConfig, response);
             return response;
+        };
+
+        try {
+            return await this._executeScheduled(scheduling.laneKey, execute);
         } finally {
-            if (options.provider && originalProvider && this.aiService.getCurrentProvider() !== originalProvider) {
-                try {
-                    await this.aiService.setProvider(originalProvider);
-                } catch (error) {
-                    console.error('[Dispatcher] Failed to restore provider:', error.message);
-                }
-            }
             this._lockMode = null;
             this._lockPreemptible = false;
-            if (!skipLock) this._releaseLock();
         }
+    }
+
+    async _resolveSchedulingDecision({ provider, mode, concurrencyMode, modelSpec, runtimeConfig }) {
+        const globalEnabled = (await this.db.getSetting('llm.concurrency.enabled')) === 'true';
+        const concurrencyCaps = modelSpec?.capabilities?.concurrency || {};
+        const providerSupportsParallel = Boolean(concurrencyCaps.supported);
+        const providerAllowsParallel = Boolean(runtimeConfig?.concurrency?.allowParallel);
+        const requestedMode = concurrencyMode || 'queued';
+
+        if (requestedMode !== 'parallel') {
+            return {
+                requestedMode,
+                effectiveMode: 'queued',
+                laneKey: '__global__',
+                globalEnabled,
+                needsEnablement: false
+            };
+        }
+
+        if (!globalEnabled) {
+            return {
+                requestedMode,
+                effectiveMode: 'queued',
+                laneKey: '__global__',
+                globalEnabled,
+                needsEnablement: true
+            };
+        }
+
+        if (providerSupportsParallel && providerAllowsParallel) {
+            return {
+                requestedMode,
+                effectiveMode: 'parallel',
+                laneKey: null,
+                globalEnabled,
+                needsEnablement: false
+            };
+        }
+
+        return {
+            requestedMode,
+            effectiveMode: 'queued',
+            laneKey: `provider:${provider || 'default'}`,
+            globalEnabled,
+            needsEnablement: false
+        };
+    }
+
+    _normalizeConcurrencyMode(value) {
+        const mode = String(value || '').trim().toLowerCase();
+        return mode === 'parallel' ? 'parallel' : 'queued';
+    }
+
+    async _executeScheduled(laneKey, work) {
+        if (!laneKey) {
+            return work();
+        }
+        const previous = this._laneLocks.get(laneKey) || Promise.resolve();
+        const queued = previous.catch(() => null).then(() => work());
+        const lanePending = queued.finally(() => {
+            if (this._laneLocks.get(laneKey) === lanePending) {
+                this._laneLocks.delete(laneKey);
+            }
+        });
+        this._laneLocks.set(laneKey, lanePending);
+        return lanePending;
     }
 
     async _applyUiRuntimeOverrides(modelSpec, runtimeConfig = {}) {
@@ -386,25 +454,6 @@ Tokens are resolved by the backend. Keep paths tokenized and forward-slashed in 
         ctx += `- The actual user question is in <original_user_question> tags when tool results are present. Focus your answer on THAT question.\n`;
         ctx += `</mcp_tools>`;
         return ctx;
-    }
-
-    // ------- simple async mutex -------
-
-    async _acquireLock() {
-        while (this._lock) {
-            await this._lock;
-        }
-        let release;
-        this._lock = new Promise(r => { release = r; });
-        this._lock._release = release;
-    }
-
-    _releaseLock() {
-        if (this._lock && this._lock._release) {
-            const release = this._lock._release;
-            this._lock = null;
-            release();
-        }
     }
 }
 

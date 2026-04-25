@@ -31,7 +31,7 @@
     <link rel="stylesheet" href="styles/layout.css?v=19">
     <link rel="stylesheet" href="styles/theme.css?v=8">
     <link rel="stylesheet" href="styles/buttons.css?v=7">
-    <link rel="stylesheet" href="styles/api-provider-settings.css?v=1">
+    <link rel="stylesheet" href="styles/api-provider-settings.css?v=2">
     <link rel="stylesheet" href="styles/rule-manager.css?v=7">
     <link rel="stylesheet" href="styles/capability-panel.css?v=3">
     <link rel="stylesheet" href="styles/chat-tabs.css?v=1">
@@ -360,8 +360,6 @@
 
                     <div class="custom-rules-container" style="margin: 0;">
                         <h3 style="margin: 0 0 0.25rem 0; font-size: 1rem;">Custom Rules</h3>
-                        <p style="color: #666; margin: 0; font-size: 0.85rem; line-height: 1.2;">Add custom rules that
-                            can be toggled on/off</p>
                         <div id="prompt-rules-list" class="prompt-rules-container scrollable"
                             style="margin: 0 0 0.25rem 0;">
                             <!-- Rules will be dynamically added here -->
@@ -409,12 +407,22 @@
 
                         <!-- Dynamic provider-specific settings (API keys, etc.) -->
                         <div id="provider-settings-container"></div>
+                        <label class="api-toggle-row">
+                            <span class="api-toggle-copy">
+                                <span class="api-toggle-title">Enable parallel inference</span>
+                                <span class="api-toggle-help">Required before any run can use concurrency_mode="parallel".</span>
+                            </span>
+                            <input type="checkbox" id="global-concurrency-enabled">
+                        </label>
 
                         <div id="context-window-section" class="api-subsection context-window-section" style="display: none;">
                             <div id="context-window-configurable" class="slider-control context-window-control">
                                 <div class="slider-labels">
                                     <label for="context-slider" id="context-display-label">Context Size</label>
-                                    <span id="context-display">8K (8192 tokens)</span>
+                                    <div class="context-inline-meta">
+                                        <span id="context-display">8K (8192 tokens)</span>
+                                        <input id="context-custom-input" type="text" inputmode="numeric" placeholder="custom tokens">
+                                    </div>
                                 </div>
                                 <input type="range" id="context-slider" min="0" max="9" step="1" value="1"
                                     oninput="window.mainPanel && window.mainPanel.updateContextDisplay(this.value)"
@@ -563,6 +571,7 @@
     <script src="components/tts-text-utils.js?v=1"></script>
     <script src="components/tts-controller.js?v=2"></script>
     <script src="components/main-panel.js?v=12"></script>
+    <script src="components/context-window-control.js?v=2"></script>
     <script src="components/chat-continuity.js?v=1"></script>
     <script src="components/calendar.js?v=8"></script>
     <script src="components/agent-picker.js?v=6"></script>

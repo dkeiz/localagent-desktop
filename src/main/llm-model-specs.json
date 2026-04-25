@@ -106,9 +106,7 @@
           "configurable": true
         }
       },
-      "notes": [
-        "Ollama can stream responses, but this app currently renders the final reply after the request completes."
-      ],
+      "notes": [],
       "models": [
         {
           "id": "ollama-qwen-reasoning",

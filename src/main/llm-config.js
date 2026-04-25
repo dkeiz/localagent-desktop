@@ -3,6 +3,7 @@ const rawSpecs = require('./llm-model-specs.json');
 
 const SPEC_FILE = path.join(__dirname, 'llm-model-specs.json');
 const VISIBILITY_MODES = ['show', 'min', 'hide'];
+const PROVIDERS_WITH_PARALLEL_TOGGLE = new Set(['ollama', 'lmstudio', 'local-openai']);
 
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -222,6 +223,16 @@ function resolveModelSpec(provider, model) {
     family || {}
   );
 
+  const capabilities = merged.capabilities || clone(defaults.capabilities) || {};
+  const concurrencyCaps = inferConcurrencyCapabilities({
+    provider: providerId,
+    capabilities
+  });
+  capabilities.concurrency = {
+    ...(isPlainObject(capabilities.concurrency) ? capabilities.concurrency : {}),
+    ...concurrencyCaps
+  };
+
   return {
     provider: providerId,
     providerLabel: providerSpec.label || providerId,
@@ -233,8 +244,22 @@ function resolveModelSpec(provider, model) {
     specFile: SPEC_FILE,
     settings: merged.settings || {},
     runtime: merged.runtime || clone(defaults.runtime) || {},
-    capabilities: merged.capabilities || clone(defaults.capabilities) || {},
+    capabilities,
     notes: merged.notes || []
+  };
+}
+
+function inferConcurrencyCapabilities(spec) {
+  const explicit = isPlainObject(spec?.capabilities?.concurrency)
+    ? spec.capabilities.concurrency
+    : {};
+  const provider = normalizeId(spec?.provider);
+  const supported = explicit.supported !== undefined
+    ? Boolean(explicit.supported)
+    : PROVIDERS_WITH_PARALLEL_TOGGLE.has(provider);
+  return {
+    supported,
+    sameProvider: explicit.sameProvider !== undefined ? Boolean(explicit.sameProvider) : supported
   };
 }
 
@@ -310,6 +335,7 @@ function sanitizeRuntimeConfig(spec, candidate = {}) {
   const reasoningCaps = capabilities.reasoning || {};
   const streamingCaps = capabilities.streaming || {};
   const routingCaps = capabilities.providerRouting || {};
+  const concurrencyCaps = inferConcurrencyCapabilities(spec);
 
   const sanitized = {
     reasoning: {
@@ -326,6 +352,9 @@ function sanitizeRuntimeConfig(spec, candidate = {}) {
     },
     providerRouting: {
       requireParameters: Boolean(effective.providerRouting?.requireParameters)
+    },
+    concurrency: {
+      allowParallel: Boolean(effective.concurrency?.allowParallel)
     },
     contextWindow: sanitizeContextWindow(spec, effective.contextWindow),
     requestOverrides: sanitizeRequestOverrides(spec, effective.requestOverrides)
@@ -361,6 +390,9 @@ function sanitizeRuntimeConfig(spec, candidate = {}) {
   sanitized.streaming.reasoning = streamingCaps.reasoning !== 'none' ? sanitized.streaming.reasoning : false;
   sanitized.providerRouting.requireParameters = routingCaps.requireParameters
     ? sanitized.providerRouting.requireParameters
+    : false;
+  sanitized.concurrency.allowParallel = concurrencyCaps.supported
+    ? sanitized.concurrency.allowParallel
     : false;
 
   return sanitized;

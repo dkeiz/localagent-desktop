@@ -191,6 +191,9 @@ function registerLlmHandlers(ipcMain, runtime) {
   ipcMain.handle('llm:save-config', async (event, config) => {
     try {
       console.log('Saving config:', config);
+      if (config.concurrencyEnabled !== undefined) {
+        await db.saveSetting('llm.concurrency.enabled', config.concurrencyEnabled ? 'true' : 'false');
+      }
       await saveActiveSelection(db, config.provider, config.model);
 
       const providerSpec = getProviderSpec(config.provider);
@@ -281,6 +284,7 @@ function registerLlmHandlers(ipcMain, runtime) {
       const { provider, model, source } = await getEffectiveLlmSelection(db);
       const config = { provider, model };
       config.selectionSource = source;
+      config.concurrencyEnabled = (await db.getSetting('llm.concurrency.enabled')) === 'true';
 
       if (provider) {
         config.providerLabel = getProviderSpec(provider)?.label || provider;

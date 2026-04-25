@@ -21,9 +21,9 @@ module.exports = {
     };
 
     const result = await invokeMultipleSubAgents(manager, 'parent-1', [
-      { id: 1, task: 'first' },
+      { id: 1, task: 'first', concurrency_mode: 'parallel' },
       { id: 2, task: 'second' },
-      { id: 3, task: 'third' }
+      { id: 3, task: 'third', options: { concurrencyMode: 'parallel' } }
     ]);
 
     assert.equal(result.success, true, 'Batch should be accepted');
@@ -31,5 +31,10 @@ module.exports = {
     assert.equal(calls[0].options.queueProvider, 'provider:openai');
     assert.equal(calls[1].options.queueProvider, 'provider:ollama');
     assert.equal(calls[2].options.queueProvider, 'provider:openai');
+    assert.equal(calls[0].options.provider, 'openai');
+    assert.equal(calls[1].options.provider, 'ollama');
+    assert.equal(calls[0].options.concurrencyMode, 'parallel');
+    assert.equal(calls[1].options.concurrencyMode, 'queued');
+    assert.equal(calls[2].options.concurrencyMode, 'parallel');
   }
 };

@@ -43,7 +43,6 @@ class AgentManager {
     }
 
     async initialize() {
-        // Ensure folder structure
         const dirs = [
             this.basePath,
             path.join(this.basePath, 'pro'),
@@ -55,10 +54,8 @@ class AgentManager {
             }
         }
 
-        // Seed any missing predefined agents
         await this._seedDefaultAgents(await this.db.getAgents());
 
-        // Ensure folders exist for all agents
         for (const agent of await this.db.getAgents()) {
             this._ensureAgentFolder(agent);
         }
@@ -107,7 +104,6 @@ class AgentManager {
             }
         }
 
-        // Write system.md if it doesn't exist
         const systemFile = path.join(folderPath, 'system.md');
         if (!fs.existsSync(systemFile) && agent.system_prompt) {
             fs.writeFileSync(systemFile, agent.system_prompt, 'utf-8');
@@ -122,8 +118,6 @@ class AgentManager {
     _getSafeFolderName(name) {
         return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
     }
-
-    // ── CRUD ──
 
     async createAgent({ name, type = 'pro', icon = '🤖', system_prompt, description, config }) {
         const folderName = this._getSafeFolderName(name);
@@ -141,7 +135,6 @@ class AgentManager {
     async updateAgent(id, data) {
         const result = await this.db.updateAgent(id, data);
 
-        // If system_prompt changed, sync to file
         if (data.system_prompt) {
             const agent = await this.db.getAgent(id);
             if (agent) {
@@ -156,11 +149,7 @@ class AgentManager {
 
     async deleteAgent(id) {
         const agent = await this.db.getAgent(id);
-        if (agent) {
-            // Remove folder (optional — keep data for safety)
-            // const folderPath = this._getAgentFolderPath(agent);
-            // if (fs.existsSync(folderPath)) fs.rmSync(folderPath, { recursive: true });
-        }
+        if (agent) {}
         return await this.db.deleteAgent(id);
     }
 
@@ -172,22 +161,17 @@ class AgentManager {
         return await this.db.getAgent(id);
     }
 
-    // ── Lifecycle ──
-
     async activateAgent(agentId) {
         const agent = await this.db.getAgent(agentId);
         if (!agent) throw new Error(`Agent ${agentId} not found`);
 
-        // Set status to active
         await this.db.updateAgent(agentId, { status: 'active' });
 
-        // Find or create a session for this agent
         let session = await this.db.getAgentSession(agentId);
         if (!session) {
             session = await this.db.createAgentSession(agentId);
         }
 
-        // Auto-enable companion plugin if exists
         await this._enableCompanionPlugin(agent);
 
         return { agent, sessionId: session.id };
@@ -197,7 +181,6 @@ class AgentManager {
         const agent = await this.db.getAgent(agentId);
         if (!agent) return;
 
-        // Trigger compact if pro agent with enough history
         if (agent.type === 'pro') {
             try {
                 await this.compactAgent(agentId);
@@ -206,7 +189,6 @@ class AgentManager {
             }
         }
 
-        // Auto-disable companion plugin if exists
         await this._disableCompanionPlugin(agent);
 
         await this.db.updateAgent(agentId, { status: 'idle' });
@@ -219,11 +201,9 @@ class AgentManager {
         const session = await this.db.getAgentSession(agentId);
         if (!session) return;
 
-        // Get recent conversations
         const messages = await this.db.getConversations(100, session.id);
         if (messages.length < 4) return; // Not enough to summarize
 
-        // Build summary via internal dispatch
         const historyText = messages
             .map(m => `${m.role}: ${m.content}`)
             .slice(-20)  // Last 20 messages
@@ -236,7 +216,6 @@ class AgentManager {
                 { mode: 'internal', includeTools: false, includeRules: false }
             );
 
-            // Save compact summary to agent's memory folder
             const folderPath = this._getAgentFolderPath(agent);
             const compactFile = path.join(folderPath, 'memory', 'compact.md');
             const timestamp = new Date().toISOString();
@@ -280,7 +259,6 @@ class AgentManager {
                 return fs.readFileSync(compactFile, 'utf-8');
             }
         } catch (e) {
-            // No compact memory yet
         }
 
         return null;
@@ -335,7 +313,6 @@ ${task}`;
         try {
             return JSON.parse(candidate);
         } catch (error) {
-            // Fall through to brace-depth extraction.
         }
 
         const start = candidate.indexOf('{');
@@ -702,6 +679,10 @@ ${task}`;
 
             while (true) {
                 this._assertSubagentRunNotCancelled(run.run_id);
+                const dispatchProvider = String(run.provider || '').trim().toLowerCase() || null;
+                const concurrencyMode = String(run.concurrency_mode || 'queued').trim().toLowerCase() === 'parallel'
+                    ? 'parallel'
+                    : 'queued';
                 result = this.chainController
                     ? await this.chainController.executeWithChaining(
                         prompt,
@@ -714,7 +695,8 @@ ${task}`;
                             includeTools: true,
                             includeRules: false,
                             skipMemoryOnStart: true,
-                            skipLock: true,
+                            provider: dispatchProvider || undefined,
+                            concurrencyMode,
                             completionTools: ['complete_subtask'],
                             maxChainSteps: 24,
                             trace: traceHooks
@@ -730,7 +712,8 @@ ${task}`;
                             includeTools: true,
                             includeRules: false,
                             skipMemoryOnStart: true,
-                            skipLock: true
+                            provider: dispatchProvider || undefined,
+                            concurrencyMode
                         }
                     );
                 this._assertSubagentRunNotCancelled(run.run_id);
@@ -892,21 +875,7 @@ ${task}`;
                 console.error('[AgentManager] Delegated subtask failed:', error.message);
                 return null;
             });
-        let pending;
-
-        if (queueProvider) {
-            const previous = this.providerSubtaskQueues.get(queueProvider) || Promise.resolve();
-            const queued = previous.catch(() => null).then(execute);
-            const providerPending = queued.finally(() => {
-                if (this.providerSubtaskQueues.get(queueProvider) === providerPending) {
-                    this.providerSubtaskQueues.delete(queueProvider);
-                }
-            });
-            pending = providerPending;
-            this.providerSubtaskQueues.set(queueProvider, pending);
-        } else {
-            pending = execute();
-        }
+        let pending = execute();
 
         pending = pending.finally(() => {
             this.pendingSubtasks.delete(run.run_id);
@@ -914,8 +883,6 @@ ${task}`;
         this.pendingSubtasks.set(run.run_id, pending);
         return pending;
     }
-
-    // ── Sub-Agent Invocation ──
 
     async invokeSubAgent(parentSessionId, subAgentId, task, options = {}) {
         const agent = await this.db.getAgent(subAgentId);
@@ -927,6 +894,11 @@ ${task}`;
         const expectedOutput = options.expectedOutput || '';
         const subagentModeRaw = String(options.subagentMode || 'no_ui').trim().toLowerCase();
         const subagentMode = subagentModeRaw === 'ui' ? 'ui' : 'no_ui';
+        const provider = String(options.provider || '').trim().toLowerCase();
+        const queueProvider = String(options.queueProvider || '').trim();
+        const concurrencyMode = String(options.concurrencyMode || options.concurrency_mode || 'queued').trim().toLowerCase() === 'parallel'
+            ? 'parallel'
+            : 'queued';
         const run = this.subtaskRuntime.createRun({
             parentSessionId,
             subagentId: subAgentId,
@@ -934,7 +906,10 @@ ${task}`;
             task,
             contractType,
             expectedOutput,
-            subagentMode
+            subagentMode,
+            provider: provider || null,
+            queue_provider: queueProvider || null,
+            concurrency_mode: concurrencyMode
         });
 
         if (this.toolPermissionService && options.permissionsContract) {
@@ -957,7 +932,7 @@ ${task}`;
             identifiers
         });
 
-        this._startDelegatedRun(run, agent, task, contractType, expectedOutput, options.queueProvider || null);
+        this._startDelegatedRun(run, agent, task, contractType, expectedOutput, queueProvider || null);
 
         return {
             accepted: true,
@@ -974,6 +949,8 @@ ${task}`;
             contract_type: contractType,
             subagentMode,
             subagent_mode: subagentMode,
+            provider: provider || null,
+            concurrency_mode: concurrencyMode,
             status: run.status,
             identifiers,
             runDir: run.run_dir,
@@ -987,8 +964,6 @@ ${task}`;
         };
     }
 
-    // ── Companion Plugin Auto-Enable/Disable ──
-
     async _enableCompanionPlugin(agent) {
         return enableCompanionPlugin(this, agent);
     }
@@ -997,10 +972,7 @@ ${task}`;
         return disableCompanionPlugin(this, agent);
     }
 
-    // ── Agent Folder Path for External Access ──
-
     getAgentFolderPathById(agentId) {
-        // Synchronous lookup via cached agents — used by MCP context
         return null; // Will be resolved async via getAgent
     }
 
@@ -1010,16 +982,11 @@ ${task}`;
         return this._getAgentFolderPath(agent);
     }
 
-    // ── Batch Subagent Invocation ──
-
     async invokeMultipleSubAgents(parentSessionId, tasks, options = {}) {
         return invokeMultipleSubAgents(this, parentSessionId, tasks, options);
     }
 
-    // ── Cleanup ──
-
     async onAppQuit() {
-        // Deactivate all active agents
         const agents = await this.db.getAgents();
         for (const agent of agents) {
             if (agent.status === 'active') {

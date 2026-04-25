@@ -52,11 +52,16 @@ function resolveTaskProvider(agent, task, defaultProvider) {
 
 function normalizeInvokeOptions(task, provider) {
     const opts = task.options && typeof task.options === 'object' ? task.options : {};
+    const concurrencyModeRaw = task.concurrency_mode || task.concurrencyMode || opts.concurrency_mode || opts.concurrencyMode || 'queued';
+    const concurrencyMode = String(concurrencyModeRaw).trim().toLowerCase() === 'parallel' ? 'parallel' : 'queued';
     return {
         contractType: task.contractType || task.contract_type || opts.contractType || opts.contract_type,
         expectedOutput: task.expectedOutput || task.expected_output || opts.expectedOutput || opts.expected_output,
         subagentMode: task.subagentMode || task.subagent_mode || opts.subagentMode || opts.subagent_mode,
         permissionsContract: task.permissionsContract || task.permissions_contract || opts.permissionsContract || opts.permissions_contract || null,
+        provider,
+        concurrencyMode,
+        concurrency_mode: concurrencyMode,
         queueProvider: `provider:${provider}`
     };
 }

@@ -1,7 +1,5 @@
 (function () {
-    function providerLabel(provider, providerProfileMap) {
-        return providerProfileMap[provider]?.label || (provider.charAt(0).toUpperCase() + provider.slice(1));
-    }
+    function providerLabel(provider, providerProfileMap) { return providerProfileMap[provider]?.label || (provider.charAt(0).toUpperCase() + provider.slice(1)); }
 
     function prettyChannelLabel(value) {
         const labels = {
@@ -202,12 +200,14 @@
         const contextCaps = spec.capabilities?.contextWindow || {};
         const modalityCaps = spec.capabilities?.modalities || {};
         const requestOverrideCaps = spec.capabilities?.requestOverrides || {};
+        const concurrencyCaps = spec.capabilities?.concurrency || {};
         const visibilityOptions = visibilityOptionsFor(reasoningCaps);
         const effortOptions = Array.isArray(reasoningCaps.effortLevels) ? reasoningCaps.effortLevels : [];
         const reasoningChecked = runtimeConfig.reasoning?.enabled ? 'checked' : '';
         const reasoningControlAvailable = reasoningCaps.supported && reasoningCaps.toggle;
         const reasoningToggleDisabled = reasoningControlAvailable ? '' : 'disabled';
         const requireParamsChecked = runtimeConfig.providerRouting?.requireParameters ? 'checked' : '';
+        const concurrencyChecked = runtimeConfig.concurrency?.allowParallel ? 'checked' : '';
         const requestOverridesValue = runtimeConfig.requestOverrides && Object.keys(runtimeConfig.requestOverrides).length
             ? JSON.stringify(runtimeConfig.requestOverrides, null, 2)
             : '';
@@ -244,6 +244,9 @@
         }
         if (requestOverrideCaps.supported) {
             capabilityParts.push('Advanced request overrides');
+        }
+        if (concurrencyCaps.supported) {
+            capabilityParts.push('Parallel inference configurable');
         }
         if (spec.notes?.length) {
             capabilityParts.push(spec.notes[0]);
@@ -297,6 +300,7 @@
                     </span>
                     <input type="checkbox" id="model-require-params" ${requireParamsChecked}>
                 </label>` : ''}
+                ${concurrencyCaps.supported ? `<label class="api-toggle-row"><span class="api-toggle-copy"><span class="api-toggle-title">Allow parallel requests for this provider</span><span class="api-toggle-help">When enabled, same-provider calls may run concurrently if concurrency_mode is set to parallel.</span></span><input type="checkbox" id="model-concurrency-allow" ${concurrencyChecked}></label>` : ''}
             </div>
         `;
     }
@@ -324,6 +328,9 @@
                     ? Boolean(document.getElementById('model-require-params')?.checked)
                     : Boolean(baseRuntimeConfig.providerRouting?.requireParameters)
             },
+            concurrency: {
+                allowParallel: document.getElementById('model-concurrency-allow') ? Boolean(document.getElementById('model-concurrency-allow')?.checked) : Boolean(baseRuntimeConfig.concurrency?.allowParallel)
+            },
             requestOverrides: requestOverrides.value
         };
     }
@@ -338,6 +345,7 @@
         const modelSettingsSection = document.getElementById('llm-model-settings-section');
         const modelCapabilitiesContainer = document.getElementById('llm-model-capabilities');
         const modelConfigContainer = document.getElementById('llm-model-config-container');
+        const globalConcurrencyToggle = document.getElementById('global-concurrency-enabled');
         const currentConfigDisplay = document.getElementById('current-config-display');
         const currentConfigText = document.getElementById('current-config-text');
         const chatProviderSelect = document.getElementById('chat-provider-select');
@@ -371,6 +379,7 @@
 
         const buildProviderConfig = (provider, { includeModel = true, strict = false } = {}) => {
             const config = { provider };
+            if (globalConcurrencyToggle) config.concurrencyEnabled = Boolean(globalConcurrencyToggle.checked);
             const profile = getProviderProfile(provider);
             const model = llmModelSelect.value;
 
@@ -433,6 +442,7 @@
         const persistConfig = async (config, notificationMessage = null) => {
             await window.electronAPI.llm.saveConfig(config);
             currentConfig = await window.electronAPI.llm.getConfig();
+            if (globalConcurrencyToggle) globalConcurrencyToggle.checked = Boolean(currentConfig?.concurrencyEnabled);
             applyVisibilityToMainPanel(currentConfig?.runtimeConfig || config.runtimeConfig);
             setCurrentConfigLabel(currentConfigDisplay, currentConfigText, currentConfig);
             if (notificationMessage) {
@@ -910,6 +920,7 @@
         });
 
         currentConfig = await window.electronAPI.llm.getConfig();
+        if (globalConcurrencyToggle) globalConcurrencyToggle.checked = Boolean(currentConfig?.concurrencyEnabled);
         setCurrentConfigLabel(currentConfigDisplay, currentConfigText, currentConfig);
 
         if (currentConfig?.provider) {

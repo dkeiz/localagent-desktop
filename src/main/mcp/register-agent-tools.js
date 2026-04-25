@@ -61,10 +61,19 @@ function normalizeSubagentParams(params = {}) {
     icon: params.icon ? String(params.icon) : '🤖',
     run_id: params.run_id ? String(params.run_id) : ''
     ,
+    provider: params.provider ? String(params.provider).trim().toLowerCase() : '',
+    concurrency_mode: String(params.concurrency_mode || params.concurrencyMode || '').trim().toLowerCase() === 'parallel'
+      ? 'parallel'
+      : 'queued',
     permissions_contract: params.permissions_contract && typeof params.permissions_contract === 'object'
       ? params.permissions_contract
       : null
   };
+}
+
+async function isGlobalConcurrencyEnabled(server) {
+  if (!server?.db || typeof server.db.getSetting !== 'function') return false;
+  return (await server.db.getSetting('llm.concurrency.enabled')) === 'true';
 }
 
 async function runBatchSubagents(server, params) {
@@ -75,14 +84,28 @@ async function runBatchSubagents(server, params) {
     throw new Error('Batch subagent invocation is unavailable');
   }
 
+  const normalizedTasks = params.tasks.map(task => {
+    if (!task || typeof task !== 'object') return task;
+    if (task.concurrency_mode || task.concurrencyMode || !params.concurrency_mode) return task;
+    return { ...task, concurrency_mode: params.concurrency_mode };
+  });
+  const globalConcurrencyEnabled = await isGlobalConcurrencyEnabled(server);
+  const requestedParallel = normalizedTasks.some(task => String(task?.concurrency_mode || task?.concurrencyMode || '').trim().toLowerCase() === 'parallel');
   return server._agentManager.invokeMultipleSubAgents(
     server.getCurrentSessionId() || null,
-    params.tasks,
+    normalizedTasks,
     {
       wait: params.wait,
       timeout_ms: params.timeout_ms
     }
-  );
+  ).then(result => ({
+    ...result,
+    concurrency: {
+      global_enabled: globalConcurrencyEnabled,
+      requested_parallel: requestedParallel,
+      needs_enablement: requestedParallel && !globalConcurrencyEnabled
+    }
+  }));
 }
 
 async function resolveSubagent(server, params) {
@@ -187,6 +210,8 @@ async function runSubagent(server, params) {
   const agent = await resolveSubagent(server, params);
   const defaultMode = 'no_ui';
   const subagentMode = normalizeSubagentMode(params.subagent_mode, defaultMode);
+  const globalConcurrencyEnabled = await isGlobalConcurrencyEnabled(server);
+  const requestedParallel = params.concurrency_mode === 'parallel';
   const result = await server._agentManager.invokeSubAgent(
     server.getCurrentSessionId() || null,
     agent.id,
@@ -195,6 +220,8 @@ async function runSubagent(server, params) {
       contractType: params.contract_type || 'task_complete',
       expectedOutput: params.expected_output || '',
       subagentMode,
+      provider: params.provider || undefined,
+      concurrencyMode: params.concurrency_mode || 'queued',
       permissionsContract: params.permissions_contract || null
     }
   );
@@ -221,6 +248,11 @@ async function runSubagent(server, params) {
       agent: formatSubagent(agent),
       waited: true,
       done: true,
+      concurrency: {
+        global_enabled: globalConcurrencyEnabled,
+        requested_mode: params.concurrency_mode || 'queued',
+        needs_enablement: requestedParallel && !globalConcurrencyEnabled
+      },
       status: completed?.status || result.status,
       identifiers: queuedRun.identifiers,
       run_id: queuedRun.run_id,
@@ -238,6 +270,11 @@ async function runSubagent(server, params) {
     action: 'run',
     agent: formatSubagent(agent),
     waited: false,
+    concurrency: {
+      global_enabled: globalConcurrencyEnabled,
+      requested_mode: params.concurrency_mode || 'queued',
+      needs_enablement: requestedParallel && !globalConcurrencyEnabled
+    },
     identifiers: queuedRun.identifiers,
     run_id: queuedRun.run_id,
     child_session_id: queuedRun.child_session_id,
@@ -348,9 +385,10 @@ function registerAgentTools(server) {
         id: { type: 'number', description: 'Sub-agent id. Prefer id over name; use action="list" first if needed.' },
         name: { type: 'string', description: 'Sub-agent name for run/new/stop actions' },
         task: { type: 'string', description: 'Focused task for action="run"' },
+        provider: { type: 'string', description: 'Optional provider override for this delegated run.' },
         tasks: {
           type: 'array',
-          description: 'Batch entries for action="run_batch". Each entry supports id/name, task, provider, contract_type, expected_output, subagent_mode, and permissions_contract.'
+          description: 'Batch entries for action="run_batch". Each entry supports id/name, task, provider, concurrency_mode, contract_type, expected_output, subagent_mode, and permissions_contract.'
         },
         contract_type: {
           type: 'string',
@@ -365,6 +403,11 @@ function registerAgentTools(server) {
         subagent_mode: {
           type: 'string',
           description: 'Subagent mode: "ui" (open child chat tab animation) or "no_ui" (backend only). If omitted, default is "no_ui".'
+        },
+        concurrency_mode: {
+          type: 'string',
+          description: 'Inference scheduling mode: "queued" (default) or "parallel". If parallel is requested while global parallel inference is disabled, execution falls back to queued and needs_enablement=true is returned.',
+          default: 'queued'
         },
         wait: {
           type: 'boolean',
@@ -403,6 +446,7 @@ function registerAgentTools(server) {
         agent_id: { type: 'number', description: 'Numeric sub-agent id (preferred when known)' },
         agent_name: { type: 'string', description: 'Sub-agent name (case-insensitive fallback)' },
         task: { type: 'string', description: 'Focused task for the sub-agent' },
+        provider: { type: 'string', description: 'Optional provider override for this delegated run' },
         contract_type: {
           type: 'string',
           description: 'Expected completion status for success',
@@ -416,6 +460,10 @@ function registerAgentTools(server) {
         subagent_mode: {
           type: 'string',
           description: 'Subagent mode: "ui" or "no_ui"'
+        },
+        concurrency_mode: {
+          type: 'string',
+          description: 'Inference scheduling mode: "queued" (default) or "parallel".'
         },
         wait: {
           type: 'boolean',
@@ -439,9 +487,11 @@ function registerAgentTools(server) {
     id: params.agent_id,
     name: params.agent_name,
     task: params.task,
+    provider: params.provider,
     contract_type: params.contract_type,
     expected_output: params.expected_output,
     subagent_mode: params.subagent_mode,
+    concurrency_mode: params.concurrency_mode,
     wait: params.wait,
     timeout_ms: params.timeout_ms,
     permissions_contract: params.permissions_contract

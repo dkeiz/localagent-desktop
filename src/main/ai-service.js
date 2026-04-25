@@ -103,15 +103,16 @@ class AIService {
    * @returns {Object} { content, model, usage, stopped? }
    */
   async sendMessage(messages, options = {}) {
-    const adapter = this.adapters[this.currentProvider];
+    const targetProvider = String(options.provider || this.currentProvider || '').trim().toLowerCase();
+    const adapter = this.adapters[targetProvider];
     if (!adapter) {
-      throw new Error(`Unsupported provider: ${this.currentProvider}`);
+      throw new Error(`Unsupported provider: ${targetProvider || this.currentProvider}`);
     }
 
     try {
       return await adapter.call(messages, options);
     } catch (error) {
-      console.error(`[AIService] ${this.currentProvider} error:`, error.message);
+      console.error(`[AIService] ${targetProvider} error:`, error.message);
       throw error;
     }
   }
