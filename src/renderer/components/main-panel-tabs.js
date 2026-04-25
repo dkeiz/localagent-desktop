@@ -1,5 +1,6 @@
 (function () {
     const SUBAGENT_MANAGER_TAB_ID = 'subagent-manager';
+    const SUPERAGENT_MANAGER_TAB_ID = 'superagent-manager';
     const SHARED_CHAT_MOUNT_KEY = '__agentSharedChatMountState';
     function getMessagesContainer() {
         return document.getElementById('messages-container');
@@ -273,6 +274,9 @@
                     );
                     applyAgentActionResult(root, result, pluginId);
                     bindAgentPanelActions(panel, root, agentId);
+                    if (window.researchOrchestratorUI?.hydrate) {
+                        await window.researchOrchestratorUI.hydrate(panel, root, agentId);
+                    }
                     if (result?.refresh === true) {
                         await renderAgentPanel(panel, panel.activeTabId);
                     }
@@ -315,6 +319,9 @@
             syncSharedChatMount(root);
             hydrateAgentCharts(root);
             bindAgentPanelActions(panel, root, tab.agentId);
+            if (window.researchOrchestratorUI?.hydrate) {
+                await window.researchOrchestratorUI.hydrate(panel, root, tab.agentId);
+            }
             await sendAgentUiEvent(panel, sessionId, 'activated');
         } catch (error) {
             console.warn('Failed to render agent chat UI:', error);
@@ -399,7 +406,7 @@
         if (!sessionId || !panel.chatTabs.has(sessionId)) {
             return;
         }
-        if (String(sessionId) === SUBAGENT_MANAGER_TAB_ID) {
+        if (String(sessionId) === SUBAGENT_MANAGER_TAB_ID || String(sessionId) === SUPERAGENT_MANAGER_TAB_ID) {
             return;
         }
 
@@ -524,102 +531,12 @@
     }
 
     async function renderSubagentManagerTab(panel) {
-        const container = getMessagesContainer();
-        if (!container) return;
-
-        const runs = window.electronAPI?.subagents?.listRuns
-            ? await window.electronAPI.subagents.listRuns({ limit: 100 })
-            : [];
-
-        container.innerHTML = '';
-        const root = document.createElement('div');
-        root.className = 'subagent-manager-tab';
-
-        const title = document.createElement('h3');
-        title.className = 'subagent-manager-title';
-        title.textContent = 'Subagent Manager';
-        root.appendChild(title);
-
-        if (!runs.length) {
-            const empty = document.createElement('div');
-            empty.className = 'subagent-manager-empty';
-            empty.textContent = 'No subagent runs yet.';
-            root.appendChild(empty);
-            container.appendChild(root);
-            return;
-        }
-
-        const list = document.createElement('div');
-        list.className = 'subagent-manager-list';
-        runs.forEach((run) => {
-            const item = document.createElement('div');
-            item.className = 'subagent-manager-item';
-
-            const agentName = String(run.agent_name || `Subagent ${run.subagent_id || ''}`.trim());
-            const status = String(run.status || 'unknown');
-            const normalizedStatus = status.toLowerCase();
-            const taskText = String(run.task || '').trim() || 'No task';
-            const statusClass = normalizedStatus.replace(/[^a-z0-9_-]/g, '-');
-
-            item.innerHTML = `
-                <div class="subagent-manager-item-head">
-                    <strong>${agentName}</strong>
-                    <span class="subagent-manager-status status-${statusClass}">${status}</span>
-                </div>
-                <div class="subagent-manager-item-meta">id: ${run.run_id} | parent: ${run.parent_session_id ?? 'none'} | sub: ${run.subagent_id ?? 'n/a'}</div>
-                <div class="subagent-manager-item-task">${taskText}</div>
-            `;
-
-            const actions = document.createElement('div');
-            actions.className = 'subagent-manager-item-actions';
-
-            const openBtn = document.createElement('button');
-            openBtn.type = 'button';
-            openBtn.className = 'compact-btn';
-            openBtn.textContent = 'Open Chat';
-            openBtn.addEventListener('click', async (event) => {
-                event.stopPropagation();
-                await ensureSubagentChat(panel, {
-                    runId: run.run_id,
-                    childSessionId: run.child_session_id,
-                    child_session_id: run.child_session_id,
-                    subagentId: run.subagent_id,
-                    subagent_id: run.subagent_id,
-                    agentName,
-                    agent_name: agentName,
-                    parentSessionId: run.parent_session_id,
-                    parent_session_id: run.parent_session_id,
-                    subagentMode: run.subagent_mode || 'no_ui',
-                    subagent_mode: run.subagent_mode || 'no_ui',
-                    __eventType: status === 'queued' || status === 'running' ? 'subagent:started' : 'subagent:completed'
-                }, { activate: true });
-            });
-
-            const stopBtn = document.createElement('button');
-            stopBtn.type = 'button';
-            stopBtn.className = 'compact-btn';
-            stopBtn.textContent = 'Stop';
-            const runStatus = normalizedStatus;
-            const canStop = runStatus === 'queued' || runStatus === 'running' || runStatus === 'cancelling';
-            stopBtn.disabled = !canStop;
-            stopBtn.addEventListener('click', async (event) => {
-                event.stopPropagation();
-                if (!canStop || !window.electronAPI?.subagents?.stopRun) return;
-                const result = await window.electronAPI.subagents.stopRun(run.run_id);
-                if (!result?.success && panel.showNotification) {
-                    panel.showNotification(result?.error || 'Failed to stop subagent run', 'error');
-                }
-                await refreshSubagentManagerTab(panel);
-            });
-
-            actions.appendChild(openBtn);
-            actions.appendChild(stopBtn);
-            item.appendChild(actions);
-            list.appendChild(item);
+        if (!window.superagentManagerTab?.renderSubagentManagerTab) return;
+        await window.superagentManagerTab.renderSubagentManagerTab(panel, {
+            getMessagesContainer,
+            ensureSubagentChat,
+            refreshSubagentManagerTab
         });
-
-        root.appendChild(list);
-        container.appendChild(root);
     }
 
     async function openSubagentManagerTab(panel) {
@@ -634,12 +551,35 @@
         await switchTab(panel, SUBAGENT_MANAGER_TAB_ID);
     }
 
+    async function openSuperagentManagerTab(panel) {
+        if (!window.superagentManagerTab?.openSuperagentManagerTab) return;
+        await window.superagentManagerTab.openSuperagentManagerTab(panel, {
+            tabId: SUPERAGENT_MANAGER_TAB_ID,
+            createTabState,
+            saveCurrentTabMessages,
+            switchTab
+        });
+    }
     async function refreshSubagentManagerTab(panel) {
-        if (panel.activeTabId !== SUBAGENT_MANAGER_TAB_ID) {
-            return;
-        }
+        if (panel.activeTabId !== SUBAGENT_MANAGER_TAB_ID) return;
         await renderSubagentManagerTab(panel);
         panel._storeActiveTabScrollState();
+    }
+
+    async function refreshSuperagentManagerTab(panel) {
+        if (!window.superagentManagerTab?.refreshSuperagentManagerTab) return;
+        await window.superagentManagerTab.refreshSuperagentManagerTab(panel, {
+            tabId: SUPERAGENT_MANAGER_TAB_ID,
+            renderSuperagentManagerTab
+        });
+    }
+
+    async function renderSuperagentManagerTab(panel) {
+        if (!window.superagentManagerTab?.renderSuperagentManagerTab) return;
+        await window.superagentManagerTab.renderSuperagentManagerTab(panel, {
+            getMessagesContainer,
+            refreshSuperagentManagerTab
+        });
     }
 
     async function ensureSubagentChat(panel, eventPayload, { activate = false } = {}) {
@@ -831,6 +771,15 @@
             return;
         }
 
+        if (String(sessionId) === SUPERAGENT_MANAGER_TAB_ID || tab.isSuperagentManager) {
+            await renderSuperagentManagerTab(panel);
+            await renderAgentPanel(panel, sessionId);
+            renderTabs(panel);
+            await window.electronAPI.saveSetting('active_chat_tab', sessionId.toString());
+            panel.updateContextUsage(null);
+            return;
+        }
+
         tab.hasUnread = false;
         if (tab.messagesHTML && !tab.needsReload) {
             container.innerHTML = tab.messagesHTML;
@@ -932,7 +881,7 @@
             const agentPrefix = tab.agentIcon ? `${tab.agentIcon} ` : '';
             label.textContent = agentPrefix + (tab.title || `Chat ${sessionId}`);
 
-            if (!tab.isSubagentManager) {
+            if (!tab.isSubagentManager && !tab.isSuperagentManager) {
                 tabEl.appendChild(clearBtn);
             }
             tabEl.appendChild(statusDot);
@@ -957,7 +906,10 @@
     }
 
     async function saveOpenTabIds(panel) {
-        const ids = [...panel.chatTabs.keys()].filter(id => String(id) !== SUBAGENT_MANAGER_TAB_ID);
+        const ids = [...panel.chatTabs.keys()].filter(id => {
+            const value = String(id);
+            return value !== SUBAGENT_MANAGER_TAB_ID && value !== SUPERAGENT_MANAGER_TAB_ID;
+        });
         try {
             await window.electronAPI.saveSetting('open_chat_tabs', JSON.stringify(ids));
             if (panel.activeTabId) {
@@ -977,9 +929,8 @@
         loadTabConversations,
         newChat,
         openAgentChat,
-        openSubagentManagerTab,
-        openNewWindow,
-        refreshSubagentManagerTab,
+        openSubagentManagerTab, openSuperagentManagerTab, openNewWindow,
+        refreshSubagentManagerTab, refreshSuperagentManagerTab,
         renderTabs,
         restoreOpenTabs,
         saveCurrentTabMessages,

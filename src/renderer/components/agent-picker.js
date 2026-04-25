@@ -14,11 +14,18 @@ class AgentPickerWidget {
     initializeEvents() {
         this.loadAgents();
         this.bindSubagentWidgetOpen();
+        this.bindSuperagentManagerOpen();
 
         const addBtn = document.getElementById('add-agent-btn');
         if (addBtn) {
             addBtn.addEventListener('click', () => this.showAgentConfigModal());
         }
+
+        document.addEventListener('open-agent-config', (event) => {
+            const agentId = Number(event?.detail?.agentId);
+            if (!Number.isFinite(agentId)) return;
+            this.showAgentConfigModal(agentId);
+        });
 
         window.electronAPI.onAgentUpdate(() => {
             this.loadAgents();
@@ -48,6 +55,15 @@ class AgentPickerWidget {
                 openManager();
             });
         }
+    }
+
+    bindSuperagentManagerOpen() {
+        const header = document.getElementById('toggle-superagents-widget');
+        if (!header) return;
+        header.addEventListener('click', async () => {
+            if (!window.app?.mainPanel?.openSuperagentManagerTab) return;
+            await window.app.mainPanel.openSuperagentManagerTab();
+        });
     }
 
     async loadAgents() {

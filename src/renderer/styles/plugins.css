@@ -10,11 +10,12 @@
 }
 
 .plugins-widget .widget-header {
-    padding: 0.5rem;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    padding: 0;
+    cursor: default;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: stretch;
+    overflow: hidden;
     background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
     font-size: 0.9rem;
@@ -23,12 +24,35 @@
 }
 
 .plugins-widget .widget-header:hover {
+    background-color: var(--bg-secondary);
+}
+
+.plugins-widget .plugins-header-label {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.18s ease;
+}
+
+.plugins-widget .plugins-header-label:hover {
     background-color: var(--hover-bg);
 }
 
 .plugins-widget .collapse-arrow {
-    transition: transform 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    padding: 0 0.45rem;
     font-size: 0.7rem;
+    cursor: pointer;
+    transition: transform 0.2s ease, background-color 0.18s ease;
+    border-left: 1px solid color-mix(in srgb, var(--border-color), transparent 25%);
+}
+
+.plugins-widget .collapse-arrow:hover {
+    background-color: var(--active-bg);
 }
 
 .plugins-widget.collapsed .collapse-arrow {

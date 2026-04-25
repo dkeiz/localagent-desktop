@@ -174,7 +174,9 @@
 
         window.mainPanelTabs.saveOpenTabIds = async function patchedSaveOpen(p) {
             const ids = [...p.chatTabs.keys()].filter(id => (
-                String(id) !== 'subagent-manager' && !isArtifactTabId(id)
+                String(id) !== 'subagent-manager' &&
+                String(id) !== 'superagent-manager' &&
+                !isArtifactTabId(id)
             ));
             try {
                 await window.electronAPI.saveSetting('open_chat_tabs', JSON.stringify(ids));
@@ -256,7 +258,7 @@
         async function refreshArtifactsState() {
             const sessionId = getActiveSessionId();
             const tab = sessionId ? window.mainPanel?.chatTabs?.get?.(sessionId) : null;
-            if (!sessionId || sessionId === 'subagent-manager' || tab?.isArtifactTab) {
+            if (!sessionId || sessionId === 'subagent-manager' || sessionId === 'superagent-manager' || tab?.isArtifactTab) {
                 button.classList.remove('has-artifacts');
                 button.title = 'Artifacts (0 files for conversation)';
                 return;

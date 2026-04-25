@@ -282,8 +282,8 @@ class MainPanel {
         const sendBtn = document.getElementById('send-btn');
         const stopBtn = document.getElementById('stop-btn');
         const message = messageInput.value.trim();
-        if (this.activeTabId === 'subagent-manager') {
-            this.showNotification('Subagent Manager tab is view-only. Open a chat tab to send messages.', 'info');
+        if (this.activeTabId === 'subagent-manager' || this.activeTabId === 'superagent-manager') {
+            this.showNotification('Manager tabs are view-only. Open a chat tab to send messages.', 'info');
             return;
         }
         if (!message && this.attachedFiles.length === 0) return;
@@ -683,18 +683,12 @@ class MainPanel {
     async updateSubagentChatState(eventPayload) {
         return window.mainPanelTabs.updateSubagentChatState(this, eventPayload);
     }
-    async openSubagentManagerTab() {
-        return window.mainPanelTabs.openSubagentManagerTab(this);
-    }
-    async refreshSubagentManagerTab() {
-        return window.mainPanelTabs.refreshSubagentManagerTab(this);
-    }
-    openNewWindow() {
-        return window.mainPanelTabs.openNewWindow();
-    }
-    async restoreOpenTabs() {
-        return window.mainPanelTabs.restoreOpenTabs(this);
-    }
+    async openSubagentManagerTab() { return window.mainPanelTabs.openSubagentManagerTab(this); }
+    async openSuperagentManagerTab() { return window.mainPanelTabs.openSuperagentManagerTab(this); }
+    async refreshSubagentManagerTab() { return window.mainPanelTabs.refreshSubagentManagerTab(this); }
+    async refreshSuperagentManagerTab() { return window.mainPanelTabs.refreshSuperagentManagerTab(this); }
+    openNewWindow() { return window.mainPanelTabs.openNewWindow(); }
+    async restoreOpenTabs() { return window.mainPanelTabs.restoreOpenTabs(this); }
     async autoTitleTab(sessionId) {
         return window.mainPanelTabs.autoTitleTab(this, sessionId);
     }
@@ -938,6 +932,13 @@ class MainPanel {
                 await this.refreshSubagentManagerTab();
             } catch (error) {
                 console.error('Failed to refresh Subagent Manager tab:', error);
+            }
+        });
+        window.electronAPI.onAgentUpdate(async () => {
+            try {
+                await this.refreshSuperagentManagerTab();
+            } catch (error) {
+                console.error('Failed to refresh Superagent Manager tab:', error);
             }
         });
         // Listen for tool permission requests

@@ -8,7 +8,6 @@
     class PluginPanel {
         constructor() {
             this.listEl = document.getElementById('plugins-list');
-            this.manageBtn = document.getElementById('manage-plugins-btn');
             this.widgetHeader = document.getElementById('toggle-plugins-widget');
             this.widgetContent = document.getElementById('plugins-widget-content');
             this.plugins = [];
@@ -20,17 +19,20 @@
         }
 
         _bindEvents() {
-            // Collapsible widget toggle
+            // Split behavior:
+            // - Collapse arrow toggles compact mode.
+            // - Left label area opens Plugin Studio.
             if (this.widgetHeader) {
-                this.widgetHeader.addEventListener('click', () => {
+                this.widgetHeader.addEventListener('click', async (event) => {
+                    const clickedCollapseArrow = Boolean(event.target.closest('.collapse-arrow'));
                     const widget = this.widgetHeader.closest('.plugins-widget');
-                    if (widget) widget.classList.toggle('collapsed');
-                });
-            }
+                    if (!widget) return;
 
-            // Manage button — opens Plugin Studio popup
-            if (this.manageBtn) {
-                this.manageBtn.addEventListener('click', async () => {
+                    if (clickedCollapseArrow) {
+                        widget.classList.toggle('collapsed');
+                        return;
+                    }
+
                     try {
                         await window.electronAPI.plugins.openStudio({});
                     } catch (error) {

@@ -28,16 +28,16 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="styles/layout.css?v=19">
+    <link rel="stylesheet" href="styles/layout.css?v=20">
     <link rel="stylesheet" href="styles/theme.css?v=8">
     <link rel="stylesheet" href="styles/buttons.css?v=7">
     <link rel="stylesheet" href="styles/api-provider-settings.css?v=2">
     <link rel="stylesheet" href="styles/rule-manager.css?v=7">
     <link rel="stylesheet" href="styles/capability-panel.css?v=3">
-    <link rel="stylesheet" href="styles/chat-tabs.css?v=1">
+    <link rel="stylesheet" href="styles/chat-tabs.css?v=2">
     <link rel="stylesheet" href="styles/commands.css?v=2">
     <link rel="stylesheet" href="styles/skin-manager.css?v=1">
-    <link rel="stylesheet" href="styles/plugins.css?v=1">
+    <link rel="stylesheet" href="styles/plugins.css?v=2">
     <link rel="stylesheet" href="styles/plugin-studio-panel.css?v=5">
 </head>
 
@@ -63,7 +63,9 @@
                 </div>
             </div>
             <div class="agent-picker-widget">
-                <h3>Agents</h3>
+                <div class="agent-picker-header" id="toggle-superagents-widget" title="Open Superagent Manager">
+                    <h3>Agents</h3>
+                </div>
                 <div id="agent-list" class="agent-list"></div>
                 <button id="add-agent-btn" class="compact-btn" title="Configure Agents">+ Agent</button>
             </div>
@@ -489,12 +491,11 @@
             <div class="widget-stack" id="widget-stack">
                 <div class="plugins-widget collapsible-widget">
                     <div class="widget-header" id="toggle-plugins-widget">
-                        <span>🧩 Plugins</span>
+                        <span class="plugins-header-label">🧩 Plugins</span>
                         <span class="collapse-arrow">▼</span>
                     </div>
                     <div class="widget-content" id="plugins-widget-content">
                         <div id="plugins-list" class="plugins-list"></div>
-                        <button id="manage-plugins-btn" class="compact-btn">Manage</button>
                     </div>
                 </div>
 
@@ -568,25 +569,27 @@
     <script src="components/sidebar.js?v=9"></script>
     <script src="components/command-handler.js?v=1"></script>
     <script src="components/chart-renderer.js?v=1"></script>
-    <script src="components/main-panel-tabs.js?v=5"></script>
+    <script src="components/superagent-manager-tab.js?v=1"></script>
+    <script src="components/research-orchestrator-ui.js?v=1"></script>
+    <script src="components/main-panel-tabs.js?v=6"></script>
     <script src="components/main-panel-permissions.js?v=1"></script>
     <script src="components/message-formatter.js?v=9"></script>
     <script src="components/api-provider-settings.js?v=1"></script>
-    <script src="components/artifacts-button.js?v=1"></script>
+    <script src="components/artifacts-button.js?v=2"></script>
     <script src="components/tts-text-utils.js?v=1"></script>
     <script src="components/tts-controller.js?v=2"></script>
-    <script src="components/main-panel.js?v=12"></script>
+    <script src="components/main-panel.js?v=13"></script>
     <script src="components/context-window-control.js?v=2"></script>
     <script src="components/chat-continuity.js?v=1"></script>
     <script src="components/calendar.js?v=8"></script>
-    <script src="components/agent-picker.js?v=6"></script>
+    <script src="components/agent-picker.js?v=7"></script>
     <script src="components/shortcuts.js?v=7"></script>
     <script src="components/rule-manager.js?v=7"></script>
     <script src="components/stats.js?v=7"></script>
     <script src="components/workflow-editor.js?v=1"></script>
     <script src="components/capability-panel.js?v=2"></script>
     <script src="components/skin-manager.js?v=1"></script>
-    <script src="components/plugin-panel.js?v=2"></script>
+    <script src="components/plugin-panel.js?v=3"></script>
     <script src="components/workflow-widget.js?v=1"></script>
     <script src="components/plugin-studio-tts-panel.js?v=6"></script>
     <script src="components/plugin-studio-panel.js?v=2"></script>
