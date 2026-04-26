@@ -10,64 +10,9 @@ function registerCoreTools(server) {
     return new Date().toISOString();
   });
 
-  server.registerTool('current_weather', {
-    name: 'current_weather',
-    description: 'Get current weather for a city using wttr.in API',
-    userDescription: 'Fetches current weather conditions (temperature, humidity, conditions) for any city worldwide',
-    example: 'TOOL:current_weather{"city":"London"}',
-    exampleOutput: '{"temp":"15","condition":"Partly cloudy","humidity":"65","city":"London"}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        city: {
-          type: 'string',
-          description: 'City name (e.g., "London", "New York", "Tokyo", "Moscow")',
-          default: 'Moscow'
-        }
-      }
-    }
-  }, async ({ city }) => {
-    const fetch = require('node-fetch');
-    const response = await fetch(`http://wttr.in/${encodeURIComponent(city)}?format=j1`);
-    if (!response.ok) throw new Error(`Weather API error: ${response.status}`);
-    const data = await response.json();
-    return {
-      temp: data.current_condition[0].temp_C,
-      condition: data.current_condition[0].weatherDesc[0].value,
-      humidity: data.current_condition[0].humidity,
-      city
-    };
-  });
-
-  server.registerTool('search_web_insta', {
-    name: 'search_web_insta',
-    description: 'Quick factual lookup using DuckDuckGo Instant Answer API. Best for definitions, entity info, and well-known topics (e.g. "Python programming language", "Albert Einstein"). Returns an abstract summary and related topics. If results are empty or say "No direct answer found", use search_web_bing instead for broader results.',
-    userDescription: 'Quick factual search via DuckDuckGo — best for known entities and definitions',
-    example: 'TOOL:search_web_insta{"query":"Python programming language"}',
-    exampleOutput: '{"query":"Python programming language","abstract":"Python is a high-level...","abstractSource":"Wikipedia","relatedTopics":["Python syntax","Python libraries"]}',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query — works best with entity names, definitions, or well-known topics' }
-      },
-      required: ['query']
-    }
-  }, async ({ query }) => {
-    const fetch = require('node-fetch');
-    const response = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`);
-    if (!response.ok) throw new Error(`Search API error: ${response.status}`);
-    const data = await response.json();
-    return {
-      query,
-      abstract: data.Abstract || 'No direct answer found',
-      abstractSource: data.AbstractSource || '',
-      relatedTopics: (data.RelatedTopics || []).slice(0, 5).map(t => t.Text || t.Name).filter(Boolean)
-    };
-  });
-
   server.registerTool('search_web_bing', {
     name: 'search_web_bing',
-    description: 'General web search using Bing RSS. Returns titles, URLs, and text snippets for any query. Best for news, tutorials, current events, general questions, and broad research. Use this as your primary search tool. If this fails, try search_web_insta as a fallback for factual/entity queries.',
+    description: 'General web search using Bing RSS. Returns titles, URLs, and text snippets for any query. Best for news, tutorials, current events, general questions, and broad research. Use this as your primary built-in search tool.',
     userDescription: 'Broad web search via Bing — works for any query type',
     example: 'TOOL:search_web_bing{"query":"latest AI news 2026"}',
     exampleOutput: '{"query":"latest AI news 2026","backend":"bing_rss","results":[{"title":"...","url":"https://...","snippet":"..."}]}',

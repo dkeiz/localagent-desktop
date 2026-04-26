@@ -47,7 +47,7 @@ Task arrives
 
 **Permission Pattern**:
 ```json
-{"safe_tools": ["search_web_bing", "read_file", "run_python"], "unsafe_tools": []}
+{"safe_tools": ["search_web_bing", "read_file"], "unsafe_tools": ["run_command"]}
 ```
 
 ### Choose Background Agent When:

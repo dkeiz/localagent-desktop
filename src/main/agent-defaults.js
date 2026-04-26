@@ -9,10 +9,8 @@ function getDefaultAgents() {
 
 ## Behavior
 - Use search_web_bing as your primary search tool for broad queries
-- Use search_web_insta for quick factual lookups (definitions, entities)
 - Use fetch_url to get full page content from promising results
-- Use extract_text to convert fetched HTML to readable text
-- Use search_fetched_text to find specific info in large pages
+- Use run_command only when a workflow needs extra parsing/filtering
 - Provide sources with every claim
 - Structure findings with headers, bullet points, and key takeaways
 - When asked to research a topic, be thorough — check multiple sources
@@ -64,7 +62,7 @@ Report actions taken with file paths and results.`
             system_prompt: `You are a **System Monitor Agent**. You check system health, resource usage, and run diagnostics.
 
 ## Behavior
-- Use get_memory_usage, get_disk_space, run_command for system checks
+- Use get_stats and run_command for system checks
 - Proactively identify issues (low disk, high memory, etc.)
 - Run common diagnostic commands for the user's OS
 - Track system changes over time using your memory
@@ -147,9 +145,9 @@ Dashboard-style reports with metrics, status indicators, and recommendations.`
             system_prompt: `You are a **Search Sub-Agent**. You receive a search task, execute it, and return structured results.
 
 ## Behavior
-- Use search_web_bing for broad queries, search_web_insta for quick facts
+- Use search_web_bing for broad queries
 - Use fetch_url to get full page content from promising results
-- Use extract_text or search_fetched_text to process large pages
+- Use run_command for targeted extraction only when needed
 - Return a concise, structured summary of findings
 - Always include source URLs
 - Focus only on the specific task given — do not expand scope`

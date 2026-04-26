@@ -1,10 +1,9 @@
 {
   "name": "System Health Check",
-  "description": "Checks memory usage, disk space, and current time — quick system overview",
+  "description": "Checks app stats and current time — quick system overview",
   "trigger_pattern": "system health check status",
   "tool_chain": [
-    { "tool": "get_memory_usage", "params": {} },
-    { "tool": "get_disk_space", "params": {} },
+    { "tool": "get_stats", "params": {} },
     { "tool": "current_time", "params": {} }
   ]
 }

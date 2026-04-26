@@ -2,28 +2,20 @@
     "groups": {
         "web": {
             "name": "Web",
-            "description": "Internet search, weather, API calls",
+            "description": "Internet search and URL fetching",
             "icon": "🌐",
             "tools": [
                 "search_web_bing",
-                "search_web_insta",
-                "current_weather",
-                "fetch_url",
-                "extract_text",
-                "search_fetched_text",
-                "get_public_ip",
-                "download_file"
+                "fetch_url"
             ],
             "defaultActive": true
         },
         "terminal": {
             "name": "Terminal",
-            "description": "Execute shell commands and scripts",
+            "description": "Execute shell commands",
             "icon": "💻",
             "tools": [
-                "run_command",
-                "run_python",
-                "run_python_script"
+                "run_command"
             ],
             "defaultActive": true
         },
@@ -48,8 +40,6 @@
             "tools": [
                 "current_time",
                 "get_stats",
-                "get_memory_usage",
-                "get_disk_space",
                 "calculate",
                 "get_current_provider",
                 "end_answer"
@@ -75,16 +65,6 @@
             ],
             "defaultActive": true
         },
-        "clipboard": {
-            "name": "Clipboard",
-            "description": "Read and write clipboard",
-            "icon": "📋",
-            "tools": [
-                "clipboard_read",
-                "clipboard_write"
-            ],
-            "defaultActive": true
-        },
         "media": {
             "name": "Media",
             "description": "Screenshots, images, audio, video",
@@ -93,8 +73,7 @@
                 "open_media",
                 "play_audio",
                 "view_image",
-                "screenshot",
-                "open_url"
+                "screenshot"
             ],
             "defaultActive": false
         },

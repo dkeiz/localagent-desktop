@@ -9,8 +9,6 @@
     "tools": [
       "current_time",
       "get_stats",
-      "get_memory_usage",
-      "get_disk_space",
       "calculate",
       "get_current_provider",
       "get_system_prompt",
@@ -19,14 +17,11 @@
       "subagent",
       "search_conversations",
       "search_web_bing",
-      "search_web_insta",
       "fetch_url",
-      "extract_text",
       "workflow_op",
       "research_op",
       "calendar_op",
       "todo_op",
-      "clipboard_read",
       "read_file",
       "list_directory",
       "file_exists",
@@ -56,13 +51,7 @@
       "enabled": true,
       "tools": [
         "search_web_bing",
-        "search_web_insta",
-        "current_weather",
-        "fetch_url",
-        "extract_text",
-        "search_fetched_text",
-        "get_public_ip",
-        "download_file"
+        "fetch_url"
       ]
     },
     "files": {
@@ -93,8 +82,7 @@
       "icon": "💻",
       "enabled": true,
       "tools": [
-        "run_command",
-        "run_python"
+        "run_command"
       ]
     },
     "ports": {

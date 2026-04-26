@@ -19,12 +19,12 @@ Each `.json` file in `agentin/workflows/` defines one workflow. The old flat fil
 ```json
 {
   "name": "Morning Briefing",
-  "description": "Lists calendar events, todos, and weather",
+  "description": "Lists calendar events, todos, and a quick weather API snapshot",
   "trigger_pattern": "morning briefing daily summary",
   "tool_chain": [
     { "type": "tool", "tool": "calendar_op", "params": { "action": "list", "limit": 5 } },
     { "type": "tool", "tool": "todo_op", "params": { "action": "list" } },
-    { "type": "tool", "tool": "current_weather", "params": { "city": "Moscow" } }
+    { "type": "tool", "tool": "fetch_url", "params": { "url": "https://wttr.in/Moscow?format=j1" } }
   ]
 }
 ```
@@ -163,7 +163,7 @@ Unified workflow API with action parameter:
 Examples:
 ```
 TOOL:workflow_op{"action":"list"}
-TOOL:workflow_op{"action":"create","name":"System Check","tool_chain":[{"tool":"get_memory_usage","params":{}},{"tool":"get_disk_space","params":{}}]}
+TOOL:workflow_op{"action":"create","name":"System Check","tool_chain":[{"tool":"get_stats","params":{}},{"tool":"current_time","params":{}}]}
 TOOL:workflow_op{"action":"execute","id":1,"param_overrides":{"search_web_bing":{"query":"new topic"}}}
 TOOL:workflow_op{"action":"run","id":1,"mode":"auto"}
 TOOL:workflow_op{"action":"get_run","run_id":"workflow-20260409-ab12cd"}

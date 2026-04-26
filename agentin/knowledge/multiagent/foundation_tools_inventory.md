@@ -68,9 +68,8 @@
 |-------|-------|---------------------|
 | ⚙️ System | current_time, calculate, get_stats | All agents |
 | 🤖 Agent | conversation_history, calendar, todos, subagent_op | Super/Side only |
-| 🌐 Web | search_web_*, fetch_url, current_weather | Most agents |
+| 🌐 Web | search_web_bing, fetch_url | Most agents |
 | 📁 Files | read_file, write_file, list_directory | Configurable |
-| 💻 Terminal | run_command, run_python | Restricted (unsafe) |
-| 📋 Clipboard | clipboard_read, clipboard_write | Limited |
+| 💻 Terminal | run_command | Restricted (unsafe) |
 | 🎬 Media | open_media, screenshot, view_image | Task-specific |
 | 🔴 Unsafe | create_tool, modify_system_prompt | Super agents only |

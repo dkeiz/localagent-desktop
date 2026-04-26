@@ -15,8 +15,8 @@ Review:
 ### Check Resource Usage
 ```
 TOOL:get_stats{}
-TOOL:get_memory_usage{}
-TOOL:get_disk_space{}
+TOOL:run_command{"command":"Get-Process | Sort-Object WorkingSet -Descending | Select-Object -First 10 ProcessName,WS"}
+TOOL:run_command{"command":"Get-PSDrive -PSProvider FileSystem | Select-Object Name,Free,Used"}
 ```
 
 ## Common Issues & Solutions

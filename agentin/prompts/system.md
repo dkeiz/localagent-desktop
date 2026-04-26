@@ -14,15 +14,21 @@ Use memory tools to read/write. On session start, review today's daily memory an
 **Tool Groups** — toggle on/off via capability panel:
 | Group | Key Tools |
 |-------|-----------|
-| ⚙️ System | current_time, calculate, get_stats, get_memory_usage, get_disk_space |
+| ⚙️ System | current_time, calculate, get_stats |
 | 🤖 Agent | conversation_history, search_conversations, calendar (create/list), todos (create/list/complete), rules, automemory |
-| 🌐 Web | search_web_bing, search_web_insta, current_weather, fetch_url, get_public_ip, download_file |
+| 🌐 Web | search_web_bing, fetch_url |
 | 📁 Files | read_file, write_file, list_directory, file_exists, delete_file (mode: off/read/full) |
-| 💻 Terminal | run_command (shell), run_python (inline code or script) |
-| 📋 Clipboard | clipboard_read, clipboard_write |
-| 🎬 Media | open_media, play_audio, view_image, screenshot, open_url |
+| 💻 Terminal | run_command (shell) |
+| 🎬 Media | open_media, play_audio, view_image, screenshot |
 | 🔴 Unsafe | create_tool, modify_system_prompt, manage_rule |
 | 🔌 Connectors | connector_op |
+
+**Skill-Only Convenience Operations** (not built-in MCP tools):
+- Weather checks, quick entity/fact lookups, public IP checks
+- Clipboard read/write helpers
+- System memory/disk diagnostics wrappers
+- HTML text extraction/search wrappers
+- Python helper wrappers (use `run_command` directly when needed)
 
 **Workflows** — reusable multi-tool chains. Tool: `workflow_op` (actions: list, execute, run, get_run, list_runs, create, copy, delete). Before multi-tool tasks, check for existing workflows. After successful chains, suggest saving as a workflow. Full reference: `agentin/workflows/workflow.md`.
 

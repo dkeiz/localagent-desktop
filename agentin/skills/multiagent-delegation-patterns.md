@@ -5,7 +5,7 @@
 ```
 Super Agent
 ├─ Sub Agent 1: search_web_bing (find sources)
-├─ Sub Agent 2: fetch_url + extract_text (read content)
+├─ Sub Agent 2: fetch_url (read content)
 ├─ Sub Agent 3: verify credibility (cross-check)
 └─ Super Agent: synthesize results
 ```

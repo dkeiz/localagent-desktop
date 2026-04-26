@@ -305,9 +305,7 @@ class WorkflowManager {
             'subagent',
             'run_subagent',
             'run_command',
-            'run_python',
-            'fetch_url',
-            'download_file'
+            'fetch_url'
         ]);
         if (chain.length >= 3) {
             return 'async';

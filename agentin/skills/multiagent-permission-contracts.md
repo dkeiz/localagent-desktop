@@ -13,7 +13,7 @@
 
 ### Always Safe (low-risk, read-only)
 - current_time, calculate, get_stats
-- search_web_bing, search_web_insta, current_weather
+- search_web_bing, fetch_url
 - read_file (with path restrictions)
 - conversation_history, search_conversations
 - list_directory, file_exists
@@ -23,14 +23,11 @@
 - write_file (only to {workspace} or {memory}/tasks/)
 - edit_file (same restrictions)
 - fetch_url (read-only, but external content)
-- extract_text, search_fetched_text
 
 ### Always Unsafe (high-risk, system-modifying)
 - run_command (shell access)
-- run_python (code execution)
 - delete_file
 - create_tool, modify_system_prompt
-- download_file (to arbitrary paths)
 - connector_op (create/start external services)
 
 ## Permission Templates
@@ -38,7 +35,7 @@
 ### Researcher Template
 ```json
 {
-  "safe_tools": ["search_web_bing", "search_web_insta", "fetch_url", "extract_text", "read_file", "write_file"],
+  "safe_tools": ["search_web_bing", "fetch_url", "read_file", "write_file"],
   "unsafe_tools": []
 }
 ```
@@ -55,7 +52,7 @@
 ```json
 {
   "safe_tools": ["read_file", "write_file", "list_directory", "search_workspace"],
-  "unsafe_tools": ["run_python", "run_command"]
+  "unsafe_tools": ["run_command"]
 }
 ```
 
