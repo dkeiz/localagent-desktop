@@ -372,11 +372,13 @@ function registerChatDataHandlers(ipcMain, runtime, helpers) {
     }
     return db.getChatSessions(date, limit);
   });
-  ipcMain.handle('load-chat-session', async (event, sessionId) => {
+  ipcMain.handle('load-chat-session', async (event, sessionId, options = {}) => {
     if (testClientMode && isTestSessionId(sessionId)) {
       return getTestMessages(sessionId, 1000);
     }
-    return db.loadChatSession(sessionId);
+    return db.loadChatSession(sessionId, {
+      includeHidden: options?.includeHidden === true
+    });
   });
 
   ipcMain.handle('clear-chat-session', async (event, sessionId) => {

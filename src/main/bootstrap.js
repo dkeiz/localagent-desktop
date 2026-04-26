@@ -14,6 +14,7 @@ const AgentMemory = require('./agent-memory');
 const PromptFileManager = require('./prompt-file-manager');
 const AgentLoop = require('./agent-loop');
 const ConnectorRuntime = require('./connector-runtime');
+const ExternalChannelBridge = require('./external-channel-bridge');
 const InferenceDispatcher = require('./inference-dispatcher');
 const SessionWorkspace = require('./session-workspace');
 const AgentManager = require('./agent-manager');
@@ -175,7 +176,15 @@ async function bootstrapApplication(options = {}) {
   container.register('agentLoop', agentLoop);
 
   const connectorRuntime = new ConnectorRuntime(dispatcher, db, {
-    connectorsDir: paths.connectorsDir
+    connectorsDir: paths.connectorsDir,
+    eventBus,
+    externalChannelBridge: new ExternalChannelBridge({
+      db,
+      dispatcher,
+      chainController,
+      windowManager,
+      aiService
+    })
   });
   mcpServer.setConnectorRuntime(connectorRuntime);
   container.register('connectorRuntime', connectorRuntime);

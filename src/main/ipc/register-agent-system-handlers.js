@@ -350,6 +350,26 @@ function registerAgentSystemHandlers(ipcMain, runtime, helpers) {
     }
   });
 
+  ipcMain.handle('subagents:clear-runs', async (event, filters = {}) => {
+    if (!agentManager || typeof agentManager.clearSubagentRuns !== 'function') {
+      return { success: false, removed: 0, kept: 0, failed: 0, error: 'Subagent cleanup is unavailable' };
+    }
+
+    try {
+      return await agentManager.clearSubagentRuns({
+        parentSessionId: filters?.parentSessionId ?? null,
+        subagentId: filters?.subagentId ?? null,
+        status: filters?.status ?? null,
+        onlyFinished: filters?.onlyFinished !== false,
+        includeRunning: filters?.includeRunning === true,
+        matchText: filters?.matchText ? String(filters.matchText) : '',
+        runIds: Array.isArray(filters?.runIds) ? filters.runIds : null
+      });
+    } catch (error) {
+      return { success: false, removed: 0, kept: 0, failed: 1, error: error.message };
+    }
+  });
+
   ipcMain.handle('subagents:get-run', async (event, runId) => {
     if (!agentManager || typeof agentManager.getSubagentRun !== 'function') {
       return null;

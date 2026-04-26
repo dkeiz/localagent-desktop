@@ -437,8 +437,22 @@ class DatabaseWrapper {
             LIMIT ?
         `, [limit]);
     }
-    async loadChatSession(sessionId) {
-        return this.all('SELECT * FROM conversations WHERE session_id = ? ORDER BY timestamp', [sessionId]);
+    async loadChatSession(sessionId, options = {}) {
+        const includeHidden = options?.includeHidden === true;
+        const rows = this.all('SELECT * FROM conversations WHERE session_id = ? ORDER BY timestamp', [sessionId]);
+        if (includeHidden) {
+            return rows;
+        }
+
+        return rows.filter((row) => {
+            if (!row?.metadata) return true;
+            try {
+                const metadata = JSON.parse(row.metadata);
+                return metadata?.hidden_from_ui !== true;
+            } catch (_) {
+                return true;
+            }
+        });
     }
     async deleteChatSession(sessionId) {
         this.run('DELETE FROM conversations WHERE session_id = ?', [sessionId]);

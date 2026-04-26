@@ -206,8 +206,42 @@
 
                 field.appendChild(label);
                 field.appendChild(input);
+                if (def?.description) {
+                    field.appendChild(this.createFieldDescription(def.description));
+                }
                 this.form.appendChild(field);
             });
+        }
+
+        createFieldDescription(text) {
+            const container = document.createElement('div');
+            container.className = 'plugin-studio-field-description';
+
+            const source = String(text || '');
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            let lastIndex = 0;
+            let match;
+
+            while ((match = urlRegex.exec(source)) !== null) {
+                const start = match.index;
+                const end = start + match[0].length;
+                if (start > lastIndex) {
+                    container.appendChild(document.createTextNode(source.slice(lastIndex, start)));
+                }
+                const link = document.createElement('a');
+                link.href = match[0];
+                link.target = '_blank';
+                link.rel = 'noreferrer noopener';
+                link.textContent = match[0];
+                container.appendChild(link);
+                lastIndex = end;
+            }
+
+            if (lastIndex < source.length) {
+                container.appendChild(document.createTextNode(source.slice(lastIndex)));
+            }
+
+            return container;
         }
 
         isSelectedTts() {

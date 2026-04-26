@@ -199,7 +199,7 @@ class PluginManager extends EventEmitter {
         // Call onDisable
         if (plugin.module && typeof plugin.module.onDisable === 'function') {
             try {
-                await plugin.module.onDisable();
+                await plugin.module.onDisable(plugin.context);
             } catch (e) {
                 console.error(`[PluginManager] onDisable error for "${pluginId}":`, e.message);
             }
@@ -225,6 +225,7 @@ class PluginManager extends EventEmitter {
         const self = this;
         const config = this._loadPluginConfig(pluginId);
         const manifestAgentScopes = this._resolveManifestAgentScopes(plugin.manifest);
+        const connectorRuntime = this.container.optional('connectorRuntime');
 
         return {
             config,
@@ -298,6 +299,41 @@ class PluginManager extends EventEmitter {
 
             registerManagedProcess(proc, metadata = {}) {
                 return self._registerManagedProcess(plugin, proc, metadata);
+            },
+
+            connectors: {
+                async list() {
+                    if (!connectorRuntime?.listConnectors) return [];
+                    return connectorRuntime.listConnectors();
+                },
+                async start(name) {
+                    if (!connectorRuntime?.startConnector) {
+                        throw new Error('Connector runtime is unavailable');
+                    }
+                    return connectorRuntime.startConnector(String(name || ''));
+                },
+                async stop(name) {
+                    if (!connectorRuntime?.stopConnector) {
+                        throw new Error('Connector runtime is unavailable');
+                    }
+                    return connectorRuntime.stopConnector(String(name || ''));
+                },
+                async getConfig(name) {
+                    if (!connectorRuntime?.getConfig) {
+                        throw new Error('Connector runtime is unavailable');
+                    }
+                    return connectorRuntime.getConfig(String(name || ''));
+                },
+                async setConfig(name, key, value) {
+                    if (!connectorRuntime?.setConfig) {
+                        throw new Error('Connector runtime is unavailable');
+                    }
+                    return connectorRuntime.setConfig(
+                        String(name || ''),
+                        String(key || ''),
+                        String(value == null ? '' : value)
+                    );
+                }
             }
         };
     }
@@ -369,7 +405,7 @@ class PluginManager extends EventEmitter {
         return config;
     }
 
-    async setPluginConfig(pluginId, key, value) {
+    async setPluginConfig(pluginId, key, value, options = {}) {
         const settingKey = `plugin.${pluginId}.${key}`;
         this.db.run(
             'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
@@ -379,6 +415,15 @@ class PluginManager extends EventEmitter {
         const plugin = this.plugins.get(pluginId);
         if (plugin?.context?.config) {
             plugin.context.config[key] = String(value);
+        }
+
+        if (
+            options?.notifyHook !== false
+            && plugin?.status === 'enabled'
+            && plugin?.module
+            && typeof plugin.module.onConfigChanged === 'function'
+        ) {
+            await plugin.module.onConfigChanged(String(key), String(value), plugin.context);
         }
     }
 

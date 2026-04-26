@@ -432,6 +432,21 @@
     color: var(--text-secondary);
 }
 
+.plugin-studio-field-description {
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    line-height: 1.35;
+}
+
+.plugin-studio-field-description a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.plugin-studio-field-description a:hover {
+    text-decoration: underline;
+}
+
 .plugin-studio-config-link-field a {
     color: var(--primary-color);
     font-size: 0.78rem;

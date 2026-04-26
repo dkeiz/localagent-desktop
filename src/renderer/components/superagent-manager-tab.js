@@ -6,6 +6,14 @@
         const runs = window.electronAPI?.subagents?.listRuns
             ? await window.electronAPI.subagents.listRuns({ limit: 100 })
             : [];
+        const activeRuns = runs.filter((run) => {
+            const status = String(run.status || '').toLowerCase();
+            return status === 'queued' || status === 'running' || status === 'cancelling';
+        });
+        const finishedRuns = runs.filter((run) => {
+            const status = String(run.status || '').toLowerCase();
+            return ['failed', 'completed', 'task_complete', 'task_failed', 'cancelled', 'stopped'].includes(status);
+        });
 
         container.innerHTML = '';
         const root = document.createElement('div');
@@ -15,6 +23,90 @@
         title.className = 'subagent-manager-title';
         title.textContent = 'Subagent Manager';
         root.appendChild(title);
+
+        const controls = document.createElement('div');
+        controls.className = 'subagent-manager-controls';
+
+        const stats = document.createElement('div');
+        stats.className = 'subagent-manager-stats';
+        stats.textContent = `Showing ${runs.length} runs | active ${activeRuns.length} | finished ${finishedRuns.length}`;
+        controls.appendChild(stats);
+
+        const actions = document.createElement('div');
+        actions.className = 'subagent-manager-global-actions';
+
+        const refreshBtn = document.createElement('button');
+        refreshBtn.type = 'button';
+        refreshBtn.className = 'compact-btn';
+        refreshBtn.textContent = 'Refresh';
+        refreshBtn.addEventListener('click', async () => {
+            if (deps.refreshSubagentManagerTab) {
+                await deps.refreshSubagentManagerTab(panel);
+            }
+        });
+        actions.appendChild(refreshBtn);
+
+        const stopActiveBtn = document.createElement('button');
+        stopActiveBtn.type = 'button';
+        stopActiveBtn.className = 'compact-btn';
+        stopActiveBtn.textContent = 'Stop Active';
+        stopActiveBtn.disabled = activeRuns.length === 0;
+        stopActiveBtn.addEventListener('click', async () => {
+            if (!window.electronAPI?.subagents?.stopRun) return;
+            const active = runs.filter((run) => {
+                const status = String(run.status || '').toLowerCase();
+                return status === 'queued' || status === 'running' || status === 'cancelling';
+            });
+            let stopped = 0;
+            for (const run of active) {
+                const result = await window.electronAPI.subagents.stopRun(run.run_id);
+                if (result?.success) stopped += 1;
+            }
+            if (panel?.showNotification) {
+                panel.showNotification(`Stopped ${stopped} subagent run(s).`);
+            }
+            if (deps.refreshSubagentManagerTab) {
+                await deps.refreshSubagentManagerTab(panel);
+            }
+        });
+        actions.appendChild(stopActiveBtn);
+
+        const clearFinishedBtn = document.createElement('button');
+        clearFinishedBtn.type = 'button';
+        clearFinishedBtn.className = 'compact-btn';
+        clearFinishedBtn.textContent = 'Clear Finished';
+        clearFinishedBtn.disabled = finishedRuns.length === 0;
+        clearFinishedBtn.addEventListener('click', async () => {
+            if (!window.electronAPI?.subagents?.clearRuns) return;
+            const result = await window.electronAPI.subagents.clearRuns({ onlyFinished: true });
+            if (panel?.showNotification) {
+                panel.showNotification(`Cleared ${Number(result?.removed || 0)} finished run(s).`);
+            }
+            if (deps.refreshSubagentManagerTab) {
+                await deps.refreshSubagentManagerTab(panel);
+            }
+        });
+        actions.appendChild(clearFinishedBtn);
+
+        const clearMockBtn = document.createElement('button');
+        clearMockBtn.type = 'button';
+        clearMockBtn.className = 'compact-btn';
+        clearMockBtn.textContent = 'Clear Mock';
+        clearMockBtn.disabled = runs.length === 0;
+        clearMockBtn.addEventListener('click', async () => {
+            if (!window.electronAPI?.subagents?.clearRuns) return;
+            const result = await window.electronAPI.subagents.clearRuns({ onlyFinished: true, matchText: 'mock' });
+            if (panel?.showNotification) {
+                panel.showNotification(`Cleared ${Number(result?.removed || 0)} mock run(s).`);
+            }
+            if (deps.refreshSubagentManagerTab) {
+                await deps.refreshSubagentManagerTab(panel);
+            }
+        });
+        actions.appendChild(clearMockBtn);
+
+        controls.appendChild(actions);
+        root.appendChild(controls);
 
         if (!runs.length) {
             const empty = document.createElement('div');

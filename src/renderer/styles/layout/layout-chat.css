@@ -633,6 +633,25 @@ button.agent-file-row:hover {
     gap: 0.5rem;
 }
 
+.subagent-manager-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+}
+
+.subagent-manager-stats {
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+}
+
+.subagent-manager-global-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
 .subagent-manager-item,
 .superagent-manager-item {
     border: 1px solid var(--border-color);

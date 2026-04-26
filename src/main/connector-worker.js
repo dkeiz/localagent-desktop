@@ -9,9 +9,29 @@ const { workerData, parentPort } = require('worker_threads');
 
 const { scriptPath, config, connectorName } = workerData;
 
-// Pending invoke requests (requestId -> {resolve, reject})
-const pendingInvokes = new Map();
-let invokeCounter = 0;
+const pendingRequests = new Map();
+let requestCounter = 0;
+
+function rpc(op, payload = {}) {
+    return new Promise((resolve, reject) => {
+        const requestId = `${Date.now()}-${++requestCounter}`;
+        pendingRequests.set(requestId, { resolve, reject });
+
+        parentPort.postMessage({
+            type: 'rpc',
+            op,
+            requestId,
+            payload
+        });
+
+        setTimeout(() => {
+            const pending = pendingRequests.get(requestId);
+            if (!pending) return;
+            pendingRequests.delete(requestId);
+            pending.reject(new Error(`RPC timeout for ${op}`));
+        }, 120000);
+    });
+}
 
 // Context object provided to the connector's start() function
 const context = {
@@ -22,24 +42,28 @@ const context = {
      * Invoke the LLM pipeline with a prompt. Returns the response string.
      */
     async invoke(prompt) {
-        return new Promise((resolve, reject) => {
-            const requestId = ++invokeCounter;
-            pendingInvokes.set(requestId, { resolve, reject });
+        return rpc('invoke', { prompt: String(prompt || '') });
+    },
 
-            parentPort.postMessage({
-                type: 'invoke',
-                requestId,
-                prompt
-            });
+    getConfig(key) {
+        if (typeof key === 'undefined') {
+            return { ...config };
+        }
+        return config[String(key)] ?? '';
+    },
 
-            // Timeout after 2 minutes
-            setTimeout(() => {
-                if (pendingInvokes.has(requestId)) {
-                    pendingInvokes.delete(requestId);
-                    reject(new Error('LLM invoke timeout (120s)'));
-                }
-            }, 120000);
+    async setConfig(key, value) {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) {
+            throw new Error('Config key is required');
+        }
+        const normalizedValue = value == null ? '' : String(value);
+        await rpc('config:set', {
+            key: normalizedKey,
+            value: normalizedValue
         });
+        config[normalizedKey] = normalizedValue;
+        return { key: normalizedKey, value: normalizedValue };
     },
 
     /**
@@ -47,20 +71,71 @@ const context = {
      */
     log(message) {
         parentPort.postMessage({ type: 'log', message: String(message) });
+    },
+
+    chat: {
+        requestReply(payload = {}) {
+            return rpc('chat:request-reply', payload || {});
+        },
+        newSession(payload = {}) {
+            return rpc('chat:new-session', payload || {});
+        },
+        getSession(payload = {}) {
+            return rpc('chat:get-session', payload || {});
+        },
+        clearSession(payload = {}) {
+            return rpc('chat:clear-session', payload || {});
+        },
+        appendMessage(payload = {}) {
+            return rpc('chat:append-message', payload || {});
+        }
+    },
+
+    models: {
+        listProviders() {
+            return rpc('models:list-providers', {});
+        },
+        listModels(provider) {
+            return rpc('models:list-models', { provider: String(provider || '') });
+        },
+        setGlobal(provider, model) {
+            return rpc('models:set-global', {
+                provider: String(provider || ''),
+                model: String(model || '')
+            });
+        },
+        getGlobal() {
+            return rpc('models:get-global', {});
+        }
+    },
+
+    settings: {
+        setThinking(mode) {
+            return rpc('settings:set-thinking', { mode: String(mode || '') });
+        },
+        setContextWindow(tokens) {
+            return rpc('settings:set-context-window', { tokens });
+        }
+    },
+
+    control: {
+        stopGeneration() {
+            return rpc('control:stop-generation', {});
+        }
     }
 };
 
 // Handle responses from main process
 parentPort.on('message', async (msg) => {
     switch (msg.type) {
-        case 'invoke-response':
-            const pending = pendingInvokes.get(msg.requestId);
+        case 'rpc-response':
+            const pending = pendingRequests.get(msg.requestId);
             if (pending) {
-                pendingInvokes.delete(msg.requestId);
+                pendingRequests.delete(msg.requestId);
                 if (msg.error) {
                     pending.reject(new Error(msg.error));
                 } else {
-                    pending.resolve(msg.response);
+                    pending.resolve(msg.result);
                 }
             }
             break;

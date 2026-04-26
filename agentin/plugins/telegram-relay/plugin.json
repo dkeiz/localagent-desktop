@@ -1,0 +1,25 @@
+{
+  "id": "telegram-relay",
+  "name": "Telegram Plugin",
+  "version": "1.0.0",
+  "description": "Personal Telegram bot relay wired to LocalAgent sessions",
+  "main": "main.js",
+  "configSchema": {
+    "botToken": {
+      "type": "password",
+      "description": "Telegram bot token from BotFather. Create one at https://t.me/BotFather"
+    },
+    "telegramReadingEnabled": {
+      "type": "boolean",
+      "description": "Enable Telegram polling and message handling"
+    },
+    "duplicateTelegramChat": {
+      "type": "boolean",
+      "description": "Duplicate Telegram messages visibly in local chat timeline"
+    },
+    "ownerChatId": {
+      "type": "string",
+      "description": "Owner Telegram chat id (auto-bound on first private interaction)"
+    }
+  }
+}

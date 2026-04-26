@@ -142,7 +142,8 @@ window.electronAPI = Object.assign(ipcRenderer, {
   subagents: {
     listRuns: (filters = {}) => ipcRenderer.invoke('subagents:list-runs', filters),
     getRun: (runId) => ipcRenderer.invoke('subagents:get-run', runId),
-    stopRun: (runId) => ipcRenderer.invoke('subagents:stop-run', runId)
+    stopRun: (runId) => ipcRenderer.invoke('subagents:stop-run', runId),
+    clearRuns: (filters = {}) => ipcRenderer.invoke('subagents:clear-runs', filters)
   },
   onAgentUpdate: (callback) => ipcRenderer.on('agent-update', callback),
 

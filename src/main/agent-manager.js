@@ -595,6 +595,13 @@ ${task}`;
         return this.db.listSubagentRuns(filters);
     }
 
+    async clearSubagentRuns(filters = {}) {
+        if (this.subtaskRuntime && typeof this.subtaskRuntime.clearRuns === 'function') {
+            return this.subtaskRuntime.clearRuns(filters);
+        }
+        return { success: false, removed: 0, kept: 0, failed: 0, error: 'Subagent run cleanup is unavailable' };
+    }
+
     async waitForSubagentRun(runId, timeoutMs = 30000) {
         const timeout = Math.max(100, Number(timeoutMs) || 30000);
         const started = Date.now();

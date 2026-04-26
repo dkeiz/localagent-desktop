@@ -17,6 +17,8 @@ class ConnectorRuntime extends EventEmitter {
         super();
         this.dispatcher = dispatcher;
         this.db = db;
+        this.eventBus = options.eventBus || null;
+        this.externalChannelBridge = options.externalChannelBridge || null;
         this.connectors = new Map(); // name -> { worker, config, status, meta, logs }
         this.connectorsDir = options.connectorsDir || path.join(__dirname, '../../agentin/connectors');
         this.workerPath = path.join(__dirname, 'connector-worker.js');
@@ -113,13 +115,17 @@ class ConnectorRuntime extends EventEmitter {
                         connectorState.meta = msg.meta || { name };
                         this._log(name, `Connector started`);
                         this.emit('connector-started', { name });
+                        this.eventBus?.publish('connector:started', { name });
                         resolve({ success: true, name });
                         break;
 
+                    case 'log':
+                        this._log(name, msg.message);
+                        break;
+
                     case 'invoke':
-                        // Worker wants to invoke LLM — use dispatcher (mode=connector: no tools, no rules)
                         try {
-                            const response = await this.dispatcher.dispatch(msg.prompt, [], { mode: 'connector' });
+                            const response = await this.dispatcher.dispatch(String(msg.prompt || ''), [], { mode: 'connector' });
                             worker.postMessage({
                                 type: 'invoke-response',
                                 requestId: msg.requestId,
@@ -134,14 +140,11 @@ class ConnectorRuntime extends EventEmitter {
                         }
                         break;
 
-                    case 'log':
-                        this._log(name, msg.message);
-                        break;
-
                     case 'error':
                         connectorState.error = msg.error;
                         this._log(name, `Error: ${msg.error}`);
                         this.emit('connector-error', { name, error: msg.error });
+                        this.eventBus?.publish('connector:error', { name, error: msg.error });
                         break;
 
                     case 'start-failed':
@@ -149,6 +152,10 @@ class ConnectorRuntime extends EventEmitter {
                         connectorState.error = msg.error;
                         this._log(name, `Start failed: ${msg.error}`);
                         reject(new Error(msg.error));
+                        break;
+
+                    case 'rpc':
+                        await this._handleWorkerRpc(name, connectorState, worker, msg);
                         break;
                 }
             });
@@ -158,6 +165,7 @@ class ConnectorRuntime extends EventEmitter {
                 connectorState.error = error.message;
                 this._log(name, `Worker error: ${error.message}`);
                 this.emit('connector-error', { name, error: error.message });
+                this.eventBus?.publish('connector:error', { name, error: error.message });
             });
 
             worker.on('exit', (code) => {
@@ -165,6 +173,7 @@ class ConnectorRuntime extends EventEmitter {
                 connectorState.worker = null;
                 this._log(name, `Worker exited with code ${code}`);
                 this.emit('connector-stopped', { name, code });
+                this.eventBus?.publish('connector:stopped', { name, code });
             });
 
             // Timeout for startup
@@ -284,6 +293,100 @@ class ConnectorRuntime extends EventEmitter {
         const connector = this.connectors.get(name);
         if (!connector) return [];
         return connector.logs.slice(-limit);
+    }
+
+    async _handleWorkerRpc(name, connectorState, worker, msg = {}) {
+        const requestId = msg.requestId;
+        const op = String(msg.op || '').trim();
+        const payload = msg.payload || {};
+
+        if (!requestId || !op) {
+            worker.postMessage({
+                type: 'rpc-response',
+                requestId,
+                error: 'Invalid RPC request'
+            });
+            return;
+        }
+
+        try {
+            let result = null;
+            if (op === 'invoke') {
+                const prompt = String(payload.prompt || '');
+                const response = await this.dispatcher.dispatch(prompt, [], { mode: 'connector' });
+                result = response?.content || '';
+            } else if (op === 'config:get') {
+                if (payload.key) {
+                    result = connectorState.config?.[String(payload.key)] ?? '';
+                } else {
+                    result = { ...(connectorState.config || {}) };
+                }
+            } else if (op === 'config:set') {
+                if (!payload.key) {
+                    throw new Error('config:set requires key');
+                }
+                const key = String(payload.key);
+                const value = payload.value == null ? '' : String(payload.value);
+                await this.setConfig(name, key, value);
+                result = { success: true, key, value };
+            } else if (op === 'chat:request-reply') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.requestReply(payload);
+            } else if (op === 'chat:new-session') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.newSession(payload);
+            } else if (op === 'chat:get-session') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.getSession(payload);
+            } else if (op === 'chat:clear-session') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.clearSession(payload);
+            } else if (op === 'chat:append-message') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.appendMessage(payload);
+            } else if (op === 'models:list-providers') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.listProviders();
+            } else if (op === 'models:list-models') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.listModels(payload.provider);
+            } else if (op === 'models:set-global') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.setGlobalModel(payload.provider, payload.model);
+            } else if (op === 'models:get-global') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.getGlobalModel();
+            } else if (op === 'settings:set-thinking') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.setThinkingMode(payload.mode);
+            } else if (op === 'settings:set-context-window') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.setContextWindow(payload.tokens);
+            } else if (op === 'control:stop-generation') {
+                this._assertExternalBridge(op);
+                result = await this.externalChannelBridge.stopGeneration();
+            } else {
+                throw new Error(`Unsupported RPC op: ${op}`);
+            }
+
+            worker.postMessage({
+                type: 'rpc-response',
+                requestId,
+                result
+            });
+        } catch (error) {
+            worker.postMessage({
+                type: 'rpc-response',
+                requestId,
+                error: error.message
+            });
+        }
+    }
+
+    _assertExternalBridge(op) {
+        if (!this.externalChannelBridge) {
+            throw new Error(`Connector RPC "${op}" requires external channel bridge`);
+        }
     }
 }
 

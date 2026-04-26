@@ -176,6 +176,96 @@ class SubtaskRuntime {
         return runs.slice(0, Math.max(1, Number(limit) || 20));
     }
 
+    clearRuns(filters = {}) {
+        const {
+            parentSessionId = null,
+            subagentId = null,
+            status = null,
+            onlyFinished = true,
+            includeRunning = false,
+            matchText = '',
+            runIds = null
+        } = filters || {};
+
+        if (!fs.existsSync(this.runsPath)) {
+            return { success: true, removed: 0, kept: 0, failed: 0 };
+        }
+
+        const normalizedMatch = String(matchText || '').trim().toLowerCase();
+        const allowedRunIds = Array.isArray(runIds)
+            ? new Set(runIds.map((value) => String(value || '').trim()).filter(Boolean))
+            : null;
+        const terminalStatuses = new Set(['failed', 'completed', 'task_complete', 'task_failed', 'cancelled', 'stopped']);
+
+        let removed = 0;
+        let kept = 0;
+        let failed = 0;
+
+        for (const entry of fs.readdirSync(this.runsPath, { withFileTypes: true })) {
+            if (!entry.isDirectory()) {
+                continue;
+            }
+
+            const run = this.getRun(entry.name);
+            if (!run) {
+                continue;
+            }
+
+            const runStatus = String(run.status || '').trim().toLowerCase();
+            const isRunningStatus = runStatus === 'queued' || runStatus === 'running' || runStatus === 'cancelling';
+
+            if (allowedRunIds && !allowedRunIds.has(String(run.run_id || '').trim())) {
+                kept++;
+                continue;
+            }
+            if (parentSessionId !== null && String(run.parent_session_id) !== String(parentSessionId)) {
+                kept++;
+                continue;
+            }
+            if (subagentId !== null && Number(run.subagent_id) !== Number(subagentId)) {
+                kept++;
+                continue;
+            }
+            if (status !== null && String(run.status) !== String(status)) {
+                kept++;
+                continue;
+            }
+            if (onlyFinished && !terminalStatuses.has(runStatus)) {
+                kept++;
+                continue;
+            }
+            if (!includeRunning && isRunningStatus) {
+                kept++;
+                continue;
+            }
+            if (normalizedMatch) {
+                const haystack = [
+                    run.run_id,
+                    run.agent_name,
+                    run.task,
+                    run.parent_session_id
+                ].map((value) => String(value || '').toLowerCase()).join(' ');
+                if (!haystack.includes(normalizedMatch)) {
+                    kept++;
+                    continue;
+                }
+            }
+
+            try {
+                fs.rmSync(run.run_dir, { recursive: true, force: true });
+                if (this.sessionWorkspace && run.child_session_id) {
+                    this.sessionWorkspace.cleanup(run.child_session_id);
+                }
+                removed++;
+            } catch (error) {
+                failed++;
+                console.error('[SubtaskRuntime] Failed to clear run:', error.message);
+            }
+        }
+
+        return { success: failed === 0, removed, kept, failed };
+    }
+
     updateStatus(runId, patch = {}) {
         const run = this.getRun(runId);
         if (!run) {
