@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Version control
+.git/
+.gitignore
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Build outputs
+dist/
+build/
+out/
+
+# Development files
+developing_archive/
+ui-concepts/
+tests/
+tools/
+docs/
+
+# Databases (personal data)
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+tmp.txt
+
+# Private/personal data
+agentin/userabout/memoryaboutuser.md
+agentin/memory/daily/*.md
+agentin/memory/global/preferences.md
+agentin/memory/images/
+agentin/memory/tasks/
+agentin/workspaces/*/
+agentin/subtasks/runs/
+agentin/research/runs/
+agentin/workflows/runs/
+agentin/agents/pro/*/memory/compact.md
+agentin/agents/pro/*/config/state.json
+agentin/plugins/agent-rag-studio/data/state.json
+agentin/plugins/http-tts-bridge/runtime/
+agentin/memory/.hashes.json
+
+# Logs
+*.log
+*.err.log
+*.out.log

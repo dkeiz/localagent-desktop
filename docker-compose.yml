@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  localagent:
+    build: .
+    ports:
+      - "8788:8788"
+    environment:
+      # LLM Provider Configuration
+      # Ollama runs on your host machine — Docker connects via host.docker.internal
+      - OLLAMA_HOST=host.docker.internal:11434
+      # API keys — pass from .env file or command line
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - QWEN_API_KEY=${QWEN_API_KEY:-}
+    extra_hosts:
+      # Allows container to reach host machine's localhost services (Ollama, LM Studio)
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persist runtime data between container restarts
+      - localagent-workspaces:/app/agentin/workspaces
+      - localagent-memory:/app/agentin/memory
+      - localagent-db:/app/data
+    restart: unless-stopped
+
+volumes:
+  localagent-workspaces:
+  localagent-memory:
+  localagent-db:

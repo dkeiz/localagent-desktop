@@ -7,12 +7,12 @@ dist/
 build/
 out/
 
-# Electron
+# Electron logs
 *.log
 *.err.log
 *.out.log
 
-# Database
+# Databases (contain conversations, API keys, personal settings)
 *.db
 *.sqlite
 *.sqlite3
@@ -23,23 +23,69 @@ Thumbs.db
 
 # IDE
 .vscode/
+.vs/
 .idea/
 *.swp
 *.swo
 
-# Environment
+# Environment / secrets
 .env
 .env.local
+.env.production
 
 # Temporary files
 *.tmp
 temp/
 
-# Local agent runtime state
-agentin/memory/.hashes.json
+# ===== PERSONAL / PRIVATE RUNTIME DATA =====
+
+# User profile memory (contains personal observations, health data, location, habits)
+agentin/userabout/memoryaboutuser.md
+
+# Daily memory logs (personal session observations)
+agentin/memory/daily/*.md
+
+# Global user preferences and personal data
+agentin/memory/global/preferences.md
+
+# Memory images and task data
+agentin/memory/images/
+agentin/memory/tasks/
 
 # Per-agent runtime memory/state (generated automatically at runtime)
 agentin/agents/pro/*/memory/compact.md
 agentin/agents/pro/*/config/state.json
+
+# Session workspaces (contain personal work artifacts)
+agentin/workspaces/*/
+
+# Run artifacts (generated at runtime, may contain personal data)
+agentin/subtasks/runs/
+agentin/research/runs/
+agentin/workflows/runs/
+
+# Knowledge staging (user-generated, not curated)
+agentin/knowledge/staging/*/
+
+# Plugin runtime state
 agentin/plugins/agent-rag-studio/data/state.json
-agentin/userabout/memoryaboutuser.md
+agentin/plugins/http-tts-bridge/runtime/
+
+# Memory hashes (runtime state)
+agentin/memory/.hashes.json
+
+# ===== DEVELOPMENT SCRATCH =====
+
+# Development archive (kept locally, not shipped)
+developing_archive/
+
+# UI concept prototypes
+ui-concepts/
+
+# Scratch files
+tmp.txt
+
+# ===== PRESERVE DIRECTORY STRUCTURE =====
+# .gitkeep files are explicitly tracked
+!**/.gitkeep
+!**/.gitignore

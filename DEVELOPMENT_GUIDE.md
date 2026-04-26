@@ -691,3 +691,93 @@ Before merging any meaningful change, check these questions:
 8. If I touched a risky seam, did I add or update a contract test?
 9. Did I keep files within the line budget?
 10. If I changed architecture, did I update this document so the next developer or coding agent can continue cleanly?
+
+## Privacy and Security Rules for Contributors
+
+This is an open-source project. These rules protect user privacy and prevent credential leaks.
+
+### Never Commit
+
+- API keys, tokens, passwords, or credentials of any kind
+- Personal user data from `agentin/userabout/`
+- Memory observation files from `agentin/memory/daily/` or `agentin/memory/global/preferences.md`
+- Database files (`*.db`, `*.sqlite`)
+- Session workspace content from `agentin/workspaces/`
+- Run artifacts from `agentin/subtasks/runs/`, `agentin/research/runs/`, `agentin/workflows/runs/`
+- Agent compact memory from `agentin/agents/pro/*/memory/compact.md`
+
+### API Key Handling
+
+- API keys are stored in the SQLite database, encrypted via Electron `safeStorage`
+- Provider adapters read keys from DB at runtime via `database.getAPIKey(provider)`
+- Keys are never stored in source files or committed to version control
+- The `.env.example` file documents configurable environment variables — never commit `.env`
+
+### File-Backed State Separation
+
+The `.gitignore` is designed to track the application structure and code while ignoring all runtime-generated personal data. When adding new file-backed state:
+
+1. Decide if it is user-generated or application-defined
+2. User-generated state must be gitignored
+3. Ship template or placeholder files with instruction headers
+4. Use `.gitkeep` files to preserve directory structure
+
+### Pre-Commit Checklist
+
+```bash
+# Review staged files for sensitive content
+git diff --cached
+git status
+
+# Verify no database files are staged
+git diff --cached --name-only | grep -E '\.(db|sqlite)$'
+
+# Verify no memory files are staged
+git diff --cached --name-only | grep -E 'memory/(daily|global/preferences)'
+```
+
+## Docker Testing Workflow
+
+### Purpose
+
+The Docker setup provides a clean-room environment for testing the application without any personal data, API keys, or user-specific configuration baked into the image.
+
+### Quick Start
+
+```bash
+# 1. Copy environment template
+cp .env.example .env
+
+# 2. Edit .env with your API keys (this file is gitignored)
+# 3. Build and start
+docker-compose up --build
+
+# 4. The HTTP API is available at http://localhost:8788
+```
+
+### Connecting to Local LLM Providers
+
+Docker containers can reach services on the host machine:
+
+| Provider | Host URL | Docker URL |
+| --- | --- | --- |
+| Ollama | `http://localhost:11434` | `http://host.docker.internal:11434` |
+| LM Studio | `http://localhost:1234` | `http://host.docker.internal:1234` |
+| OpenRouter | Direct internet | Direct internet (API key via env) |
+
+The `docker-compose.yml` sets `extra_hosts: host.docker.internal:host-gateway` for Linux compatibility.
+
+### What the Docker Image Contains
+
+- Application source code (`src/`)
+- Agent definitions and structure (`agentin/`)
+- Empty runtime directories (workspaces, memory, runs)
+- No personal data, no API keys, no databases
+
+### What the Docker Image Does NOT Contain
+
+- `node_modules/` (rebuilt during build)
+- Development files (`developing_archive/`, `tests/`, `tools/`, `docs/`, `ui-concepts/`)
+- Personal data (memory, user profile, workspaces)
+- Database files
+- API keys (provided at runtime via environment variables)
