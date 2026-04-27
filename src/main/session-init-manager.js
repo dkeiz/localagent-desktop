@@ -239,8 +239,9 @@ class SessionInitManager {
         // Check Ollama
         try {
             const http = require('http');
+            const ollamaHost = process.env.OLLAMA_HOST || 'localhost:11434';
             await new Promise((resolve) => {
-                const req = http.get('http://localhost:11434/api/tags', { timeout: 3000 }, (res) => {
+                const req = http.get(`http://${ollamaHost}/api/tags`, { timeout: 3000 }, (res) => {
                     result.providers.ollama = res.statusCode === 200;
                     resolve();
                 });

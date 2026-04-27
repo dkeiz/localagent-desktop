@@ -1,4 +1,19 @@
-version: '3.8'
+# LocalAgent — Docker Compose
+#
+# Runs the agent backend in headless mode (no GUI).
+# The API is exposed at http://localhost:8788
+#
+# Quick start:
+#   1. Copy .env.example to .env and add any API keys you need
+#   2. Make sure Ollama is running on your PC (if using local models)
+#   3. Run:  docker compose up -d
+#
+# Useful commands:
+#   docker compose logs -f        # watch live logs
+#   docker compose restart        # restart the container
+#   docker compose down           # stop everything
+#
+# Health check:  curl http://localhost:8788/health
 
 services:
   localagent:
@@ -6,18 +21,17 @@ services:
     ports:
       - "8788:8788"
     environment:
-      # LLM Provider Configuration
-      # Ollama runs on your host machine — Docker connects via host.docker.internal
+      # Ollama runs on your host machine — Docker reaches it via host.docker.internal
       - OLLAMA_HOST=host.docker.internal:11434
-      # API keys — pass from .env file or command line
+      # API keys — set these in your .env file
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - QWEN_API_KEY=${QWEN_API_KEY:-}
     extra_hosts:
-      # Allows container to reach host machine's localhost services (Ollama, LM Studio)
+      # Maps host.docker.internal to your PC's localhost
       - "host.docker.internal:host-gateway"
     volumes:
-      # Persist runtime data between container restarts
+      # Persist data between container restarts
       - localagent-workspaces:/app/agentin/workspaces
       - localagent-memory:/app/agentin/memory
       - localagent-db:/app/data

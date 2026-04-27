@@ -8,8 +8,9 @@
 const axios = require('axios');
 
 class EmbeddingService {
-    constructor(baseURL = 'http://127.0.0.1:11434') {
-        this.baseURL = baseURL;
+    constructor(baseURL) {
+        const envHost = process.env.OLLAMA_HOST;
+        this.baseURL = baseURL || (envHost ? `http://${envHost}` : 'http://127.0.0.1:11434');
         this.model = 'nomic-embed-text'; // Default embedding model
     }
 

@@ -37,6 +37,6 @@ EXPOSE 8788
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD node -e "const http = require('http'); http.get('http://localhost:8788/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
-# Default: run in windowless external-test mode
-# This mode exposes an HTTP API for testing without Electron GUI
-CMD ["node", "src/main/main.js", "--external-test", "--windowless", "--external-port", "8788"]
+# Default: run in headless Docker mode (no Electron needed)
+# Exposes an HTTP API at the configured port
+CMD ["node", "src/main/docker-entry.js", "--external-port", "8788"]

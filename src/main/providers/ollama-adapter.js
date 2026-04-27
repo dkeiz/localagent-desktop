@@ -10,7 +10,8 @@ const BaseAdapter = require('./base-adapter');
 class OllamaAdapter extends BaseAdapter {
     constructor(db) {
         super('ollama', db);
-        this.baseURL = 'http://127.0.0.1:11434';
+        const envHost = process.env.OLLAMA_HOST;
+        this.baseURL = envHost ? `http://${envHost}` : 'http://127.0.0.1:11434';
     }
 
     async call(messages, options = {}) {

@@ -1,8 +1,9 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const { bootstrapApplication } = require('./bootstrap');
-const { runCheckSkins } = require('../../tools/check-skins');
-const { runApplySimulation } = require('../../tools/test-skin-apply');
+// Lazy-loaded: tools/ may not exist in Docker images (excluded by .dockerignore)
+function runCheckSkins() { return require('../../tools/check-skins').runCheckSkins(); }
+function runApplySimulation() { return require('../../tools/test-skin-apply').runApplySimulation(); }
 const { createExternalTestControl } = require('./external-test-control');
 
 let runtime = null;

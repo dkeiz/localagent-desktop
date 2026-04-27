@@ -1,4 +1,5 @@
-const { app, BrowserWindow } = require('electron');
+let app, BrowserWindow;
+try { ({ app, BrowserWindow } = require('electron')); } catch (_) { app = null; BrowserWindow = null; }
 
 function resolveOwnerWindow(event) {
   try {

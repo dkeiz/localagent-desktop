@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { app } = require('electron');
+let app;
+try { app = require('electron').app; } catch (_) { app = null; }
 
 /**
  * PromptFileManager - Bidirectional sync between files and database for prompts/rules
