@@ -81,7 +81,7 @@ LocalAgent is an **Electron-based desktop AI assistant** that runs locally on yo
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/localagent-desktop.git
+git clone https://github.com/dkeiz/localagent-desktop.git
 cd localagent-desktop
 
 # Install dependencies
