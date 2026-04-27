@@ -1,4 +1,5 @@
 const Database = require('better-sqlite3');
+const fs = require('fs');
 const path = require('path');
 const { decryptSecret, encryptSecret } = require('./secure-secret-store');
 function resolveDbPath(options = {}) {
@@ -9,11 +10,16 @@ function resolveDbPath(options = {}) {
     if (!electronApp || typeof electronApp.getPath !== 'function') {
         throw new Error('Electron app context is unavailable. Pass dbPath when constructing DatabaseWrapper outside Electron.');
     }
+    // For packaged app, keep DB with application files.
+    if (electronApp && electronApp.isPackaged) {
+        return path.join(path.dirname(process.execPath), 'agentin', 'memory', 'localagent.db');
+    }
     return path.join(electronApp.getPath('userData'), 'localagent.db');
 }
 class DatabaseWrapper {
     constructor(options = {}) {
         this.dbPath = resolveDbPath(options);
+        fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
         this.db = new Database(this.dbPath);
         this.db.pragma('journal_mode = WAL');
     }

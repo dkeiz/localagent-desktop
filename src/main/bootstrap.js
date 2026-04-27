@@ -1,3 +1,4 @@
+const path = require('path');
 const Database = require('./database');
 const AIService = require('./ai-service');
 const MCPServer = require('./mcp-server');
@@ -61,6 +62,12 @@ async function bootstrapApplication(options = {}) {
   container.register('runtimePaths', paths);
   container.register('windowManager', windowManager);
 
+  // Create UI immediately so packaged app does not appear "dead"
+  // if a long-running initialization step takes time.
+  if (createInitialWindow) {
+    windowManager.createMainWindow();
+  }
+
   const db = new Database({ dbPath: options.dbPath, app: options.app });
   await db.init();
   container.register('db', db);
@@ -91,7 +98,11 @@ async function bootstrapApplication(options = {}) {
   container.register('chainController', chainController);
 
   const workflowManager = new WorkflowManager(db, mcpServer, dispatcher);
-  const workflowRuntime = new WorkflowRuntime(workflowManager, eventBus);
+  const workflowRuntime = new WorkflowRuntime(
+    workflowManager,
+    eventBus,
+    path.join(paths.agentinRoot, 'workflows')
+  );
   workflowRuntime.initialize();
   workflowManager.setWorkflowRuntime(workflowRuntime);
   chainController.setWorkflowManager(workflowManager);
@@ -148,7 +159,12 @@ async function bootstrapApplication(options = {}) {
 
     return db.addConversation(message, sessionId);
   };
-  const subtaskRuntime = new SubtaskRuntime(db, sessionWorkspace, eventBus, null, {
+  const subtaskRuntime = new SubtaskRuntime(
+    db,
+    sessionWorkspace,
+    eventBus,
+    path.join(paths.agentinRoot, 'subtasks'),
+    {
     persistConversationMessage,
     notifyConversationUpdate(sessionId) {
       if (sessionId === null || sessionId === undefined) {
@@ -156,7 +172,8 @@ async function bootstrapApplication(options = {}) {
       }
       return windowManager.send('conversation-update', { sessionId });
     }
-  });
+    }
+  );
   container.register('subtaskRuntime', subtaskRuntime);
 
   const promptFileManager = new PromptFileManager(db, paths.promptBasePath);
@@ -244,7 +261,12 @@ async function bootstrapApplication(options = {}) {
   await knowledgeManager.initialize();
   mcpServer.setKnowledgeManager(knowledgeManager);
 
-  const researchRuntime = new ResearchRuntime(workflowManager, knowledgeManager, eventBus);
+  const researchRuntime = new ResearchRuntime(
+    workflowManager,
+    knowledgeManager,
+    eventBus,
+    path.join(paths.agentinRoot, 'research')
+  );
   researchRuntime.initialize();
   mcpServer.setResearchRuntime(researchRuntime);
   container.register('researchRuntime', researchRuntime);
@@ -267,10 +289,6 @@ async function bootstrapApplication(options = {}) {
   }
 
   eventBus.init({ windowManager, dispatcher, db });
-
-  if (createInitialWindow) {
-    windowManager.createMainWindow();
-  }
 
   if (autoStartDaemons) {
     const isAnyTestMode = isTestClientMode || isExternalTestMode || isTestMode || isNoWindowMode;

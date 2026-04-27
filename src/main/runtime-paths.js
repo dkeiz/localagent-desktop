@@ -6,11 +6,18 @@ function resolveDefaultAgentinRoot(options = {}) {
     return options.agentinRoot;
   }
 
-  const packagedRoot = process.resourcesPath
-    ? path.join(process.resourcesPath, 'agentin')
-    : '';
-  if (packagedRoot && fs.existsSync(packagedRoot)) {
-    return packagedRoot;
+  const packagedCandidates = [];
+  if (process.resourcesPath) {
+    // Standard packaged location when included in resources.
+    packagedCandidates.push(path.join(process.resourcesPath, 'agentin'));
+    // electron-builder `extraFiles` commonly lands next to the executable.
+    packagedCandidates.push(path.join(path.dirname(process.resourcesPath), 'agentin'));
+  }
+
+  for (const candidate of packagedCandidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
 
   return path.resolve(__dirname, '../../agentin');

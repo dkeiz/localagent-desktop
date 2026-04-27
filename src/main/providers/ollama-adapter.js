@@ -1,5 +1,6 @@
 const axios = require('axios');
 const BaseAdapter = require('./base-adapter');
+const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 
 /**
  * OllamaAdapter — Ollama local + cloud model support.
@@ -10,8 +11,6 @@ const BaseAdapter = require('./base-adapter');
 class OllamaAdapter extends BaseAdapter {
     constructor(db) {
         super('ollama', db);
-        const envHost = process.env.OLLAMA_HOST;
-        this.baseURL = envHost ? `http://${envHost}` : 'http://127.0.0.1:11434';
     }
 
     async call(messages, options = {}) {
@@ -41,8 +40,10 @@ class OllamaAdapter extends BaseAdapter {
         console.log(`[Ollama] model=${options.model} num_ctx=${contextLength}`);
 
         try {
-            const response = await axios.post(`${this.baseURL}/api/chat`, requestBody, {
-                signal
+            const baseURL = await this._getBaseURL();
+            const response = await axios.post(`${baseURL}/api/chat`, requestBody, {
+                signal,
+                headers: await this._getHeaders()
             });
 
             this._endRequest();
@@ -84,12 +85,42 @@ class OllamaAdapter extends BaseAdapter {
 
     async getModels() {
         try {
-            const response = await axios.get(`${this.baseURL}/api/tags`);
-            return response.data.models.map(m => m.name);
+            const baseURL = await this._getBaseURL();
+            const response = await axios.get(`${baseURL}/api/tags`, {
+                headers: await this._getHeaders(),
+                timeout: 15000
+            });
+            const models = Array.isArray(response.data?.models) ? response.data.models : [];
+            return models
+                .map(entry => String(entry?.name || '').trim())
+                .filter(Boolean);
         } catch (error) {
             console.error('[Ollama] Failed to fetch models:', error.message);
             return [];
         }
+    }
+
+    async _getBaseURL() {
+        const stored = await this.db.getSetting('llm.ollama.url');
+        const envHost = process.env.OLLAMA_HOST || '';
+        const envURL = /^https?:\/\//i.test(envHost) ? envHost : (envHost ? `http://${envHost}` : '');
+        return this._normalizeBaseURL(stored || envURL || DEFAULT_OLLAMA_URL);
+    }
+
+    async _getHeaders() {
+        const apiKey = await this.db.getAPIKey('ollama') || await this.db.getSetting('llm.ollama.apiKey');
+        const headers = { 'Content-Type': 'application/json' };
+        if (apiKey) {
+            headers.Authorization = `Bearer ${apiKey}`;
+        }
+        return headers;
+    }
+
+    _normalizeBaseURL(url) {
+        const raw = String(url || '').trim();
+        if (!raw) return DEFAULT_OLLAMA_URL;
+        const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+        return withProtocol.replace(/\/+$/, '');
     }
 
     /**

@@ -4,6 +4,8 @@ package-lock.json
 
 # Build outputs
 dist/
+dist_*/
+dist-*/
 build/
 out/
 
